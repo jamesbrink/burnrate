@@ -100,7 +100,11 @@ burnrate`).
   editing that CSP.
 - **Two release channels.** `release-plz` manages the crate PR → tag →
   crates.io; `release.yml` (on tag `v*`) builds native bundles via `tauri-action`
-  and uploads checksums to the GitHub Release.
+  and uploads checksums to the GitHub Release. macOS bundles are Developer
+  ID-signed and notarized when the `APPLE_*` repo secrets are set
+  (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+  `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`); without them the build still
+  succeeds unsigned.
 
 ## Commands
 
