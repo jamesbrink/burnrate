@@ -17,6 +17,7 @@ include = [
   "build.rs",
   "tauri.conf.json",
   "capabilities/**",
+  "gen/**",
   "icons/**",
   "README.md",
   "LICENSE-*",
