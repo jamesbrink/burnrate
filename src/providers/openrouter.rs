@@ -87,6 +87,10 @@ pub(crate) fn parse_openrouter(
 mod tests {
     use chrono::Utc;
     use serde_json::json;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{header, method, path},
+    };
 
     use super::*;
     use crate::models::{ProviderKind, SecretStorageMode};
@@ -122,5 +126,28 @@ mod tests {
 
         assert_eq!(snapshot.status, SnapshotStatus::Warning);
         assert_eq!(snapshot.quota.unwrap().remaining, Some(15.0));
+    }
+
+    #[tokio::test]
+    async fn fetches_openrouter_credits_with_manual_key() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .and(header("authorization", "Bearer sk-test"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "total_credits": 25.0,
+                    "total_usage": 4.0
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut account = account();
+        account.endpoint_override = Some(server.uri());
+        let snapshot = fetch(&Client::new(), &account).await.unwrap();
+
+        assert_eq!(snapshot.status, SnapshotStatus::Healthy);
+        assert_eq!(snapshot.quota.unwrap().remaining, Some(21.0));
     }
 }

@@ -119,6 +119,10 @@ pub(crate) fn parse_codex_rate_limits(
 mod tests {
     use chrono::Utc;
     use serde_json::json;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{header, method, path},
+    };
 
     use super::*;
     use crate::models::SecretStorageMode;
@@ -159,6 +163,31 @@ mod tests {
         );
 
         assert_eq!(snapshot.status, SnapshotStatus::Exhausted);
+        assert_eq!(snapshot.quota.unwrap().used, 96.0);
+    }
+
+    #[tokio::test]
+    async fn fetches_json_rpc_rate_limits_with_local_token() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .and(header("authorization", "Bearer token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "jsonrpc": "2.0",
+                "result": {
+                    "rate_limits": [
+                        { "limit": 120, "remaining": 24 }
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut account = account();
+        account.endpoint_override = Some(server.uri());
+        let snapshot = fetch(&Client::new(), &account).await.unwrap();
+
+        assert_eq!(snapshot.status, SnapshotStatus::Warning);
         assert_eq!(snapshot.quota.unwrap().used, 96.0);
     }
 }
