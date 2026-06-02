@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "tauri": "tauri",
     "dev": "tauri dev -- --no-default-features",
     "dev:web": "vite",
     "build": "tsc && vite build",
