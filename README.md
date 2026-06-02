@@ -28,7 +28,7 @@ npm run dev
 cargo run
 ```
 
-Inside `nix develop`, the helper commands are available on `PATH`:
+Inside `nix develop`, Burnrate prints a helper menu and exposes the helper commands on `PATH`:
 
 ```sh
 dev
@@ -37,6 +37,7 @@ check
 test
 fmt
 clean
+package-crate
 ```
 
 ## Release
