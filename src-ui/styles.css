@@ -74,6 +74,8 @@ p {
 .section-heading,
 .account-flags,
 .usage-head,
+.usage-provider,
+.tray-account-provider,
 .bucket-meta,
 .tray-card-head,
 .tray-provider,
@@ -215,6 +217,9 @@ p {
   color: inherit;
   padding: 0;
   text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
 .account-main strong,
@@ -273,6 +278,17 @@ p {
 .usage-head {
   justify-content: space-between;
   gap: 10px;
+}
+
+.usage-provider {
+  min-width: 0;
+  gap: 9px;
+}
+
+.usage-provider > span,
+.account-main > span,
+.tray-provider > div {
+  min-width: 0;
 }
 
 .usage-head strong {
@@ -562,17 +578,48 @@ p {
   min-width: 0;
 }
 
-.provider-mark {
+.provider-logo {
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
   border-radius: 7px;
   display: inline-grid;
   place-items: center;
-  color: #ffffff;
-  background: #355f74;
-  font-size: 13px;
-  font-weight: 760;
+  border: 1px solid transparent;
+}
+
+.provider-logo.md {
+  width: 30px;
+  height: 30px;
+}
+
+.provider-logo svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.provider-logo.md svg {
+  width: 18px;
+  height: 18px;
+}
+
+.provider-logo-claude-code {
+  color: #c15f3c;
+  background: #fbefe9;
+  border-color: #efcfc0;
+}
+
+.provider-logo-codex {
+  color: #111820;
+  background: #eef1f2;
+  border-color: #d8dee3;
+}
+
+.provider-logo-openrouter {
+  color: #385fd6;
+  background: #eef3ff;
+  border-color: #d5ddfb;
 }
 
 .tray-provider strong,
@@ -632,6 +679,16 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.tray-account-provider {
+  min-width: 0;
+  gap: 8px;
+}
+
+.tray-account-provider > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .tray-empty {

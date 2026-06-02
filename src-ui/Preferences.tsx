@@ -15,6 +15,7 @@ import {
   formatReset,
   primaryBucket,
 } from "./format";
+import { ProviderLogo } from "./ProviderLogo";
 import type {
   AccountInput,
   AccountView,
@@ -327,11 +328,14 @@ function AccountButton({
   return (
     <div className={`account-row ${active ? "active" : ""}`}>
       <button className="account-main" onClick={() => onEdit(account)}>
-        <strong>{account.label}</strong>
-        <small>
-          {providerLabels[account.provider]}
-          {account.autoDetected ? " · Auto" : ""}
-        </small>
+        <ProviderLogo provider={account.provider} size="sm" />
+        <span>
+          <strong>{account.label}</strong>
+          <small>
+            {providerLabels[account.provider]}
+            {account.autoDetected ? " · Auto" : ""}
+          </small>
+        </span>
       </button>
       <span className="account-flags">
         {account.hasSecret ? <KeyRound size={15} /> : null}
@@ -359,11 +363,14 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
   return (
     <article className={`usage-row ${snapshot.status}`}>
       <div className="usage-head">
-        <div>
-          <strong>{snapshot.label}</strong>
-          <small>
-            {providerLabels[snapshot.provider]} · {plan}
-          </small>
+        <div className="usage-provider">
+          <ProviderLogo provider={snapshot.provider} size="sm" />
+          <span>
+            <strong>{snapshot.label}</strong>
+            <small>
+              {providerLabels[snapshot.provider]} · {plan}
+            </small>
+          </span>
         </div>
         <StatusBadge status={snapshot.status} />
       </div>

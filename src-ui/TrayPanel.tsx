@@ -5,6 +5,7 @@ import {
   formatReset,
   primaryBucket,
 } from "./format";
+import { ProviderLogo } from "./ProviderLogo";
 import type {
   AccountView,
   DashboardState,
@@ -17,12 +18,6 @@ const providerLabels = {
   "claude-code": "Claude",
   codex: "Codex",
   openrouter: "OpenRouter",
-} as const;
-
-const providerMarks = {
-  "claude-code": "Cl",
-  codex: "Cx",
-  openrouter: "OR",
 } as const;
 
 const statusLabels: Record<SnapshotStatus, string> = {
@@ -109,9 +104,7 @@ function TraySnapshot({ snapshot }: { snapshot: UsageSnapshot }) {
     <article className={`tray-card ${snapshot.status}`}>
       <div className="tray-card-head">
         <div className="tray-provider">
-          <span className="provider-mark">
-            {providerMarks[snapshot.provider]}
-          </span>
+          <ProviderLogo provider={snapshot.provider} size="sm" />
           <div>
             <strong>{snapshot.label}</strong>
             <span>{providerLabels[snapshot.provider]}</span>
@@ -168,7 +161,10 @@ function BucketRow({ bucket }: { bucket: UsageBucketSnapshot }) {
 function TrayAccount({ account }: { account: AccountView }) {
   return (
     <div className="tray-account">
-      <span>{account.label}</span>
+      <span className="tray-account-provider">
+        <ProviderLogo provider={account.provider} size="sm" />
+        <span>{account.label}</span>
+      </span>
       <small>{account.enabled ? "Enabled" : "Disabled"}</small>
     </div>
   );
