@@ -544,11 +544,19 @@ fn validate_auth_status(status: &ClaudeAuthStatus) -> Result<()> {
     Ok(())
 }
 
+fn claude_binary() -> String {
+    std::env::var("BURNRATE_CLAUDE_BIN")
+        .or_else(|_| std::env::var("CLAUDE_BIN"))
+        .unwrap_or_else(|_| "claude".to_string())
+}
+
 async fn claude_auth_status() -> Result<ClaudeAuthStatus> {
+    let binary = super::resolve_cli(&claude_binary());
     let output = timeout(
         std::time::Duration::from_millis(AUTH_STATUS_TIMEOUT_MS),
-        TokioCommand::new("claude")
+        TokioCommand::new(&binary)
             .args(["auth", "status", "--json"])
+            .env("PATH", super::augmented_path())
             .stdin(std::process::Stdio::null())
             .output(),
     )
@@ -751,7 +759,10 @@ fn claude_code_user_agent() -> String {
 }
 
 fn detect_claude_code_user_agent() -> String {
-    let output = Command::new("claude").arg("--version").output();
+    let output = Command::new(super::resolve_cli(&claude_binary()))
+        .arg("--version")
+        .env("PATH", super::augmented_path())
+        .output();
     match output {
         Ok(output) if output.status.success() => {
             let raw = String::from_utf8_lossy(&output.stdout);

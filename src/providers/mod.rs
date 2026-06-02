@@ -620,6 +620,109 @@ fn require_token(account: &AccountConfig) -> Result<String> {
     token_from_config(account)?.ok_or_else(|| anyhow!("no credential found for {}", account.label))
 }
 
+/// Resolve a CLI tool (e.g. `codex`, `claude`) to a runnable path. macOS apps
+/// launched from Finder/Launchpad inherit only a minimal `PATH`
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`), so tools installed via Homebrew, Nix,
+/// Cargo, or a JS toolchain are invisible to a bare `Command::new("codex")`.
+/// Search the inherited `PATH` plus those common locations; fall back to the
+/// bare name so `Command` still tries `PATH`.
+pub(crate) fn resolve_cli(name: &str) -> std::path::PathBuf {
+    if name.contains('/') || name.contains(std::path::MAIN_SEPARATOR) {
+        return std::path::PathBuf::from(name);
+    }
+    find_in_dirs(name, &cli_search_dirs()).unwrap_or_else(|| std::path::PathBuf::from(name))
+}
+
+/// The `PATH` (inherited entries first, then the common locations) to hand to
+/// spawned child processes so they and their own subprocesses resolve tools the
+/// same way we do.
+pub(crate) fn augmented_path() -> std::ffi::OsString {
+    std::env::join_paths(cli_search_dirs())
+        .unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+}
+
+fn cli_search_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    let push = |dir: std::path::PathBuf, dirs: &mut Vec<std::path::PathBuf>| {
+        if !dir.as_os_str().is_empty() && !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    };
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            push(dir, &mut dirs);
+        }
+    }
+    for dir in common_bin_dirs() {
+        push(dir, &mut dirs);
+    }
+    dirs
+}
+
+fn find_in_dirs(name: &str, dirs: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+    dirs.iter()
+        .map(|dir| dir.join(name))
+        .find(|candidate| is_executable_file(candidate))
+}
+
+#[cfg(unix)]
+fn common_bin_dirs() -> Vec<std::path::PathBuf> {
+    use std::path::PathBuf;
+    let mut dirs = vec![
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/opt/homebrew/sbin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/usr/local/sbin"),
+        PathBuf::from("/run/current-system/sw/bin"),
+        PathBuf::from("/nix/var/nix/profiles/default/bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+    ];
+    if let Some(home) = dirs::home_dir() {
+        for rel in [
+            ".nix-profile/bin",
+            ".local/state/nix/profile/bin",
+            ".local/bin",
+            ".cargo/bin",
+            "bin",
+            ".npm-global/bin",
+            ".npm-packages/bin",
+            ".yarn/bin",
+            ".config/yarn/global/node_modules/.bin",
+            ".bun/bin",
+            ".deno/bin",
+            ".volta/bin",
+        ] {
+            dirs.push(home.join(rel));
+        }
+    }
+    if let Some(user) = std::env::var_os("USER") {
+        let mut per_user = PathBuf::from("/etc/profiles/per-user");
+        per_user.push(user);
+        per_user.push("bin"); // nix-darwin home-manager profile
+        dirs.push(per_user);
+    }
+    dirs
+}
+
+#[cfg(not(unix))]
+fn common_bin_dirs() -> Vec<std::path::PathBuf> {
+    Vec::new()
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &std::path::Path) -> bool {
+    path.is_file()
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
@@ -632,6 +735,50 @@ mod tests {
 
     use super::*;
     use crate::models::SecretStorageMode;
+
+    #[test]
+    fn resolve_cli_keeps_explicit_paths() {
+        assert_eq!(
+            resolve_cli("/opt/homebrew/bin/codex"),
+            std::path::PathBuf::from("/opt/homebrew/bin/codex")
+        );
+    }
+
+    #[test]
+    fn resolve_cli_falls_back_to_bare_name_when_not_found() {
+        assert_eq!(
+            resolve_cli("burnrate-nonexistent-tool-xyz"),
+            std::path::PathBuf::from("burnrate-nonexistent-tool-xyz")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn find_in_dirs_prefers_executable_over_plain_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let plain = tempdir().expect("plain dir");
+        std::fs::write(plain.path().join("codex"), b"not executable").expect("write plain");
+
+        let exec = tempdir().expect("exec dir");
+        let exec_path = exec.path().join("codex");
+        std::fs::write(&exec_path, b"#!/bin/sh\n").expect("write exec");
+        let mut perms = std::fs::metadata(&exec_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&exec_path, perms).unwrap();
+
+        let found = find_in_dirs(
+            "codex",
+            &[plain.path().to_path_buf(), exec.path().to_path_buf()],
+        );
+        assert_eq!(found, Some(exec_path));
+    }
+
+    #[test]
+    fn find_in_dirs_returns_none_when_absent() {
+        let dir = tempdir().expect("dir");
+        assert_eq!(find_in_dirs("codex", &[dir.path().to_path_buf()]), None);
+    }
 
     fn account() -> AccountConfig {
         AccountConfig {

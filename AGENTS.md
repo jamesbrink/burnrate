@@ -44,7 +44,11 @@ burnrate`).
   usage-bucket and subscription parsing, status thresholds (Warning ≤20% /
   Exhausted ≤5% remaining), endpoint validation (HTTPS-only except localhost),
   and token resolution (keyring → credential file via provider-specific JSON
-  pointers). `detect_accounts()` aggregates per-provider detection.
+  pointers). `detect_accounts()` aggregates per-provider detection. `resolve_cli`
+  / `augmented_path` locate provider CLIs (`codex`, `claude`) across Homebrew,
+  Nix, Cargo, and JS-toolchain dirs, because a Finder-launched `.app` inherits
+  only a minimal `PATH`; overridable via `BURNRATE_CODEX_BIN`/`CODEX_BIN` and
+  `BURNRATE_CLAUDE_BIN`/`CLAUDE_BIN`.
 - `providers/{claude,codex,openrouter}.rs` — each implements `fetch()`, and
   claude/codex also implement `detect()`. claude reads `~/.claude` creds +
   macOS Keychain, validates with `claude auth status --json`, and queries the

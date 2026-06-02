@@ -132,18 +132,24 @@ async fn read_codex_app_server_rate_limits() -> Result<Value> {
 }
 
 async fn read_codex_app_server_rate_limits_with_binary(binary: &str) -> Result<Value> {
+    let resolved = super::resolve_cli(binary);
+    let path_env = super::augmented_path();
     timeout(APP_SERVER_TIMEOUT, async move {
-        let mut command = Command::new(binary);
+        let mut command = Command::new(&resolved);
         command
             .args(["app-server", "--listen", "stdio://"])
+            .env("PATH", &path_env)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
 
-        let mut child = command
-            .spawn()
-            .with_context(|| format!("failed to start `{binary} app-server --listen stdio://`"))?;
+        let mut child = command.spawn().with_context(|| {
+            format!(
+                "failed to start `{} app-server --listen stdio://`",
+                resolved.display()
+            )
+        })?;
         let mut stdin = child
             .stdin
             .take()
