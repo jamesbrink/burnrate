@@ -51,6 +51,7 @@ jobs:
         if: matrix.platform != 'windows-latest'
         run: |
           find target -path "*/bundle/*" -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -print0 \
+            | sort -z \
             | xargs -0 shasum -a 256 > "burnrate-${{ matrix.platform }}.sha256"
       - name: Generate Windows checksums
         if: matrix.platform == 'windows-latest'
@@ -62,4 +63,12 @@ jobs:
           } | Set-Content "burnrate-${{ matrix.platform }}.sha256"
       - uses: softprops/action-gh-release@v2
         with:
-          files: burnrate-${{ matrix.platform }}.sha256
+          files: |
+            burnrate-${{ matrix.platform }}.sha256
+            target/**/bundle/**/*.dmg
+            target/**/bundle/**/*.app.tar.gz
+            target/**/bundle/**/*.deb
+            target/**/bundle/**/*.rpm
+            target/**/bundle/**/*.AppImage
+            target/**/bundle/**/*.msi
+            target/**/bundle/**/*.exe
