@@ -12,6 +12,7 @@ import { TrayPanel } from "./TrayPanel";
 import type { AccountView, DashboardState, UsageSnapshot } from "./types";
 
 const api = vi.hoisted(() => ({
+  closePreferences: vi.fn(),
   detectAccounts: vi.fn(),
   loadDashboard: vi.fn(),
   onDashboardUpdated: vi.fn(),
@@ -32,6 +33,7 @@ beforeEach(() => {
   api.onRefreshRequested.mockResolvedValue(() => {});
   api.onSettingsUpdated.mockResolvedValue(() => {});
   api.refreshDashboard.mockResolvedValue(dashboardState());
+  api.closePreferences.mockResolvedValue(undefined);
   api.resizePreferencesToContent.mockResolvedValue(undefined);
   api.detectAccounts.mockResolvedValue([]);
   api.removeAccount.mockResolvedValue([]);
@@ -161,6 +163,7 @@ test("applies dashboard updates emitted by the backend", async () => {
   );
 
   expect(await screen.findByText("Burnrate: 1 warning")).toBeInTheDocument();
+  expect(api.onDashboardUpdated).toHaveBeenCalledOnce();
 });
 
 test("renders compact tray view from the tray window route", async () => {
@@ -242,6 +245,66 @@ test("falls back to frontend summaries for older dashboard payloads", async () =
   render(<App />);
 
   expect(await screen.findByText("Burnrate: 1 critical")).toBeInTheDocument();
+});
+
+test("closes preferences from macOS window shortcuts", async () => {
+  api.loadDashboard.mockResolvedValue(dashboardState());
+
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "Preferences" });
+  fireEvent.keyDown(window, { key: "w", metaKey: true });
+  fireEvent.keyDown(window, { key: "q", metaKey: true });
+
+  expect(api.closePreferences).toHaveBeenCalledTimes(2);
+});
+
+test("refreshes usage after saving an OpenRouter account", async () => {
+  const savedAccount: AccountView = {
+    id: "openrouter-team",
+    provider: "openrouter",
+    label: "OpenRouter Team",
+    enabled: true,
+    autoDetected: false,
+    credentialPath: null,
+    endpointOverride: null,
+    secretStorage: "keyring",
+    hasSecret: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  api.loadDashboard.mockResolvedValue(dashboardState());
+  api.saveAccount.mockResolvedValue([savedAccount]);
+  api.refreshDashboard.mockResolvedValue(
+    dashboardState({
+      accounts: [savedAccount],
+      snapshots: [snapshot("healthy", { accountId: "openrouter-team" })],
+    }),
+  );
+
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "Preferences" });
+  fireEvent.change(screen.getByLabelText("Label"), {
+    target: { value: "OpenRouter Team" },
+  });
+  fireEvent.change(screen.getByLabelText("API Key"), {
+    target: { value: "sk-openrouter" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+  expect(
+    await screen.findByText("Burnrate: all quotas healthy"),
+  ).toBeInTheDocument();
+  expect(api.saveAccount).toHaveBeenCalledWith(
+    expect.objectContaining({
+      endpointOverride: null,
+      label: "OpenRouter Team",
+      provider: "openrouter",
+      secret: "sk-openrouter",
+    }),
+  );
+  expect(api.refreshDashboard).toHaveBeenCalledOnce();
 });
 
 test("falls back to frontend warning and stale summaries", async () => {

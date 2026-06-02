@@ -14,7 +14,7 @@ It is built with Tauri 2, Rust, React, and TypeScript. The primary distribution 
 - Codex account detection from `CODEX_HOME` or `~/.codex`, including Pro/Max plan, 5-hour/weekly rate-limit buckets, and additional model-family buckets such as Spark when exposed by the Codex app server.
 - OpenRouter API key accounts using the `/api/v1/credits` endpoint.
 - OS keyring storage for secrets by default, with an explicit plaintext fallback mode.
-- macOS Hide Dock setting for menu-bar style use. New installs hide the Dock icon by default.
+- macOS menu-bar style behavior: Burnrate hides from the Dock by default, shows in the Dock while Preferences is open, then returns to tray-only when Preferences closes.
 
 ## Install
 

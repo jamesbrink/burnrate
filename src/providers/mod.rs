@@ -76,6 +76,8 @@ impl ProviderClient {
 
     fn remember_success(&self, account: &AccountConfig, snapshot: UsageSnapshot, now: u64) {
         let mut cache = self.cache.lock().expect("provider cache lock");
+        let prefix = cache_key_prefix(account);
+        cache.retain(|key, _| !key.starts_with(&prefix));
         cache.insert(
             cache_key(account),
             ProviderCacheEntry {
@@ -88,12 +90,15 @@ impl ProviderClient {
 
 fn cache_key(account: &AccountConfig) -> String {
     format!(
-        "{:?}:{}:{}:{}",
-        account.provider,
-        account.id,
+        "{}{}:{}",
+        cache_key_prefix(account),
         account.endpoint_override.as_deref().unwrap_or_default(),
         account.updated_at.timestamp_millis()
     )
+}
+
+fn cache_key_prefix(account: &AccountConfig) -> String {
+    format!("{}:{}:", account.provider.as_str(), account.id)
 }
 
 fn now_millis() -> u64 {
@@ -770,6 +775,35 @@ mod tests {
         let error = require_token(&account()).unwrap_err();
 
         assert!(error.to_string().contains("no credential found"));
+    }
+
+    #[test]
+    fn cache_key_uses_stable_provider_name_and_edit_timestamp() {
+        let mut account = account();
+        account.id = "openrouter-main".to_string();
+        account.endpoint_override = Some("https://example.test".to_string());
+
+        let key = cache_key(&account);
+
+        assert!(key.starts_with("openrouter:openrouter-main:"));
+        assert!(key.contains("https://example.test"));
+        assert!(!key.contains("OpenRouter"));
+    }
+
+    #[test]
+    fn remember_success_prunes_stale_cache_entries_for_account() {
+        let provider = ProviderClient::new();
+        let mut account = account();
+        let first = error_snapshot(&account, anyhow!("old snapshot"));
+        provider.remember_success(&account, first, 0);
+
+        account.updated_at += chrono::Duration::seconds(1);
+        let second = error_snapshot(&account, anyhow!("new snapshot"));
+        provider.remember_success(&account, second, 1);
+
+        let cache = provider.cache.lock().expect("provider cache lock");
+        assert_eq!(cache.len(), 1);
+        assert!(cache.keys().all(|key| key.starts_with("openrouter:")));
     }
 
     #[tokio::test]

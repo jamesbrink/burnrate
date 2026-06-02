@@ -437,7 +437,7 @@ fn compact_limit_name(value: &str) -> Option<String> {
     if trimmed.is_empty() {
         None
     } else {
-        Some(trimmed.to_string())
+        Some(normalized.trim().to_string())
     }
 }
 
@@ -727,6 +727,19 @@ mod tests {
             snapshot.usage_buckets[0].reset_at.unwrap().timestamp(),
             1_780_416_091
         );
+    }
+
+    #[test]
+    fn compact_limit_name_normalizes_non_spark_names() {
+        assert_eq!(
+            compact_limit_name("codex_bengalfox"),
+            Some("codex bengalfox".to_string())
+        );
+        assert_eq!(
+            compact_limit_name("codex-team-alpha"),
+            Some("codex team alpha".to_string())
+        );
+        assert_eq!(compact_limit_name("  "), None);
     }
 
     #[test]

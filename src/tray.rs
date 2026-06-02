@@ -2,14 +2,11 @@ use chrono::Utc;
 use tauri::{
     App, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Wry,
     image::Image,
-    menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem},
+    menu::{IsMenuItem, Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
-use crate::{
-    app_state::AppState,
-    models::{AppSettings, SnapshotStatus, TraySummary, UsageSnapshot},
-};
+use crate::models::{SnapshotStatus, TraySummary, UsageSnapshot};
 
 const TRAY_ID: &str = "main";
 pub(crate) const MAIN_WINDOW: &str = "main";
@@ -65,23 +62,15 @@ pub(crate) fn summarize(snapshots: &[UsageSnapshot]) -> TraySummary {
 }
 
 pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
-    rebuild(app.handle(), app.state::<AppState>().settings())
+    rebuild(app.handle())
 }
 
-pub(crate) fn rebuild(app: &AppHandle<Wry>, settings: AppSettings) -> tauri::Result<()> {
+pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let preferences =
         MenuItem::with_id(app, "preferences", "Open Preferences", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
-    let hide_dock = CheckMenuItem::with_id(
-        app,
-        "hide-dock",
-        "Hide Dock Icon",
-        true,
-        settings.hide_from_dock,
-        None::<&str>,
-    )?;
     let quit = MenuItem::with_id(app, "quit", "Quit Burnrate", true, None::<&str>)?;
-    let items: [&dyn IsMenuItem<Wry>; 4] = [&preferences, &refresh, &hide_dock, &quit];
+    let items: [&dyn IsMenuItem<Wry>; 3] = [&preferences, &refresh, &quit];
     let menu = Menu::with_items(app, &items)?;
 
     let _ = app.remove_tray_by_id(TRAY_ID);
@@ -97,7 +86,6 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>, settings: AppSettings) -> tauri::Res
             "refresh" => {
                 let _ = app.emit("burnrate-refresh-requested", ());
             }
-            "hide-dock" => toggle_hide_dock(app),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -136,25 +124,28 @@ pub(crate) fn update_summary(app: &AppHandle<Wry>, summary: &TraySummary) {
     }
 }
 
-fn show_main_window(app: &AppHandle<Wry>) {
-    #[cfg(target_os = "macos")]
-    let _ = app.show();
+pub(crate) fn show_main_window(app: &AppHandle<Wry>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        if let Ok(icon) = app_icon() {
+            let _ = window.set_icon(icon);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            apply_activation_policy(app, false);
+            let _ = app.show();
+        }
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
 }
 
-fn toggle_hide_dock(app: &AppHandle<Wry>) {
-    let state = app.state::<AppState>();
-    let mut settings = state.settings();
-    settings.hide_from_dock = !settings.hide_from_dock;
-    if let Ok(settings) = state.save_settings(settings) {
-        apply_activation_policy(app, settings.hide_from_dock);
-        let _ = app.emit("burnrate-settings-updated", &settings);
-        let _ = rebuild(app, settings);
+pub(crate) fn close_main_window(app: &AppHandle<Wry>) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.hide();
     }
+    #[cfg(target_os = "macos")]
+    apply_activation_policy(app, true);
 }
 
 fn show_tray_window(app: &AppHandle<Wry>, position: tauri::PhysicalPosition<f64>) {
@@ -214,6 +205,10 @@ fn tray_icon() -> tauri::Result<Image<'static>> {
     Image::from_bytes(include_bytes!("../icons/tray.png"))
 }
 
+fn app_icon() -> tauri::Result<Image<'static>> {
+    Image::from_bytes(include_bytes!("../icons/icon.png"))
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
@@ -267,6 +262,14 @@ mod tests {
 
         assert_eq!(icon.width(), 32);
         assert_eq!(icon.height(), 32);
+    }
+
+    #[test]
+    fn app_icon_loads_packaged_asset() {
+        let icon = app_icon().expect("app icon should decode");
+
+        assert!(icon.width() >= 128);
+        assert!(icon.height() >= 128);
     }
 
     #[test]

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) enum ProviderKind {
     ClaudeCode,
     Codex,
+    #[serde(rename = "openrouter", alias = "open-router")]
     OpenRouter,
 }
 
@@ -185,6 +186,14 @@ mod tests {
         assert_eq!(ProviderKind::ClaudeCode.as_str(), "claude-code");
         assert_eq!(ProviderKind::Codex.as_str(), "codex");
         assert_eq!(ProviderKind::OpenRouter.as_str(), "openrouter");
+        assert_eq!(
+            serde_json::to_string(&ProviderKind::OpenRouter).unwrap(),
+            "\"openrouter\""
+        );
+        assert_eq!(
+            serde_json::from_str::<ProviderKind>("\"open-router\"").unwrap(),
+            ProviderKind::OpenRouter
+        );
     }
 
     #[test]

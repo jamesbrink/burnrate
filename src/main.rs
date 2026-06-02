@@ -11,7 +11,10 @@ use app_state::AppState;
 use models::{AccountInput, AccountView, AppSettings, DashboardState};
 use std::time::Duration;
 
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, Size, State};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, Size, State, Wry,
+    menu::{IsMenuItem, Menu, PredefinedMenuItem, Submenu},
+};
 
 const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const PREFERENCES_MIN_WIDTH: f64 = 360.0;
@@ -46,8 +49,7 @@ fn save_settings(
     let settings = state
         .save_settings(settings)
         .map_err(|error| error.to_string())?;
-    tray::apply_activation_policy(&app, settings.hide_from_dock);
-    tray::rebuild(&app, settings.clone()).map_err(|error| error.to_string())?;
+    let _ = app.emit("burnrate-settings-updated", &settings);
     Ok(settings)
 }
 
@@ -116,6 +118,11 @@ fn resize_preferences_to_content(app: AppHandle, width: f64, height: f64) -> Res
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn close_preferences(app: AppHandle) {
+    tray::close_main_window(&app);
+}
+
 fn spawn_background_refresh(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -138,15 +145,55 @@ async fn refresh_dashboard_for_app(app: &AppHandle) {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn build_app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
+    let undo = PredefinedMenuItem::undo(app, None)?;
+    let redo = PredefinedMenuItem::redo(app, None)?;
+    let separator_one = PredefinedMenuItem::separator(app)?;
+    let cut = PredefinedMenuItem::cut(app, None)?;
+    let copy = PredefinedMenuItem::copy(app, None)?;
+    let paste = PredefinedMenuItem::paste(app, None)?;
+    let select_all = PredefinedMenuItem::select_all(app, None)?;
+    let separator_two = PredefinedMenuItem::separator(app)?;
+    let edit_items: [&dyn IsMenuItem<Wry>; 8] = [
+        &undo,
+        &redo,
+        &separator_one,
+        &cut,
+        &copy,
+        &paste,
+        &select_all,
+        &separator_two,
+    ];
+    let edit = Submenu::with_items(app, "Edit", true, &edit_items)?;
+    let close = PredefinedMenuItem::close_window(app, None)?;
+    let window = Submenu::with_items(app, "Window", true, &[&close])?;
+
+    Menu::with_items(app, &[&edit, &window])
+}
+
+#[cfg(not(target_os = "macos"))]
+fn build_app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
+    Menu::new(app)
+}
+
 fn main() {
     let state = AppState::load().expect("failed to initialize Burnrate state");
-    let hide_from_dock = state.settings().hide_from_dock;
 
     tauri::Builder::default()
+        .menu(build_app_menu)
         .manage(state)
         .setup(move |app| {
-            tray::apply_activation_policy(app.handle(), hide_from_dock);
-            let _ = app.handle().remove_menu();
+            tray::apply_activation_policy(app.handle(), true);
+            if let Some(window) = app.get_webview_window(tray::MAIN_WINDOW) {
+                let app_handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        tray::close_main_window(&app_handle);
+                    }
+                });
+            }
             tray::install(app)?;
             spawn_background_refresh(app.handle().clone());
             Ok(())
@@ -159,7 +206,8 @@ fn main() {
             remove_account,
             detect_accounts,
             refresh_snapshots,
-            resize_preferences_to_content
+            resize_preferences_to_content,
+            close_preferences
         ])
         .run(tauri::generate_context!())
         .expect("error while running Burnrate");

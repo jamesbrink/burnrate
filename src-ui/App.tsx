@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import {
+  closePreferences,
   detectAccounts,
   loadDashboard,
   onDashboardUpdated,
@@ -16,9 +17,12 @@ import {
   removeAccount,
   resizePreferencesToContent,
   saveAccount,
-  saveSettings,
 } from "./api";
-import { emptyForm, Preferences } from "./Preferences";
+import {
+  OPENROUTER_DEFAULT_ENDPOINT,
+  emptyForm,
+  Preferences,
+} from "./Preferences";
 import { TrayPanel } from "./TrayPanel";
 import type {
   AccountInput,
@@ -72,11 +76,40 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (isTrayView) {
+      return;
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key !== "w" && key !== "q") {
+        return;
+      }
+      event.preventDefault();
+      void closePreferences();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isTrayView]);
+
+  useEffect(() => {
     let cleanup: (() => void) | undefined;
+    let disposed = false;
     void onRefreshRequested(refreshOnly).then((unlisten) => {
-      cleanup = unlisten;
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanup = unlisten;
+      }
     });
-    return () => cleanup?.();
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, []);
 
   const accounts = state?.accounts ?? [];
@@ -89,26 +122,41 @@ export function App() {
   useEffect(() => {
     let cleanupDashboard: (() => void) | undefined;
     let cleanupSettings: (() => void) | undefined;
+    let disposed = false;
     void onDashboardUpdated((dashboard) => {
       setState(dashboard);
       setSnapshots(dashboard.snapshots);
     }).then((unlisten) => {
-      cleanupDashboard = unlisten;
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanupDashboard = unlisten;
+      }
     });
     void onSettingsUpdated((settings) => {
       setState((previous) =>
         previous
           ? { ...previous, settings }
-          : { accounts: [], snapshots, traySummary: summary, settings },
+          : {
+              accounts: [],
+              snapshots: [],
+              traySummary: summaryFromBackend(undefined, []),
+              settings,
+            },
       );
     }).then((unlisten) => {
-      cleanupSettings = unlisten;
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanupSettings = unlisten;
+      }
     });
     return () => {
+      disposed = true;
       cleanupDashboard?.();
       cleanupSettings?.();
     };
-  }, [snapshots, summary]);
+  }, []);
 
   useLayoutEffect(() => {
     if (isTrayView) {
@@ -156,7 +204,6 @@ export function App() {
     isTrayView,
     accounts.length,
     snapshots,
-    settings.hideFromDock,
     summary.label,
     busy,
     error,
@@ -167,17 +214,25 @@ export function App() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    const endpoint = form.endpointOverride?.trim() || null;
+    const endpointOverride =
+      form.provider === "openrouter" && endpoint === OPENROUTER_DEFAULT_ENDPOINT
+        ? null
+        : endpoint;
     setBusy(true);
     setError(null);
     try {
       const accounts = await saveAccount({
         ...form,
-        endpointOverride: form.endpointOverride?.trim() || null,
+        endpointOverride,
         secret: form.secret?.trim() || null,
       });
       updateAccounts(accounts, settings, summary);
       setForm(emptyForm);
       setActiveId(null);
+      const dashboard = await refreshDashboard();
+      setState(dashboard);
+      setSnapshots(dashboard.snapshots);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -192,7 +247,9 @@ export function App() {
       provider: account.provider,
       label: account.label,
       enabled: account.enabled,
-      endpointOverride: account.endpointOverride ?? "",
+      endpointOverride:
+        account.endpointOverride ??
+        (account.provider === "openrouter" ? OPENROUTER_DEFAULT_ENDPOINT : ""),
       secretStorage: account.secretStorage,
       secret: "",
     });
@@ -215,28 +272,6 @@ export function App() {
     setError(null);
     try {
       updateAccounts(await detectAccounts(), settings, summary);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onSettingsChange(settings: AppSettings) {
-    setBusy(true);
-    setError(null);
-    try {
-      const nextSettings = await saveSettings(settings);
-      setState((previous) =>
-        previous
-          ? { ...previous, settings: nextSettings }
-          : {
-              accounts: [],
-              snapshots,
-              traySummary: summary,
-              settings: nextSettings,
-            },
-      );
     } catch (err) {
       setError(String(err));
     } finally {
@@ -272,7 +307,6 @@ export function App() {
     <Preferences
       accounts={accounts}
       snapshots={snapshots}
-      settings={settings}
       summary={summary}
       busy={busy}
       error={error}
@@ -283,7 +317,6 @@ export function App() {
       onSubmit={(event) => void onSubmit(event)}
       onDetect={() => void onDetect()}
       onRefresh={() => void refreshOnly()}
-      onSettingsChange={(settings) => void onSettingsChange(settings)}
       onEditAccount={editAccount}
       onRemoveAccount={(id) => void onRemove(id)}
     />

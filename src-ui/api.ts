@@ -163,7 +163,7 @@ const mockSnapshots: UsageSnapshot[] = [
         used: 7.25,
         limit: 25,
         remaining: 17.75,
-        unit: "credits",
+        unit: "USD",
         resetAt: null,
         status: "healthy",
       },
@@ -172,7 +172,7 @@ const mockSnapshots: UsageSnapshot[] = [
       used: 7.25,
       limit: 25,
       remaining: 17.75,
-      unit: "credits",
+      unit: "USD",
       resetAt: null,
     },
     message: null,
@@ -281,6 +281,13 @@ export async function resizePreferencesToContent(
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
     await invoke("resize_preferences_to_content", { width, height });
+  }
+}
+
+export async function closePreferences(): Promise<void> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    await invoke("close_preferences");
   }
 }
 

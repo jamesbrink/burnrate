@@ -88,19 +88,6 @@ p {
   gap: 8px;
 }
 
-.dock-toggle {
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #43505c;
-  white-space: nowrap;
-}
-
-.dock-toggle input {
-  margin: 0;
-}
-
 .icon-button {
   width: 34px;
   height: 34px;

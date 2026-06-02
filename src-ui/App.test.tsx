@@ -21,23 +21,15 @@ test("adds a manual account in browser fallback mode", async () => {
   render(<App />);
 
   await screen.findByRole("heading", { name: "Accounts" });
+  expect(screen.getByLabelText("Endpoint")).toHaveValue(
+    "https://openrouter.ai/api/v1/credits",
+  );
   await user.clear(screen.getByLabelText("Label"));
   await user.type(screen.getByLabelText("Label"), "OpenRouter Team");
   await user.type(screen.getByLabelText("API Key"), "sk-test");
   await user.click(screen.getByRole("button", { name: "Add" }));
 
   expect(await screen.findByText("OpenRouter Team")).toBeInTheDocument();
-});
-
-test("saves the hide dock setting in browser fallback mode", async () => {
-  const user = userEvent.setup();
-  render(<App />);
-
-  const toggle = await screen.findByLabelText("Hide Dock Icon");
-  expect(toggle).toBeChecked();
-  await user.click(toggle);
-
-  expect(toggle).not.toBeChecked();
 });
 
 test("edits and resets an existing account", async () => {

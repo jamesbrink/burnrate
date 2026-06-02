@@ -62,7 +62,7 @@ pub(crate) fn parse_openrouter(
             used,
             limit: total,
             remaining,
-            unit: "credits".to_string(),
+            unit: "USD".to_string(),
             reset_at: None,
         },
     );
@@ -123,7 +123,9 @@ mod tests {
         );
 
         assert_eq!(snapshot.status, SnapshotStatus::Warning);
-        assert_eq!(snapshot.quota.unwrap().remaining, Some(15.0));
+        let quota = snapshot.quota.unwrap();
+        assert_eq!(quota.remaining, Some(15.0));
+        assert_eq!(quota.unit, "USD");
     }
 
     #[tokio::test]
@@ -146,6 +148,8 @@ mod tests {
         let snapshot = fetch(&Client::new(), &account).await.unwrap();
 
         assert_eq!(snapshot.status, SnapshotStatus::Healthy);
-        assert_eq!(snapshot.quota.unwrap().remaining, Some(21.0));
+        let quota = snapshot.quota.unwrap();
+        assert_eq!(quota.remaining, Some(21.0));
+        assert_eq!(quota.unit, "USD");
     }
 }
