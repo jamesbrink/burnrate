@@ -78,6 +78,12 @@ burnrate`).
   `ci.yml` and
   `release-plz.yml` enforce `git diff --exit-code -- dist`. After any frontend
   change: `npm run build` and commit the updated `dist/`.
+- **`custom-protocol` is a default Cargo feature.** Tauri only embeds `dist/`
+  (instead of loading the `devUrl` dev server) when `custom-protocol` is on. The
+  `tauri` CLI enables it for `tauri build`, but plain `cargo build --release` and
+  `cargo install burnrate` cannot — so it is on by default, and `tauri dev`
+  (`npm run dev`) opts out via `--no-default-features` to keep live reload.
+  Removing the default would make every non-`tauri build` binary open blank.
 - **CSP allowlist.** `tauri.conf.json` restricts `connect-src` to the Anthropic,
   ChatGPT, OpenRouter, and localhost hosts — adding a provider endpoint requires
   editing that CSP.
@@ -89,7 +95,7 @@ burnrate`).
 
 Run inside `nix develop` (or `direnv` auto-activates it); the devshell exposes
 short aliases (`dev`, `check`, `test`, `fmt`, `build-app`, `build-pure`,
-`package-crate`, `clean`).
+`package-dmg`, `package-crate`, `clean`).
 
 ```sh
 npm install            # one-time: install JS deps
@@ -108,7 +114,8 @@ npx vitest run -t "summary promotes"     # single UI test by name
 npm run coverage       # UI + Rust coverage; both gated at 80%
                        # (Rust gate ignores main.rs/app_state.rs/tray.rs — Tauri glue)
 
-./scripts/build-app    # npm run build + cargo build --release
+./scripts/build-app    # npm run build + cargo build --release (embeds dist/ via default custom-protocol)
+./scripts/package-dmg  # macOS .dmg + .app bundle via `tauri build` (real Dock icon; macOS only)
 nix build .#burnrate   # pure Nix package build
 cargo package --allow-dirty   # verify the crates.io archive (incl. bundled dist/)
 nix flake check        # when Nix/devshell wiring changes

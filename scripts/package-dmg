@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+set -eu
+
+# Package Burnrate as a macOS .dmg (and the bundled .app it wraps).
+#
+# `cargo tauri build` enables the custom-protocol feature, embeds the built
+# dist/ assets, and stamps the app with icons/icon.icns + an Info.plist, so the
+# packaged app shows the real Burnrate icon in the Dock -- unlike the bare
+# `cargo build --release` binary, which macOS draws with a generic icon when
+# Preferences makes it Dock-visible.
+#
+# DMG bundling only runs on macOS. Extra args are forwarded to `cargo tauri
+# build` (e.g. `package-dmg --target universal-apple-darwin`). Signing is
+# skipped for local builds; distribution artifacts are signed in CI.
+
+os="$(uname -s)"
+if [ "$os" != "Darwin" ]; then
+  echo "package-dmg: .dmg bundles are only produced on macOS (got $os)" >&2
+  exit 1
+fi
+
+cargo tauri build --no-sign --bundles dmg "$@"
+
+dmg="$(find target -path '*/bundle/dmg/*.dmg' -type f 2>/dev/null | sort | tail -1)"
+if [ -n "$dmg" ]; then
+  echo "package-dmg: built $dmg"
+else
+  echo "package-dmg: build finished but no .dmg was found under target/**/bundle/dmg" >&2
+  exit 1
+fi

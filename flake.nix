@@ -188,6 +188,7 @@
             test = mkScriptApp "test" "test" "Run Rust and frontend tests";
             fmt = mkScriptApp "fmt" "fmt" "Format Rust and frontend files";
             clean = mkScriptApp "clean" "clean" "Remove build artifacts";
+            package-dmg = mkScriptApp "package-dmg" "package-dmg" "Package the macOS .dmg bundle";
             package-crate =
               mkCommandApp "package-crate" "exec cargo package \"$@\""
                 "Verify the crates.io package archive";
@@ -285,6 +286,12 @@
                 name = "clean";
                 help = "Remove Rust build artifacts and built frontend assets";
                 command = "exec ./scripts/clean \"$@\"";
+              }
+              {
+                category = "release";
+                name = "package-dmg";
+                help = "Package the macOS .dmg bundle (and the .app it wraps)";
+                command = "exec ./scripts/package-dmg \"$@\"";
               }
               {
                 category = "release";

@@ -30,7 +30,7 @@ npm install
 npm run dev      # tauri dev — launches the desktop app + tray
 ```
 
-A Nix devshell exposes the full workflow (`nix develop`, then `dev`, `check`, `test`, `fmt`, `build-app`, `build-pure`). See [AGENTS.md](AGENTS.md) for the architecture map and complete command reference.
+A Nix devshell exposes the full workflow (`nix develop`, then `dev`, `check`, `test`, `fmt`, `build-app`, `build-pure`, `package-dmg`). See [AGENTS.md](AGENTS.md) for the architecture map and complete command reference.
 
 ## Providers & configuration
 
