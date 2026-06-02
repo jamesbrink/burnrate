@@ -10,6 +10,15 @@ import type {
 
 const isTauri = "__TAURI_INTERNALS__" in window;
 
+// Per-window dashboard cache + fetch guard. During `tauri dev`, HMR reloads
+// remount the app and would otherwise re-fetch on every save, and opening the
+// tray popover emits a refresh — bursts that hammer the rate-limited provider
+// APIs (429s). We hydrate instantly from sessionStorage and collapse bursts:
+// in-flight de-dupe + a min-interval throttle for non-forced fetches.
+const DASHBOARD_CACHE_KEY = "burnrate.dashboard.v1";
+const STALE_THRESHOLD_MS = 60_000;
+const MIN_FETCH_INTERVAL_MS = 10_000;
+
 let mockAccounts: AccountView[] = [
   {
     id: "claude-code-local",
@@ -274,6 +283,97 @@ export async function refreshDashboard(): Promise<DashboardState> {
   };
 }
 
+export interface CachedDashboard {
+  dashboard: DashboardState;
+  fetchedAt: number;
+}
+
+export function readCachedDashboard(): CachedDashboard | null {
+  try {
+    const raw = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as CachedDashboard;
+    if (
+      !parsed ||
+      typeof parsed.fetchedAt !== "number" ||
+      typeof parsed.dashboard !== "object" ||
+      parsed.dashboard === null
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedDashboard(
+  dashboard: DashboardState,
+  now: number = Date.now(),
+): void {
+  try {
+    const entry: CachedDashboard = { dashboard, fetchedAt: now };
+    sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(entry));
+  } catch {
+    // sessionStorage may be unavailable (privacy mode) or full — caching is
+    // best-effort, so a failure here is non-fatal.
+  }
+}
+
+export function isStale(fetchedAt: number, now: number = Date.now()): boolean {
+  return now - fetchedAt > STALE_THRESHOLD_MS;
+}
+
+let inFlightFetch: Promise<DashboardState> | null = null;
+let lastFetchAt = 0;
+
+/** Record a fetched dashboard in the cache and reset the throttle window. */
+export function markFetched(
+  dashboard: DashboardState,
+  now: number = Date.now(),
+): void {
+  lastFetchAt = now;
+  writeCachedDashboard(dashboard, now);
+}
+
+/**
+ * Fetch the dashboard with burst protection. Concurrent calls share one
+ * in-flight request; non-forced calls within `MIN_FETCH_INTERVAL_MS` of the
+ * last fetch return cached data instead of hitting the backend. `force: true`
+ * (manual refresh / post-save) bypasses the interval but still de-dupes against
+ * an in-flight request.
+ */
+export async function guardedFetch(
+  options: { force?: boolean } = {},
+): Promise<DashboardState> {
+  if (inFlightFetch) {
+    return inFlightFetch;
+  }
+  if (!options.force) {
+    const cached = readCachedDashboard();
+    if (cached && Date.now() - lastFetchAt < MIN_FETCH_INTERVAL_MS) {
+      return cached.dashboard;
+    }
+  }
+  inFlightFetch = refreshDashboard()
+    .then((dashboard) => {
+      markFetched(dashboard);
+      return dashboard;
+    })
+    .finally(() => {
+      inFlightFetch = null;
+    });
+  return inFlightFetch;
+}
+
+/** Reset the module-scoped fetch guard. Exposed for deterministic tests. */
+export function __resetFetchGuard(): void {
+  inFlightFetch = null;
+  lastFetchAt = 0;
+}
+
 export async function resizePreferencesToContent(
   width: number,
   height: number,
@@ -281,6 +381,16 @@ export async function resizePreferencesToContent(
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
     await invoke("resize_preferences_to_content", { width, height });
+  }
+}
+
+export async function resizeTrayToContent(
+  width: number,
+  height: number,
+): Promise<void> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    await invoke("resize_tray_to_content", { width, height });
   }
 }
 

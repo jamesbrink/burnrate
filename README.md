@@ -8,6 +8,7 @@ Desktop usage monitor for Claude Code, Codex, and OpenRouter quotas, credits, an
 ## Features
 
 - Menu-bar tray summary with a left-click usage popover and right-click actions (Preferences, Refresh, Quit).
+- Native translucent (vibrancy) popover on macOS that follows the system light/dark appearance, sizes itself to its content, and dismisses when it loses focus.
 - Native Preferences window for account management and manual OpenRouter setup.
 - Auto-detects Claude Code and Codex accounts from local config; OpenRouter is added via API key.
 - Claude Code subscription buckets (5-hour, weekly, model-specific) with stale-auth checks via `claude auth status`.

@@ -513,83 +513,9 @@ p {
   }
 }
 
-.tray-panel {
-  min-height: 100vh;
-  padding: 12px;
-  background: #f2f3f4;
-  display: grid;
-  align-content: start;
-  gap: 10px;
-}
-
-.tray-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.tray-header h1 {
-  font-size: 17px;
-  font-weight: 760;
-}
-
-.tray-header p {
-  color: #68727d;
-  font-size: 12px;
-  margin-top: 1px;
-}
-
-.tray-refresh {
-  width: 31px;
-  height: 31px;
-}
-
-.tray-notice {
-  padding: 8px 9px;
-  font-size: 12px;
-}
-
-.tray-section {
-  display: grid;
-  gap: 8px;
-}
-
-.tray-card,
-.tray-account,
-.tray-empty {
-  border: 1px solid #d8dee4;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.tray-card {
-  padding: 10px;
-  display: grid;
-  gap: 9px;
-}
-
-.tray-card.warning {
-  border-color: #d3ad61;
-}
-
-.tray-card.exhausted,
-.tray-card.error {
-  border-color: #cf817b;
-}
-
-.tray-card-head {
-  justify-content: space-between;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.tray-provider {
-  gap: 8px;
-  min-width: 0;
-  align-items: flex-start;
-}
-
+/* Provider logo badge — shared by the tray and the Preferences usage list.
+   Base structure/tints stay unscoped; the tray block below re-tints them to sit
+   on the translucent material. */
 .provider-logo {
   width: 26px;
   height: 26px;
@@ -634,81 +560,342 @@ p {
   border-color: #d5ddfb;
 }
 
-.tray-provider strong,
-.tray-provider > div > span {
+/* ─── Tray popover: native macOS menu-bar look ──────────────────────────────
+   Scoped to the tray window (html[data-view="tray"], set in main.tsx) so none
+   of this touches the Preferences window, which shares this stylesheet. Colors
+   use the system semantic keywords + light-dark() so the popover reads correctly
+   on the translucent vibrancy material in both light and dark appearance. */
+html[data-view="tray"] {
+  color-scheme: light dark;
+
+  /* Opaque fallback for the browser mock (dev:web has no native material);
+     the real Tauri window overrides these to transparent below. */
+  --tray-fallback: light-dark(#f3f4f6, #1f2022);
+
+  --tray-fg: CanvasText;
+  --tray-fg-soft: color-mix(in srgb, CanvasText 58%, transparent);
+  --tray-fg-faint: color-mix(in srgb, CanvasText 42%, transparent);
+  --tray-hairline: color-mix(in srgb, CanvasText 13%, transparent);
+  --tray-surface: color-mix(in srgb, Canvas 48%, transparent);
+  --tray-surface-hover: color-mix(in srgb, CanvasText 9%, transparent);
+  --tray-track: color-mix(in srgb, CanvasText 15%, transparent);
+
+  --tray-ok: light-dark(#1c8a51, #41d196);
+  --tray-warn: light-dark(#9a6400, #f5b53d);
+  --tray-crit: light-dark(#c4362f, #ff6b66);
+  --tray-ok-bg: color-mix(in srgb, var(--tray-ok) 16%, transparent);
+  --tray-warn-bg: color-mix(in srgb, var(--tray-warn) 18%, transparent);
+  --tray-crit-bg: color-mix(in srgb, var(--tray-crit) 15%, transparent);
+
+  background: var(--tray-fallback);
+  overscroll-behavior: none;
+}
+
+html[data-view="tray"] body,
+html[data-view="tray"] #root {
+  background: var(--tray-fallback);
+  overscroll-behavior: none;
+}
+
+/* macOS app: drop the fallback so the vibrancy material shows through. */
+html[data-view="tray"][data-vibrancy="1"],
+html[data-view="tray"][data-vibrancy="1"] body,
+html[data-view="tray"][data-vibrancy="1"] #root {
+  background: transparent;
+}
+
+html[data-view="tray"] .tray-panel {
+  min-height: 100vh;
+  padding: 11px 12px 12px;
+  background: transparent;
+  color: var(--tray-fg);
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  -webkit-font-smoothing: antialiased;
+}
+
+html[data-view="tray"] .tray-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--tray-hairline);
+}
+
+html[data-view="tray"] .tray-header h1 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+html[data-view="tray"] .tray-header p {
+  color: var(--tray-fg-soft);
+  font-size: 12px;
+  margin-top: 1px;
+}
+
+html[data-view="tray"] .icon-button.tray-refresh {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tray-fg-soft);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+html[data-view="tray"] .icon-button.tray-refresh:hover {
+  background: var(--tray-surface-hover);
+  color: var(--tray-fg);
+}
+
+html[data-view="tray"] .tray-section {
+  display: grid;
+  gap: 7px;
+}
+
+html[data-view="tray"] .tray-card {
+  padding: 9px 10px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--tray-hairline);
+  border-radius: 10px;
+  background: var(--tray-surface);
+}
+
+html[data-view="tray"] .tray-card.warning {
+  border-color: color-mix(in srgb, var(--tray-warn) 45%, var(--tray-hairline));
+}
+
+html[data-view="tray"] .tray-card.exhausted,
+html[data-view="tray"] .tray-card.error {
+  border-color: color-mix(in srgb, var(--tray-crit) 48%, var(--tray-hairline));
+}
+
+html[data-view="tray"] .tray-card-head {
+  justify-content: space-between;
+  align-items: center;
+  gap: 9px;
+}
+
+html[data-view="tray"] .tray-provider {
+  gap: 8px;
+  min-width: 0;
+  align-items: center;
+}
+
+html[data-view="tray"] .tray-provider strong,
+html[data-view="tray"] .tray-provider > div > span {
   display: block;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.tray-status {
-  border-radius: 999px;
-  padding: 2px 7px;
+html[data-view="tray"] .tray-provider strong {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--tray-fg);
+  line-height: 1.25;
+}
+
+html[data-view="tray"] .tray-provider span {
+  color: var(--tray-fg-soft);
   font-size: 11px;
-  color: #2f5a47;
-  background: #e6f3ec;
-  margin-top: 2px;
 }
 
-.tray-status.warning {
-  color: #6f4a00;
-  background: #fff2d2;
+html[data-view="tray"] .provider-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
 }
 
-.tray-status.exhausted,
-.tray-status.error {
-  color: #842c2c;
-  background: #ffe5df;
+html[data-view="tray"] .provider-logo svg {
+  width: 15px;
+  height: 15px;
 }
 
-.tray-plan {
-  gap: 6px;
-  color: #40505b;
+html[data-view="tray"] .provider-logo-claude-code {
+  color: light-dark(#c15f3c, #f0a07c);
+  background: color-mix(in srgb, #d2724c 22%, transparent);
+  border-color: color-mix(in srgb, #d2724c 30%, transparent);
+}
+
+html[data-view="tray"] .provider-logo-codex {
+  color: var(--tray-fg);
+  background: color-mix(in srgb, CanvasText 10%, transparent);
+  border-color: var(--tray-hairline);
+}
+
+html[data-view="tray"] .provider-logo-openrouter {
+  color: light-dark(#3a5fd9, #8aa6ff);
+  background: color-mix(in srgb, #4b6fe0 20%, transparent);
+  border-color: color-mix(in srgb, #4b6fe0 30%, transparent);
+}
+
+html[data-view="tray"] .tray-status {
+  margin-top: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--tray-ok);
+  background: var(--tray-ok-bg);
+}
+
+html[data-view="tray"] .tray-status.warning {
+  color: var(--tray-warn);
+  background: var(--tray-warn-bg);
+}
+
+html[data-view="tray"] .tray-status.exhausted,
+html[data-view="tray"] .tray-status.error {
+  color: var(--tray-crit);
+  background: var(--tray-crit-bg);
+}
+
+html[data-view="tray"] .tray-status.stale {
+  color: var(--tray-fg-soft);
+  background: color-mix(in srgb, CanvasText 10%, transparent);
+}
+
+html[data-view="tray"] .tray-plan {
+  gap: 5px;
+  color: var(--tray-fg-soft);
   font-size: 12px;
 }
 
-.tray-plan small {
+html[data-view="tray"] .tray-plan svg {
+  color: var(--tray-fg-faint);
+}
+
+html[data-view="tray"] .tray-plan small {
   margin-left: auto;
-  color: #557b45;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--tray-ok);
+  background: var(--tray-ok-bg);
 }
 
-.bucket-list {
+html[data-view="tray"] .bucket-list {
   display: grid;
-  gap: 8px;
+  gap: 7px;
 }
 
-.bucket-row small {
+html[data-view="tray"] .bucket-row {
+  gap: 4px;
+}
+
+html[data-view="tray"] .bucket-meta {
+  gap: 10px;
+}
+
+html[data-view="tray"] .bucket-meta span {
+  font-size: 12px;
+  color: var(--tray-fg);
+}
+
+html[data-view="tray"] .bucket-meta strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tray-fg-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-view="tray"] .mini-meter {
+  height: 5px;
+  background: var(--tray-track);
+}
+
+html[data-view="tray"] .mini-meter span {
+  background: var(--tray-ok);
+}
+
+html[data-view="tray"] .bucket-row.warning .mini-meter span {
+  background: var(--tray-warn);
+}
+
+html[data-view="tray"] .bucket-row.exhausted .mini-meter span,
+html[data-view="tray"] .bucket-row.error .mini-meter span {
+  background: var(--tray-crit);
+}
+
+html[data-view="tray"] .bucket-row small {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 14px;
+  min-height: 13px;
+  font-size: 11px;
+  color: var(--tray-fg-faint);
+}
+
+html[data-view="tray"] .tray-message {
+  color: var(--tray-crit);
   font-size: 11px;
 }
 
-.tray-account {
-  min-height: 38px;
-  padding: 8px 9px;
+html[data-view="tray"] .tray-notice {
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--tray-crit) 35%, transparent);
+  background: var(--tray-crit-bg);
+  color: var(--tray-crit);
+}
+
+html[data-view="tray"] .tray-accounts {
+  gap: 4px;
+}
+
+html[data-view="tray"] .tray-account {
+  min-height: 34px;
+  padding: 6px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  border: 1px solid var(--tray-hairline);
+  border-radius: 9px;
+  background: var(--tray-surface);
 }
 
-.tray-account-provider {
+html[data-view="tray"] .tray-account-provider {
   min-width: 0;
   gap: 8px;
 }
 
-.tray-account-provider > span:last-child {
+html[data-view="tray"] .tray-account-provider > span:last-child {
   min-width: 0;
   overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--tray-fg);
 }
 
-.tray-empty {
-  min-height: 54px;
+html[data-view="tray"] .tray-account small {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--tray-fg-faint);
+}
+
+html[data-view="tray"] .tray-empty {
+  min-height: 48px;
   display: grid;
   place-items: center;
-  color: #68727d;
+  border: 1px dashed var(--tray-hairline);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--tray-fg-soft);
+  font-size: 12px;
 }
 
 @media (max-width: 760px) {

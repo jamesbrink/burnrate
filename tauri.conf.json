@@ -11,6 +11,7 @@
   },
   "app": {
     "withGlobalTauri": false,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -27,13 +28,14 @@
         "label": "tray",
         "title": "Burnrate",
         "url": "index.html?view=tray",
-        "width": 380,
-        "height": 520,
+        "width": 360,
+        "height": 440,
         "minWidth": 320,
-        "minHeight": 440,
+        "minHeight": 200,
         "visible": false,
         "resizable": false,
         "decorations": false,
+        "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true
       }

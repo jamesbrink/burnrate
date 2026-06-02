@@ -1,3 +1,6 @@
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
 use chrono::Utc;
 use tauri::{
     App, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Wry,
@@ -10,7 +13,79 @@ use crate::models::{SnapshotStatus, TraySummary, UsageSnapshot};
 
 const TRAY_ID: &str = "main";
 pub(crate) const MAIN_WINDOW: &str = "main";
-const TRAY_WINDOW: &str = "tray";
+pub(crate) const TRAY_WINDOW: &str = "tray";
+
+/// After the popover hides (toggle or blur), ignore a re-show for this long.
+/// Clicking the status item first blurs the popover (hiding it) and then fires
+/// a click event; without this guard the click would immediately reopen it.
+const TRAY_REOPEN_GUARD: Duration = Duration::from_millis(250);
+
+/// Runtime UI state for the tray popover window, managed by Tauri. Kept separate
+/// from `AppState` so window concerns don't leak into config/provider state.
+#[derive(Default)]
+pub(crate) struct TrayWindowState {
+    inner: Mutex<TrayWindowInner>,
+}
+
+#[derive(Default)]
+struct TrayWindowInner {
+    /// When the popover was last hidden (toggle or blur), to drive the reopen guard.
+    last_hidden_at: Option<Instant>,
+    /// Cursor anchor (logical desktop coords) recorded at show time, so a later
+    /// content resize can re-run `tray_popup_position` and stay anchored.
+    last_anchor: Option<LogicalPosition<f64>>,
+}
+
+impl TrayWindowState {
+    fn mark_hidden(&self) {
+        self.inner
+            .lock()
+            .expect("tray window state lock")
+            .last_hidden_at = Some(Instant::now());
+    }
+
+    fn set_anchor(&self, anchor: LogicalPosition<f64>) {
+        self.inner
+            .lock()
+            .expect("tray window state lock")
+            .last_anchor = Some(anchor);
+    }
+
+    pub(crate) fn anchor(&self) -> Option<LogicalPosition<f64>> {
+        self.inner
+            .lock()
+            .expect("tray window state lock")
+            .last_anchor
+    }
+
+    fn should_suppress_show(&self, now: Instant) -> bool {
+        self.inner
+            .lock()
+            .expect("tray window state lock")
+            .last_hidden_at
+            .is_some_and(|hidden| should_suppress_show(hidden, now, TRAY_REOPEN_GUARD))
+    }
+}
+
+/// Pure timing decision for the reopen guard (unit-tested).
+fn should_suppress_show(last_hidden_at: Instant, now: Instant, guard: Duration) -> bool {
+    now.duration_since(last_hidden_at) < guard
+}
+
+/// Pure height clamp for the tray content resize (unit-tested): fit `content +
+/// chrome` into `[min, work_height - 2*margin]`, never returning a height taller
+/// than the available work area even on a very small screen.
+pub(crate) fn clamp_tray_height(
+    content_height: f64,
+    chrome: f64,
+    work_height: f64,
+    margin: f64,
+    min: f64,
+) -> f64 {
+    let available = (work_height - 2.0 * margin).max(1.0);
+    let lower = min.min(available);
+    (content_height + chrome).ceil().clamp(lower, available)
+}
 
 pub(crate) fn summarize(snapshots: &[UsageSnapshot]) -> TraySummary {
     let critical_count = snapshots
@@ -194,43 +269,99 @@ pub(crate) fn close_main_window(app: &AppHandle<Wry>) {
 }
 
 fn show_tray_window(app: &AppHandle<Wry>, position: tauri::PhysicalPosition<f64>) {
-    if let Some(window) = app.get_webview_window(TRAY_WINDOW) {
-        if window.is_visible().unwrap_or(false) {
-            let _ = window.hide();
-            return;
-        }
+    let Some(window) = app.get_webview_window(TRAY_WINDOW) else {
+        return;
+    };
+    // Clicking the tray icon while open closes it.
+    if window.is_visible().unwrap_or(false) {
+        hide_tray_window(app);
+        return;
+    }
+    let tray_state = app.state::<TrayWindowState>();
+    // Beat the blur→click race: a status-item click first blurs (hides) the
+    // popover, then fires this event; suppress the immediate reopen.
+    if tray_state.should_suppress_show(Instant::now()) {
+        return;
+    }
 
-        let scale_factor = window.scale_factor().unwrap_or(1.0);
-        let position = position.to_logical::<f64>(scale_factor);
-        let window_size = window
-            .outer_size()
-            .map(|size| size.to_logical::<f64>(scale_factor))
-            .unwrap_or_else(|_| LogicalSize::new(380.0, 520.0));
-        let work_area = window
-            .current_monitor()
-            .ok()
-            .flatten()
-            .or_else(|| window.primary_monitor().ok().flatten())
-            .map(|monitor| {
-                let area = monitor.work_area();
-                (
-                    area.position.to_logical::<f64>(monitor.scale_factor()),
-                    area.size.to_logical::<f64>(monitor.scale_factor()),
-                )
-            })
-            .unwrap_or_else(|| {
-                (
-                    LogicalPosition::new(0.0, 0.0),
-                    LogicalSize::new(1920.0, 1080.0),
-                )
-            });
-        let _ = window.set_position(tray_popup_position(position, window_size, work_area));
-        let _ = window.show();
-        let _ = app.emit("burnrate-refresh-requested", ());
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let position = position.to_logical::<f64>(scale_factor);
+    let window_size = window
+        .outer_size()
+        .map(|size| size.to_logical::<f64>(scale_factor))
+        .unwrap_or_else(|_| LogicalSize::new(360.0, 440.0));
+    let work_area = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .map(|monitor| {
+            let area = monitor.work_area();
+            (
+                area.position.to_logical::<f64>(monitor.scale_factor()),
+                area.size.to_logical::<f64>(monitor.scale_factor()),
+            )
+        })
+        .unwrap_or_else(|| {
+            (
+                LogicalPosition::new(0.0, 0.0),
+                LogicalSize::new(1920.0, 1080.0),
+            )
+        });
+    tray_state.set_anchor(position);
+    // Position while still hidden so there's no visible jump, then reveal.
+    let _ = window.set_position(tray_popup_position(position, window_size, work_area));
+    let _ = window.show();
+    #[cfg(target_os = "macos")]
+    activate_app();
+    let _ = window.set_focus();
+    let _ = app.emit("burnrate-refresh-requested", ());
+}
+
+pub(crate) fn hide_tray_window(app: &AppHandle<Wry>) {
+    if let Some(window) = app.get_webview_window(TRAY_WINDOW) {
+        let _ = window.hide();
+    }
+    app.state::<TrayWindowState>().mark_hidden();
+}
+
+/// Bring the process to the foreground so the borderless popover can become the
+/// key window under Accessory activation policy (otherwise it never receives the
+/// blur that dismisses it).
+#[cfg(target_os = "macos")]
+fn activate_app() {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSApplication;
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    // `activateIgnoringOtherApps` is deprecated in favor of `NSApp.activate`, but
+    // it's the variant that reliably activates across the macOS versions we ship.
+    #[allow(deprecated)]
+    app.activateIgnoringOtherApps(true);
+}
+
+/// Give the tray popover the native macOS translucent material + rounded corners.
+#[cfg(target_os = "macos")]
+pub(crate) fn apply_tray_vibrancy(app: &AppHandle<Wry>) {
+    use window_vibrancy::{NSVisualEffectMaterial, NSVisualEffectState, apply_vibrancy};
+
+    if let Some(window) = app.get_webview_window(TRAY_WINDOW) {
+        let _ = apply_vibrancy(
+            &window,
+            NSVisualEffectMaterial::Popover,
+            Some(NSVisualEffectState::Active),
+            Some(12.0),
+        );
     }
 }
 
-fn tray_popup_position(
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn apply_tray_vibrancy(_app: &AppHandle<Wry>) {}
+
+pub(crate) fn tray_popup_position(
     position: LogicalPosition<f64>,
     window_size: LogicalSize<f64>,
     work_area: (LogicalPosition<f64>, LogicalSize<f64>),
@@ -358,5 +489,57 @@ mod tests {
             .expect("tray rebuild should build the tray by id");
 
         assert!(remove_pos < build_pos);
+    }
+
+    #[test]
+    fn suppresses_reopen_within_guard_window() {
+        let now = Instant::now();
+        let guard = Duration::from_millis(250);
+        // Hidden 50ms ago → within the guard → suppress the reopen.
+        assert!(should_suppress_show(
+            now - Duration::from_millis(50),
+            now,
+            guard
+        ));
+        // Hidden 300ms ago → guard elapsed → allow the show.
+        assert!(!should_suppress_show(
+            now - Duration::from_millis(300),
+            now,
+            guard
+        ));
+        // Exactly at the boundary → allowed (strict `<`).
+        assert!(!should_suppress_show(now - guard, now, guard));
+    }
+
+    #[test]
+    fn clamp_tray_height_fits_content_within_work_area() {
+        let margin = 8.0;
+        // Below the floor → clamped up to the minimum.
+        assert_eq!(clamp_tray_height(50.0, 0.0, 1000.0, margin, 200.0), 200.0);
+        // Normal content → ceil(content + chrome).
+        assert_eq!(clamp_tray_height(500.4, 2.0, 1000.0, margin, 200.0), 503.0);
+        // Taller than the work area → clamped down to the available height.
+        assert_eq!(
+            clamp_tray_height(5000.0, 0.0, 1000.0, margin, 200.0),
+            1000.0 - 2.0 * margin
+        );
+        // Tiny screen (available < min) → fit the screen, not the minimum.
+        assert_eq!(clamp_tray_height(500.0, 0.0, 10.0, margin, 200.0), 1.0);
+    }
+
+    #[test]
+    fn tray_popup_position_keeps_tall_window_on_screen() {
+        // A resized (taller) popover anchored near the bottom edge still clamps
+        // fully on-screen.
+        let size = LogicalSize::new(360.0, 700.0);
+        let work_area = (
+            LogicalPosition::new(0.0, 0.0),
+            LogicalSize::new(1024.0, 768.0),
+        );
+        let position = tray_popup_position(LogicalPosition::new(500.0, 760.0), size, work_area);
+
+        assert_eq!(position.y, 768.0 - 700.0 - 8.0);
+        assert!(position.y >= 8.0);
+        assert_eq!(position.x, 320.0);
     }
 }

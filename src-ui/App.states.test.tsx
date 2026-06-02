@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
 import {
@@ -14,13 +20,16 @@ import type { AccountView, DashboardState, UsageSnapshot } from "./types";
 const api = vi.hoisted(() => ({
   closePreferences: vi.fn(),
   detectAccounts: vi.fn(),
-  loadDashboard: vi.fn(),
+  guardedFetch: vi.fn(),
+  isStale: vi.fn(),
+  markFetched: vi.fn(),
   onDashboardUpdated: vi.fn(),
   onRefreshRequested: vi.fn(),
   onSettingsUpdated: vi.fn(),
-  refreshDashboard: vi.fn(),
+  readCachedDashboard: vi.fn(),
   removeAccount: vi.fn(),
   resizePreferencesToContent: vi.fn(),
+  resizeTrayToContent: vi.fn(),
   saveAccount: vi.fn(),
   saveSettings: vi.fn(),
 }));
@@ -32,9 +41,15 @@ beforeEach(() => {
   api.onDashboardUpdated.mockResolvedValue(() => {});
   api.onRefreshRequested.mockResolvedValue(() => {});
   api.onSettingsUpdated.mockResolvedValue(() => {});
-  api.refreshDashboard.mockResolvedValue(dashboardState());
+  api.guardedFetch.mockResolvedValue(dashboardState());
+  // Default: cold start (no cached dashboard) so existing tests exercise the
+  // fetch-on-mount path and the loading spinner.
+  api.readCachedDashboard.mockReturnValue(null);
+  api.isStale.mockReturnValue(true);
+  api.markFetched.mockReturnValue(undefined);
   api.closePreferences.mockResolvedValue(undefined);
   api.resizePreferencesToContent.mockResolvedValue(undefined);
+  api.resizeTrayToContent.mockResolvedValue(undefined);
   api.detectAccounts.mockResolvedValue([]);
   api.removeAccount.mockResolvedValue([]);
   api.saveAccount.mockResolvedValue([]);
@@ -48,7 +63,7 @@ afterEach(() => {
 
 test("shows a loading refresh control while dashboard data is pending", async () => {
   let resolveDashboard: (state: DashboardState) => void = () => {};
-  api.loadDashboard.mockReturnValue(
+  api.guardedFetch.mockReturnValue(
     new Promise<DashboardState>((resolve) => {
       resolveDashboard = resolve;
     }),
@@ -64,15 +79,46 @@ test("shows a loading refresh control while dashboard data is pending", async ()
 });
 
 test("renders dashboard load errors", async () => {
-  api.loadDashboard.mockRejectedValue(new Error("offline"));
+  api.guardedFetch.mockRejectedValue(new Error("offline"));
 
   render(<App />);
 
   expect(await screen.findByRole("alert")).toHaveTextContent("Error: offline");
 });
 
+test("hydrates instantly from a fresh cache without refetching", () => {
+  api.readCachedDashboard.mockReturnValue({
+    dashboard: dashboardState({ snapshots: [snapshot("healthy")] }),
+    fetchedAt: 1_000,
+  });
+  api.isStale.mockReturnValue(false);
+
+  render(<App />);
+
+  // Cached data renders synchronously: no spinner, no fetch.
+  expect(screen.getByText("Burnrate: all quotas healthy")).toBeInTheDocument();
+  expect(screen.getByTitle("Refresh")).not.toBeDisabled();
+  expect(api.guardedFetch).not.toHaveBeenCalled();
+});
+
+test("revalidates in the background when the cache is stale", async () => {
+  api.readCachedDashboard.mockReturnValue({
+    dashboard: dashboardState({ snapshots: [snapshot("healthy")] }),
+    fetchedAt: 1_000,
+  });
+  api.isStale.mockReturnValue(true);
+  api.guardedFetch.mockResolvedValue(
+    dashboardState({ snapshots: [snapshot("warning")] }),
+  );
+
+  render(<App />);
+
+  expect(await screen.findByText("Burnrate: 1 warning")).toBeInTheDocument();
+  expect(api.guardedFetch).toHaveBeenCalledWith({});
+});
+
 test("renders stale snapshot state", async () => {
-  api.loadDashboard.mockResolvedValue(
+  api.guardedFetch.mockResolvedValue(
     dashboardState({
       snapshots: [
         {
@@ -125,7 +171,7 @@ test("renders stale snapshot state", async () => {
 
 test("applies dashboard updates emitted by the backend", async () => {
   let onDashboard: (dashboard: DashboardState) => void = () => {};
-  api.loadDashboard.mockResolvedValue(dashboardState());
+  api.guardedFetch.mockResolvedValue(dashboardState());
   api.onDashboardUpdated.mockImplementation((handler) => {
     onDashboard = handler;
     return Promise.resolve(() => {});
@@ -168,7 +214,7 @@ test("applies dashboard updates emitted by the backend", async () => {
 
 test("renders compact tray view from the tray window route", async () => {
   window.history.replaceState({}, "", "/?view=tray");
-  api.loadDashboard.mockResolvedValue(
+  api.guardedFetch.mockResolvedValue(
     dashboardState({
       accounts: [
         {
@@ -235,7 +281,7 @@ test("renders compact tray view from the tray window route", async () => {
 });
 
 test("falls back to frontend summaries for older dashboard payloads", async () => {
-  api.loadDashboard.mockResolvedValue(
+  api.guardedFetch.mockResolvedValue(
     dashboardState({
       snapshots: [snapshot("healthy"), snapshot("error")],
       traySummary: undefined as unknown as DashboardState["traySummary"],
@@ -248,7 +294,7 @@ test("falls back to frontend summaries for older dashboard payloads", async () =
 });
 
 test("closes preferences from macOS window shortcuts", async () => {
-  api.loadDashboard.mockResolvedValue(dashboardState());
+  api.guardedFetch.mockResolvedValue(dashboardState());
 
   render(<App />);
 
@@ -273,14 +319,15 @@ test("refreshes usage after saving an OpenRouter account", async () => {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  api.loadDashboard.mockResolvedValue(dashboardState());
+  api.guardedFetch
+    .mockResolvedValueOnce(dashboardState())
+    .mockResolvedValue(
+      dashboardState({
+        accounts: [savedAccount],
+        snapshots: [snapshot("healthy", { accountId: "openrouter-team" })],
+      }),
+    );
   api.saveAccount.mockResolvedValue([savedAccount]);
-  api.refreshDashboard.mockResolvedValue(
-    dashboardState({
-      accounts: [savedAccount],
-      snapshots: [snapshot("healthy", { accountId: "openrouter-team" })],
-    }),
-  );
 
   render(<App />);
 
@@ -304,11 +351,11 @@ test("refreshes usage after saving an OpenRouter account", async () => {
       secret: "sk-openrouter",
     }),
   );
-  expect(api.refreshDashboard).toHaveBeenCalledOnce();
+  expect(api.guardedFetch).toHaveBeenCalledWith({ force: true });
 });
 
 test("falls back to frontend warning and stale summaries", async () => {
-  api.loadDashboard.mockResolvedValue(
+  api.guardedFetch.mockResolvedValue(
     dashboardState({
       snapshots: [snapshot("warning")],
       traySummary: undefined as unknown as DashboardState["traySummary"],
@@ -320,7 +367,7 @@ test("falls back to frontend warning and stale summaries", async () => {
   expect(await screen.findByText("Burnrate: 1 warning")).toBeInTheDocument();
 
   cleanup();
-  api.loadDashboard.mockResolvedValue(
+  api.guardedFetch.mockResolvedValue(
     dashboardState({
       snapshots: [snapshot("stale")],
       traySummary: undefined as unknown as DashboardState["traySummary"],
@@ -334,7 +381,7 @@ test("falls back to frontend warning and stale summaries", async () => {
 });
 
 test("renders fallback healthy and empty summaries", async () => {
-  api.loadDashboard.mockResolvedValue(
+  api.guardedFetch.mockResolvedValue(
     dashboardState({
       snapshots: [snapshot("healthy")],
       traySummary: undefined as unknown as DashboardState["traySummary"],
@@ -348,7 +395,7 @@ test("renders fallback healthy and empty summaries", async () => {
   ).toBeInTheDocument();
 
   cleanup();
-  api.loadDashboard.mockResolvedValue(
+  api.guardedFetch.mockResolvedValue(
     dashboardState({
       snapshots: [],
       traySummary: undefined as unknown as DashboardState["traySummary"],
@@ -429,19 +476,100 @@ test("renders tray summary branches and account disabled state", () => {
 
 test("dispatches tray refresh requests", async () => {
   window.history.replaceState({}, "", "/?view=tray");
-  api.loadDashboard.mockResolvedValue(dashboardState());
-  api.refreshDashboard.mockResolvedValue(
-    dashboardState({
-      snapshots: [snapshot("healthy")],
-    }),
-  );
+  api.guardedFetch
+    .mockResolvedValueOnce(dashboardState())
+    .mockResolvedValue(
+      dashboardState({
+        snapshots: [snapshot("healthy")],
+      }),
+    );
 
   render(<App />);
 
   fireEvent.click(await screen.findByTitle("Refresh"));
 
   expect(await screen.findByText("All quotas healthy")).toBeInTheDocument();
-  expect(api.refreshDashboard).toHaveBeenCalledOnce();
+  expect(api.guardedFetch).toHaveBeenCalledWith({ force: true });
+});
+
+test("auto-sizes the tray window to its measured content", async () => {
+  window.history.replaceState({}, "", "/?view=tray");
+  api.guardedFetch.mockResolvedValue(
+    dashboardState({ snapshots: [snapshot("healthy")] }),
+  );
+
+  // jsdom reports zero layout; emulate a laid-out panel so the measure effect
+  // produces a real size and drives the resize bridge. We only assert on the
+  // mock (no DOM-visibility queries), so a stubbed computed style is safe.
+  const styleSpy = vi.spyOn(window, "getComputedStyle").mockReturnValue({
+    paddingTop: "12px",
+    paddingBottom: "12px",
+    paddingLeft: "12px",
+    paddingRight: "12px",
+    rowGap: "9px",
+    gap: "9px",
+    getPropertyValue: () => "",
+  } as unknown as CSSStyleDeclaration);
+  const offsetHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "offsetHeight",
+  );
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => 36,
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+    configurable: true,
+    get: () => 320,
+  });
+
+  try {
+    render(<App />);
+    await waitFor(() =>
+      expect(api.resizeTrayToContent).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.any(Number),
+      ),
+    );
+  } finally {
+    styleSpy.mockRestore();
+    if (offsetHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "offsetHeight",
+        offsetHeight,
+      );
+    }
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollWidth");
+  }
+});
+
+test("renders a tray snapshot from the quota fallback with an inline message", () => {
+  render(
+    <TrayPanel
+      state={dashboardState()}
+      snapshots={[
+        snapshot("warning", {
+          usageBuckets: [],
+          quota: {
+            used: 9,
+            limit: 10,
+            remaining: 1,
+            unit: "requests",
+            resetAt: null,
+          },
+          message: "Approaching the limit.",
+        }),
+      ]}
+      busy={false}
+      error={null}
+      onRefresh={() => {}}
+    />,
+  );
+
+  // Bucket synthesized from the quota fallback (usageBuckets empty).
+  expect(screen.getByText("Quota")).toBeInTheDocument();
+  expect(screen.getByText("Approaching the limit.")).toBeInTheDocument();
 });
 
 test("formats quota fallback and reset edge cases", () => {
