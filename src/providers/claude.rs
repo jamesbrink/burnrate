@@ -12,6 +12,8 @@ use reqwest::Client;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
+use sha2::{Digest, Sha256};
+use tokio::{process::Command as TokioCommand, time::timeout};
 
 use crate::{
     config::default_auto_account,
@@ -29,6 +31,8 @@ const INFERENCE_SCOPE: &str = "user:inference";
 const PROFILE_SCOPE: &str = "user:profile";
 const USAGE_CACHE_TTL_MS: u64 = 5 * 60 * 1000;
 const USAGE_ERROR_BACKOFF_MS: u64 = 2 * 60 * 1000;
+const AUTH_STATUS_TIMEOUT_MS: u64 = 1_500;
+const REAUTH_HINT: &str = "Run `claude auth login` to refresh Claude Code authentication.";
 
 #[derive(Debug, Clone)]
 struct ClaudeUsageCacheEntry {
@@ -41,6 +45,16 @@ struct ClaudeUsageCacheEntry {
 #[serde(rename_all = "camelCase")]
 struct CredentialFile {
     claude_ai_oauth: OAuthCredentials,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeAuthStatus {
+    #[serde(default)]
+    logged_in: bool,
+    auth_method: Option<String>,
+    api_provider: Option<String>,
+    subscription_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -79,6 +93,8 @@ struct ClaudeUsageData {
     five_hour: Option<ClaudeUsageLimit>,
     #[serde(default)]
     seven_day: Option<ClaudeUsageLimit>,
+    #[serde(default)]
+    seven_day_oauth_apps: Option<ClaudeUsageLimit>,
     #[serde(default)]
     seven_day_sonnet: Option<ClaudeUsageLimit>,
     #[serde(default)]
@@ -157,20 +173,13 @@ pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<Usag
 }
 
 async fn fetch_oauth_usage(http: &Client, account: &AccountConfig) -> Result<ClaudeOAuthUsage> {
+    ensure_claude_code_auth().await?;
     let credentials = read_credentials(account).await?;
     let oauth = credentials.claude_ai_oauth;
     let now = now_millis();
-    if !is_claude_ai_subscriber(&oauth) || !has_profile_scope(&oauth) {
-        return Ok(ClaudeOAuthUsage {
-            subscription_type: oauth.subscription_type,
-            rate_limit_tier: oauth.rate_limit_tier,
-            usage: ClaudeUsageData::default(),
-        });
-    }
+    validate_oauth_credentials(&oauth)?;
     if oauth.expires_at <= now {
-        return Err(anyhow!(
-            "Claude Code OAuth token is expired; run `claude auth login` or start Claude Code to refresh it."
-        ));
+        return Err(anyhow!("Claude Code OAuth token is expired. {REAUTH_HINT}"));
     }
 
     let resp = http
@@ -191,7 +200,7 @@ async fn fetch_oauth_usage(http: &Client, account: &AccountConfig) -> Result<Cla
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(anyhow!(format_http_error(
+        return Err(anyhow!(format_usage_http_error(
             "Claude Code usage API error",
             status,
             &body
@@ -218,6 +227,15 @@ fn is_claude_ai_subscriber(oauth: &OAuthCredentials) -> bool {
 
 fn has_profile_scope(oauth: &OAuthCredentials) -> bool {
     oauth.scopes.iter().any(|scope| scope == PROFILE_SCOPE)
+}
+
+fn validate_oauth_credentials(oauth: &OAuthCredentials) -> Result<()> {
+    if !is_claude_ai_subscriber(oauth) || !has_profile_scope(oauth) {
+        return Err(anyhow!(
+            "Claude Code is signed in with an inference-only token, not a full claude.ai OAuth login. {REAUTH_HINT}"
+        ));
+    }
+    Ok(())
 }
 
 fn usage_cache() -> &'static Mutex<HashMap<String, ClaudeUsageCacheEntry>> {
@@ -307,21 +325,49 @@ fn format_http_error(prefix: &str, status: StatusCode, body: &str) -> String {
     }
 }
 
+fn format_usage_http_error(prefix: &str, status: StatusCode, body: &str) -> String {
+    let message = format_http_error(prefix, status, body);
+    if matches!(
+        status,
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+    ) {
+        format!("{message}. {REAUTH_HINT}")
+    } else {
+        message
+    }
+}
+
 async fn read_credentials(account: &AccountConfig) -> Result<CredentialFile> {
     #[cfg(target_os = "macos")]
     {
-        if let Some(creds) = read_credentials_file(account)? {
+        if account
+            .credential_path
+            .as_ref()
+            .map(PathBuf::from)
+            .is_some_and(|path| path.is_file())
+            && let Some(creds) = read_credentials_file(account)?
+        {
             return Ok(creds);
         }
-        tokio::task::spawn_blocking(read_macos_keychain_credentials)
+
+        match tokio::task::spawn_blocking(read_macos_keychain_credentials)
             .await
             .context("Claude Code credential reader panicked")?
+        {
+            Ok(creds) => Ok(creds),
+            Err(keychain_error) => {
+                if let Some(creds) = read_credentials_file(account)? {
+                    return Ok(creds);
+                }
+                Err(keychain_error)
+            }
+        }
     }
 
     #[cfg(not(target_os = "macos"))]
     {
         read_credentials_file(account)?.ok_or_else(|| {
-            if std::env::var("CLAUDE_CODE_OAUTH_TOKEN").is_ok() {
+            if env_present("CLAUDE_CODE_OAUTH_TOKEN") {
                 anyhow!(
                     "Claude Code is using environment variable authentication. Usage tracking requires a standard login. Run `claude auth login` to enable."
                 )
@@ -334,12 +380,13 @@ async fn read_credentials(account: &AccountConfig) -> Result<CredentialFile> {
 
 #[cfg(target_os = "macos")]
 fn read_macos_keychain_credentials() -> Result<CredentialFile> {
-    let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+    let user = keychain_username();
+    let service_name = keychain_service_name();
     let output = Command::new("security")
         .args([
             "find-generic-password",
             "-s",
-            "Claude Code-credentials",
+            &service_name,
             "-a",
             &user,
             "-w",
@@ -348,18 +395,72 @@ fn read_macos_keychain_credentials() -> Result<CredentialFile> {
         .context("failed to run macOS security command")?;
 
     if !output.status.success() {
-        if std::env::var("CLAUDE_CODE_OAUTH_TOKEN").is_ok() {
+        if env_present("CLAUDE_CODE_OAUTH_TOKEN") {
             return Err(anyhow!(
                 "Claude Code is using environment variable authentication. Usage tracking requires a standard login. Run `claude auth login` to enable."
             ));
         }
         return Err(anyhow!(
-            "Claude Code credentials not found in Keychain. Sign in with `claude auth login`."
+            "Claude Code credentials not found in Keychain service `{service_name}` for account `{user}`. {REAUTH_HINT}"
         ));
     }
 
     let json = String::from_utf8(output.stdout).context("invalid UTF-8 in Claude credentials")?;
     parse_credential_json(&json)
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_username() -> String {
+    std::env::var("USER")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::env::var("LOGNAME")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| "claude-code-user".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_service_name() -> String {
+    keychain_service_name_for(
+        std::env::var("CLAUDE_CONFIG_DIR")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .as_deref(),
+        oauth_file_suffix(),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_service_name_for(config_dir: Option<&str>, oauth_suffix: &str) -> String {
+    let dir_suffix = config_dir
+        .filter(|value| !value.trim().is_empty())
+        .map(|dir| {
+            let digest = Sha256::digest(dir.as_bytes());
+            let hex = format!("{digest:x}");
+            format!("-{}", &hex[..8])
+        })
+        .unwrap_or_default();
+    format!("Claude Code{oauth_suffix}-credentials{dir_suffix}")
+}
+
+#[cfg(target_os = "macos")]
+fn oauth_file_suffix() -> &'static str {
+    if env_present("CLAUDE_CODE_CUSTOM_OAUTH_URL") {
+        "-custom-oauth"
+    } else if std::env::var("USER_TYPE").ok().as_deref() == Some("ant")
+        && env_present("USE_LOCAL_OAUTH")
+    {
+        "-local-oauth"
+    } else if std::env::var("USER_TYPE").ok().as_deref() == Some("ant")
+        && env_present("USE_STAGING_OAUTH")
+    {
+        "-staging-oauth"
+    } else {
+        ""
+    }
 }
 
 fn read_credentials_file(account: &AccountConfig) -> Result<Option<CredentialFile>> {
@@ -393,6 +494,80 @@ fn parse_credential_json(contents: &str) -> Result<CredentialFile> {
     serde_json::from_str(contents).context("failed to parse Claude Code credentials")
 }
 
+async fn ensure_claude_code_auth() -> Result<()> {
+    let status = match claude_auth_status().await {
+        Ok(status) => status,
+        Err(_) => return Ok(()),
+    };
+    validate_auth_status(&status)
+}
+
+fn validate_auth_status(status: &ClaudeAuthStatus) -> Result<()> {
+    if !status.logged_in {
+        return Err(anyhow!("Claude Code is not signed in. {REAUTH_HINT}"));
+    }
+
+    if status
+        .api_provider
+        .as_deref()
+        .is_some_and(|provider| !provider.eq_ignore_ascii_case("firstParty"))
+    {
+        return Err(anyhow!(
+            "Claude Code is signed in with a third-party provider. Usage tracking requires claude.ai first-party OAuth. {REAUTH_HINT}"
+        ));
+    }
+
+    let auth_method = status.auth_method.as_deref().unwrap_or_default();
+    if !auth_method.eq_ignore_ascii_case("claude.ai")
+        && !auth_method.eq_ignore_ascii_case("oauth_token")
+    {
+        return Err(anyhow!(
+            "Claude Code auth method is `{auth_method}`. Usage tracking requires claude.ai OAuth. {REAUTH_HINT}"
+        ));
+    }
+
+    if status.subscription_type.is_none() {
+        return Err(anyhow!(
+            "Claude Code is signed in, but no Claude subscription was detected. {REAUTH_HINT}"
+        ));
+    }
+
+    Ok(())
+}
+
+async fn claude_auth_status() -> Result<ClaudeAuthStatus> {
+    let output = timeout(
+        std::time::Duration::from_millis(AUTH_STATUS_TIMEOUT_MS),
+        TokioCommand::new("claude")
+            .args(["auth", "status", "--json"])
+            .stdin(std::process::Stdio::null())
+            .output(),
+    )
+    .await
+    .context("Claude Code auth status check timed out")?
+    .context("failed to run `claude auth status --json`")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = [stderr.trim(), stdout.trim()]
+            .into_iter()
+            .find(|value| !value.is_empty())
+            .unwrap_or("Claude Code auth status check failed.");
+        return Err(anyhow!("{detail}"));
+    }
+
+    let stdout =
+        String::from_utf8(output.stdout).context("invalid UTF-8 from Claude auth status")?;
+    serde_json::from_str(stdout.trim()).context("failed to parse Claude Code auth status")
+}
+
+fn env_present(key: &str) -> bool {
+    std::env::var(key)
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty())
+}
+
 fn parse_usage_data(value: &serde_json::Value) -> Result<ClaudeUsageData> {
     if has_oauth_usage_keys(value) {
         return serde_json::from_value(value.clone()).context("failed to parse Claude Code usage");
@@ -407,6 +582,7 @@ fn has_oauth_usage_keys(value: &serde_json::Value) -> bool {
     [
         "five_hour",
         "seven_day",
+        "seven_day_oauth_apps",
         "seven_day_sonnet",
         "seven_day_opus",
         "extra_usage",
@@ -422,6 +598,13 @@ fn parse_claude_oauth_usage(account: &AccountConfig, usage: ClaudeOAuthUsage) ->
     }
     if let Some(limit) = usage.usage.seven_day.as_ref() {
         buckets.push(bucket_from_oauth_limit("weekly", "Weekly", limit));
+    }
+    if let Some(limit) = usage.usage.seven_day_oauth_apps.as_ref() {
+        buckets.push(bucket_from_oauth_limit(
+            "weekly-oauth-apps",
+            "Weekly OAuth Apps",
+            limit,
+        ));
     }
     if let Some(limit) = usage.usage.seven_day_sonnet.as_ref() {
         buckets.push(bucket_from_oauth_limit(
@@ -597,6 +780,20 @@ mod tests {
         }
     }
 
+    fn auth_status(
+        logged_in: bool,
+        auth_method: Option<&str>,
+        api_provider: Option<&str>,
+        subscription_type: Option<&str>,
+    ) -> ClaudeAuthStatus {
+        ClaudeAuthStatus {
+            logged_in,
+            auth_method: auth_method.map(ToString::to_string),
+            api_provider: api_provider.map(ToString::to_string),
+            subscription_type: subscription_type.map(ToString::to_string),
+        }
+    }
+
     #[test]
     fn parses_claude_code_credentials() {
         let creds = parse_credential_json(
@@ -638,6 +835,104 @@ mod tests {
     }
 
     #[test]
+    fn rejects_inference_only_credentials() {
+        let creds = parse_credential_json(
+            r#"{
+                "claudeAiOauth": {
+                    "accessToken": "sk-ant-oat01-test",
+                    "refreshToken": "sk-ant-ort01-test",
+                    "expiresAt": 1769163729172,
+                    "scopes": ["user:inference"],
+                    "subscriptionType": "max"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let error = validate_oauth_credentials(&creds.claude_ai_oauth)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("inference-only token"));
+        assert!(error.contains("claude auth login"));
+    }
+
+    #[test]
+    fn validates_claude_ai_auth_status() {
+        let status = auth_status(true, Some("claude.ai"), Some("firstParty"), Some("max"));
+
+        validate_auth_status(&status).unwrap();
+    }
+
+    #[test]
+    fn accepts_legacy_oauth_token_auth_status() {
+        let status = auth_status(true, Some("oauth_token"), Some("firstParty"), Some("pro"));
+
+        validate_auth_status(&status).unwrap();
+    }
+
+    #[test]
+    fn rejects_signed_out_auth_status() {
+        let status = auth_status(false, None, Some("firstParty"), None);
+        let error = validate_auth_status(&status).unwrap_err().to_string();
+
+        assert!(error.contains("not signed in"));
+        assert!(error.contains("claude auth login"));
+    }
+
+    #[test]
+    fn rejects_third_party_auth_status() {
+        let status = auth_status(true, Some("claude.ai"), Some("bedrock"), Some("max"));
+        let error = validate_auth_status(&status).unwrap_err().to_string();
+
+        assert!(error.contains("third-party provider"));
+        assert!(error.contains("first-party OAuth"));
+    }
+
+    #[test]
+    fn rejects_auth_status_without_subscription() {
+        let status = auth_status(true, Some("claude.ai"), Some("firstParty"), None);
+        let error = validate_auth_status(&status).unwrap_err().to_string();
+
+        assert!(error.contains("no Claude subscription"));
+        assert!(error.contains("claude auth login"));
+    }
+
+    #[test]
+    fn formats_usage_auth_errors_with_reauth_hint() {
+        let message = format_usage_http_error(
+            "Claude Code usage API error",
+            StatusCode::TOO_MANY_REQUESTS,
+            r#"{"error":{"message":"Rate limited. Please try again later."}}"#,
+        );
+
+        assert!(message.contains("429 Too Many Requests"));
+        assert!(message.contains("Rate limited"));
+        assert!(message.contains("claude auth login"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn derives_current_claude_code_keychain_service_names() {
+        assert_eq!(
+            keychain_service_name_for(None, ""),
+            "Claude Code-credentials"
+        );
+        assert_eq!(
+            keychain_service_name_for(Some("abc"), ""),
+            "Claude Code-credentials-ba7816bf"
+        );
+        assert_eq!(
+            keychain_service_name_for(Some("abc"), "-staging-oauth"),
+            "Claude Code-staging-oauth-credentials-ba7816bf"
+        );
+        assert_eq!(
+            keychain_service_name_for(Some(""), ""),
+            "Claude Code-credentials"
+        );
+    }
+
+    #[test]
     fn maps_claude_oauth_usage_buckets_and_max_plan() {
         let snapshot = parse_claude_oauth_usage(
             &account(),
@@ -652,6 +947,10 @@ mod tests {
                     "seven_day": {
                         "utilization": 40,
                         "resets_at": 1780000000000_i64
+                    },
+                    "seven_day_oauth_apps": {
+                        "utilization": 8,
+                        "resets_at": "2026-06-02T18:00:00Z"
                     },
                     "seven_day_sonnet": {
                         "utilization": 12,
@@ -674,8 +973,9 @@ mod tests {
         assert_eq!(snapshot.status, SnapshotStatus::Exhausted);
         assert_eq!(snapshot.usage_buckets[0].label, "5-hour");
         assert_eq!(snapshot.usage_buckets[1].label, "Weekly");
-        assert_eq!(snapshot.usage_buckets[2].label, "Weekly Sonnet");
-        assert_eq!(snapshot.usage_buckets[3].label, "Extra usage");
+        assert_eq!(snapshot.usage_buckets[2].label, "Weekly OAuth Apps");
+        assert_eq!(snapshot.usage_buckets[3].label, "Weekly Sonnet");
+        assert_eq!(snapshot.usage_buckets[4].label, "Extra usage");
     }
 
     #[tokio::test]
