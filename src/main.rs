@@ -74,6 +74,7 @@ fn main() {
         .manage(state)
         .setup(move |app| {
             tray::apply_activation_policy(app.handle(), hide_from_dock);
+            let _ = app.handle().remove_menu();
             tray::install(app)?;
             Ok(())
         })

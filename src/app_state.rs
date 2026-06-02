@@ -101,10 +101,23 @@ impl AppState {
             .cloned()
             .collect::<Vec<_>>();
 
-        let mut snapshots = Vec::with_capacity(accounts.len());
-        for account in accounts {
-            snapshots.push(self.provider_client.refresh_account(&account).await);
+        let mut tasks = tokio::task::JoinSet::new();
+        for (index, account) in accounts.into_iter().enumerate() {
+            let provider_client = self.provider_client.clone();
+            tasks.spawn(async move { (index, provider_client.refresh_account(&account).await) });
         }
+
+        let mut snapshots = Vec::with_capacity(tasks.len());
+        while let Some(result) = tasks.join_next().await {
+            if let Ok(snapshot) = result {
+                snapshots.push(snapshot);
+            }
+        }
+        snapshots.sort_by_key(|(index, _)| *index);
+        let snapshots = snapshots
+            .into_iter()
+            .map(|(_, snapshot)| snapshot)
+            .collect();
         snapshots
     }
 
