@@ -1,0 +1,11 @@
+# Local macOS dev convenience: re-sign the `burnrate` binary with a persistent
+# self-signed identity before `cargo run` / `tauri dev` launches it, so the macOS
+# keychain "Always Allow" grant survives rebuilds instead of re-prompting after
+# every recompile. The runner is a no-op until you run
+# scripts/dev-codesign-setup.sh once, and only signs the `burnrate` binary (not
+# test binaries) — so CI, the Nix build, and other platforms are unaffected.
+[target.aarch64-apple-darwin]
+runner = "scripts/dev-codesign-run.sh"
+
+[target.x86_64-apple-darwin]
+runner = "scripts/dev-codesign-run.sh"

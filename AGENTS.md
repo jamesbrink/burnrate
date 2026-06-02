@@ -116,6 +116,7 @@ short aliases (`dev`, `check`, `test`, `fmt`, `build-app`, `build-pure`,
 npm install            # one-time: install JS deps
 npm run dev            # tauri dev — launches the real desktop app + tray (HMR for UI)
 npm run dev:web        # vite only, browser mock mode (no backend), port 5173
+./scripts/dev-codesign-setup.sh  # one-time (macOS): stop keychain re-prompts in dev (see below)
 
 ./scripts/check        # cargo fmt --check, clippy -D warnings, tsc --noEmit
 ./scripts/fmt          # cargo fmt + prettier (use `fmt`/treefmt in the devshell)
@@ -135,6 +136,18 @@ nix build .#burnrate   # pure Nix package build
 cargo package --allow-dirty   # verify the crates.io archive (incl. bundled dist/)
 nix flake check        # when Nix/devshell wiring changes
 ```
+
+### Dev keychain prompts (macOS)
+
+An unsigned dev binary gets a new code identity on every recompile, so the
+keychain "Always Allow" grant is invalidated and macOS re-prompts each launch.
+`scripts/dev-codesign-setup.sh` creates a persistent self-signed `burnrate-dev`
+identity (one-time); the cargo `runner` in `.cargo/config.toml`
+(`scripts/dev-codesign-run.sh`) then re-signs the `burnrate` binary on every
+`cargo run` / `tauri dev` so the signature — and the grant — stays stable. The
+runner is a no-op until the identity exists and only signs the `burnrate` binary
+(not test binaries), so CI (Linux), the Nix build, and `cargo install` are
+unaffected, and neither script is in the crate's `include` list.
 
 ## Git
 
