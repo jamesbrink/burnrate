@@ -608,6 +608,14 @@ p {
   height: 18px;
 }
 
+.tray-provider .provider-logo-codex svg {
+  transform: translateY(1px);
+}
+
+.tray-provider .provider-logo-claude-code svg {
+  transform: translateY(-1px);
+}
+
 .provider-logo-claude-code {
   color: #c15f3c;
   background: #fbefe9;
