@@ -2,14 +2,18 @@ mod claude;
 mod codex;
 mod openrouter;
 
+use std::time::Duration;
+
 use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
-use reqwest::Client;
+use reqwest::{Client, Url};
 
 use crate::{
     key_store,
     models::{AccountConfig, ProviderKind, SnapshotStatus, UsageSnapshot},
 };
+
+const PROVIDER_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 pub(crate) struct ProviderClient {
@@ -19,7 +23,10 @@ pub(crate) struct ProviderClient {
 impl ProviderClient {
     pub(crate) fn new() -> Self {
         Self {
-            http: Client::new(),
+            http: Client::builder()
+                .timeout(PROVIDER_TIMEOUT)
+                .build()
+                .expect("provider HTTP client should build"),
         }
     }
 
@@ -61,12 +68,34 @@ fn error_snapshot(account: &AccountConfig, error: anyhow::Error) -> UsageSnapsho
     }
 }
 
-fn endpoint(account: &AccountConfig, env_key: &str, default: &str) -> String {
-    account
+fn endpoint(account: &AccountConfig, env_key: &str, default: &str) -> Result<String> {
+    let value = account
         .endpoint_override
         .clone()
         .or_else(|| std::env::var(env_key).ok())
-        .unwrap_or_else(|| default.to_string())
+        .unwrap_or_else(|| default.to_string());
+
+    validate_endpoint(&value)?;
+    Ok(value)
+}
+
+fn validate_endpoint(value: &str) -> Result<()> {
+    let url = Url::parse(value).with_context(|| format!("invalid endpoint URL: {value}"))?;
+    match url.scheme() {
+        "https" => Ok(()),
+        "http" if is_localhost(&url) => Ok(()),
+        "http" => Err(anyhow!(
+            "endpoint overrides must use HTTPS unless targeting localhost"
+        )),
+        scheme => Err(anyhow!("unsupported endpoint URL scheme: {scheme}")),
+    }
+}
+
+fn is_localhost(url: &Url) -> bool {
+    matches!(
+        url.host_str(),
+        Some("localhost") | Some("127.0.0.1") | Some("::1")
+    )
 }
 
 fn number(value: &serde_json::Value, keys: &[&str]) -> Option<f64> {
@@ -97,50 +126,60 @@ fn token_from_config(account: &AccountConfig) -> Result<Option<String>> {
     };
     let path = std::path::Path::new(path);
     if path.is_file() {
-        return read_token_file(path);
+        return read_token_file(path, account.provider);
     }
 
     for candidate in ["auth.json", ".credentials.json", "credentials.json"] {
         let candidate = path.join(candidate);
         if candidate.exists() {
-            return read_token_file(&candidate);
+            return read_token_file(&candidate, account.provider);
         }
     }
 
     Ok(None)
 }
 
-fn read_token_file(path: &std::path::Path) -> Result<Option<String>> {
+fn read_token_file(path: &std::path::Path, provider: ProviderKind) -> Result<Option<String>> {
     let contents = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
     let json: serde_json::Value = serde_json::from_str(&contents)
         .with_context(|| format!("failed to parse {}", path.display()))?;
-    Ok(find_token(&json))
+    Ok(find_token(&json, token_pointers(provider)))
 }
 
-fn find_token(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::Object(map) => {
-            for key in [
-                "access_token",
-                "accessToken",
-                "oauth_access_token",
-                "oauthAccessToken",
-                "token",
-                "api_key",
-                "apiKey",
-            ] {
-                if let Some(token) = map.get(key).and_then(|value| value.as_str())
-                    && !token.is_empty()
-                {
-                    return Some(token.to_string());
-                }
-            }
-            map.values().find_map(find_token)
-        }
-        serde_json::Value::Array(values) => values.iter().find_map(find_token),
-        _ => None,
+fn token_pointers(provider: ProviderKind) -> &'static [&'static str] {
+    match provider {
+        ProviderKind::ClaudeCode => &[
+            "/claudeAiOauth/accessToken",
+            "/oauth/accessToken",
+            "/oauth/access_token",
+            "/accessToken",
+            "/access_token",
+            "/oauthAccessToken",
+            "/oauth_access_token",
+        ],
+        ProviderKind::Codex => &[
+            "/tokens/access_token",
+            "/tokens/accessToken",
+            "/auth/access_token",
+            "/auth/accessToken",
+            "/access_token",
+            "/accessToken",
+            "/api_key",
+            "/apiKey",
+        ],
+        ProviderKind::OpenRouter => &["/api_key", "/apiKey", "/key"],
     }
+}
+
+fn find_token(value: &serde_json::Value, pointers: &[&str]) -> Option<String> {
+    pointers.iter().find_map(|pointer| {
+        value
+            .pointer(pointer)
+            .and_then(|value| value.as_str())
+            .filter(|token| !token.is_empty())
+            .map(ToString::to_string)
+    })
 }
 
 fn require_token(account: &AccountConfig) -> Result<String> {
@@ -174,14 +213,95 @@ mod tests {
     }
 
     #[test]
-    fn finds_nested_tokens() {
-        let token = find_token(&json!({
-            "auth": {
-                "oauthAccessToken": "tok_123"
-            }
-        }));
+    fn finds_provider_specific_tokens() {
+        let token = find_token(
+            &json!({
+                "tokens": {
+                    "access_token": "tok_123"
+                }
+            }),
+            token_pointers(ProviderKind::Codex),
+        );
 
         assert_eq!(token, Some("tok_123".to_string()));
+    }
+
+    #[test]
+    fn ignores_unrecognized_nested_token_shapes() {
+        let token = find_token(
+            &json!({
+                "unrelated": {
+                    "token": "tok_wrong"
+                }
+            }),
+            token_pointers(ProviderKind::Codex),
+        );
+
+        assert_eq!(token, None);
+    }
+
+    #[test]
+    fn endpoint_allows_https_and_localhost_http() {
+        let mut account = account();
+        account.endpoint_override = Some("https://example.test".to_string());
+
+        assert_eq!(
+            endpoint(&account, "BURNRATE_TEST_ENDPOINT", "https://default.test").unwrap(),
+            "https://example.test"
+        );
+
+        account.endpoint_override = Some("http://127.0.0.1:9000".to_string());
+        assert!(endpoint(&account, "BURNRATE_TEST_ENDPOINT", "https://default.test").is_ok());
+    }
+
+    #[test]
+    fn endpoint_rejects_untrusted_http_overrides() {
+        let mut account = account();
+        account.endpoint_override = Some("http://example.test".to_string());
+
+        let error = endpoint(&account, "BURNRATE_TEST_ENDPOINT", "https://default.test")
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("HTTPS"));
+    }
+
+    #[test]
+    fn provider_timeout_is_bounded() {
+        assert_eq!(PROVIDER_TIMEOUT, Duration::from_secs(15));
+    }
+
+    #[test]
+    fn reads_token_from_file_and_directory_candidates() {
+        let dir = tempdir().unwrap();
+        let token_path = dir.path().join("auth.json");
+        std::fs::write(
+            &token_path,
+            r#"{"tokens":{"access_token":"tok_file"},"unrelated":{"token":"wrong"}}"#,
+        )
+        .unwrap();
+
+        let mut account = account();
+        account.provider = ProviderKind::Codex;
+        account.credential_path = Some(dir.path().display().to_string());
+
+        assert_eq!(
+            token_from_config(&account).unwrap(),
+            Some("tok_file".to_string())
+        );
+    }
+
+    #[test]
+    fn token_reader_rejects_unrecognized_file_shapes() {
+        let dir = tempdir().unwrap();
+        let token_path = dir.path().join("auth.json");
+        std::fs::write(&token_path, r#"{"unrelated":{"token":"wrong"}}"#).unwrap();
+
+        let mut account = account();
+        account.provider = ProviderKind::Codex;
+        account.credential_path = Some(dir.path().display().to_string());
+
+        assert_eq!(token_from_config(&account).unwrap(), None);
     }
 
     #[test]
@@ -190,7 +310,7 @@ mod tests {
         account.endpoint_override = Some("https://example.test".to_string());
 
         assert_eq!(
-            endpoint(&account, "BURNRATE_TEST_ENDPOINT", "https://default.test"),
+            endpoint(&account, "BURNRATE_TEST_ENDPOINT", "https://default.test").unwrap(),
             "https://example.test"
         );
     }
@@ -210,21 +330,6 @@ mod tests {
             Some("2026-06-01T12:00:00Z".to_string())
         );
         assert_eq!(number(&value, &["/missing"]), None);
-    }
-
-    #[test]
-    fn reads_token_from_file_and_directory_candidates() {
-        let dir = tempdir().unwrap();
-        let token_path = dir.path().join("auth.json");
-        std::fs::write(&token_path, r#"{"auth":{"accessToken":"tok_file"}}"#).unwrap();
-
-        let mut account = account();
-        account.credential_path = Some(dir.path().display().to_string());
-
-        assert_eq!(
-            token_from_config(&account).unwrap(),
-            Some("tok_file".to_string())
-        );
     }
 
     #[test]

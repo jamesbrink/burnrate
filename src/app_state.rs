@@ -48,16 +48,26 @@ impl AppState {
 
     pub(crate) fn save_account(&self, input: AccountInput) -> Result<Vec<AccountView>> {
         let mut config = self.config.lock().expect("config lock");
+        let previous = input.id.as_ref().and_then(|id| {
+            config
+                .accounts
+                .iter()
+                .find(|account| &account.id == id)
+                .cloned()
+        });
         let account = config.upsert_manual(input.clone());
 
+        let account = config
+            .accounts
+            .iter_mut()
+            .find(|item| item.id == account.id)
+            .expect("upserted account exists");
+
         if let Some(secret) = input.secret {
-            let account = config
-                .accounts
-                .iter_mut()
-                .find(|item| item.id == account.id)
-                .expect("upserted account exists");
             key_store::set_secret(account, Some(secret))?;
             key_store::validate_plaintext_mode(account)?;
+        } else if let Some(previous) = previous {
+            key_store::migrate_secret(&previous, account)?;
         }
 
         config::save_to_path(&self.config_path, &config)?;

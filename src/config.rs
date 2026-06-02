@@ -1,6 +1,8 @@
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result};
@@ -36,7 +38,10 @@ impl AppConfig {
                 credential_path: account.credential_path.clone(),
                 endpoint_override: account.endpoint_override.clone(),
                 secret_storage: account.secret_storage,
-                has_secret: account.plaintext_secret.is_some() || account.keyring_account.is_some(),
+                has_secret: match account.secret_storage {
+                    SecretStorageMode::Keyring => account.keyring_account.is_some(),
+                    SecretStorageMode::Plaintext => account.plaintext_secret.is_some(),
+                },
                 created_at: account.created_at,
                 updated_at: account.updated_at,
             })
@@ -124,12 +129,88 @@ pub(crate) fn load_from_path(path: &Path) -> Result<AppConfig> {
 
 pub(crate) fn save_to_path(path: &Path, config: &AppConfig) -> Result<()> {
     if let Some(parent) = path.parent() {
+        let parent_existed = parent.exists();
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
+        set_private_dir_permissions(parent, parent_existed)?;
     }
 
     let contents = serde_json::to_string_pretty(config)?;
-    fs::write(path, contents).with_context(|| format!("failed to write {}", path.display()))
+    write_private_file(path, &contents)
+}
+
+fn write_private_file(path: &Path, contents: &str) -> Result<()> {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before UNIX epoch")?
+        .as_nanos();
+    let tmp_path = path.with_file_name(format!(
+        ".{}.tmp-{}-{nonce}",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("accounts.json"),
+        std::process::id()
+    ));
+
+    let result = (|| -> Result<()> {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        set_private_file_mode(&mut options);
+
+        let mut file = options
+            .open(&tmp_path)
+            .with_context(|| format!("failed to create {}", tmp_path.display()))?;
+        file.write_all(contents.as_bytes())
+            .with_context(|| format!("failed to write {}", tmp_path.display()))?;
+        file.sync_all()
+            .with_context(|| format!("failed to sync {}", tmp_path.display()))?;
+        fs::rename(&tmp_path, path)
+            .with_context(|| format!("failed to replace {}", path.display()))?;
+        set_private_file_permissions(path)?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp_path);
+    }
+
+    result
+}
+
+#[cfg(unix)]
+fn set_private_file_mode(options: &mut fs::OpenOptions) {
+    use std::os::unix::fs::OpenOptionsExt;
+    options.mode(0o600);
+}
+
+#[cfg(not(unix))]
+fn set_private_file_mode(_options: &mut fs::OpenOptions) {}
+
+#[cfg(unix)]
+fn set_private_file_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("failed to set private permissions on {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn set_private_file_permissions(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_dir_permissions(path: &Path, existed: bool) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    if !existed {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("failed to set private permissions on {}", path.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_private_dir_permissions(_path: &Path, _existed: bool) -> Result<()> {
+    Ok(())
 }
 
 pub(crate) fn default_auto_account(
@@ -218,6 +299,39 @@ mod tests {
             view.endpoint_override.as_deref(),
             Some("https://example.test")
         );
+    }
+
+    #[test]
+    fn views_only_report_secret_for_selected_storage() {
+        let mut config = AppConfig::default();
+        config.upsert_manual(AccountInput {
+            id: Some("openrouter-main".to_string()),
+            provider: ProviderKind::OpenRouter,
+            label: "OpenRouter".to_string(),
+            enabled: true,
+            endpoint_override: None,
+            secret_storage: SecretStorageMode::Plaintext,
+            secret: None,
+        });
+        config.accounts[0].keyring_account = Some("stale-keyring-entry".to_string());
+
+        assert!(!config.views()[0].has_secret);
+
+        config.accounts[0].plaintext_secret = Some("sk-test".to_string());
+        assert!(config.views()[0].has_secret);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saves_config_with_private_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        save_to_path(&path, &AppConfig::default()).unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]

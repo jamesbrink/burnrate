@@ -107,14 +107,22 @@ fn show_main_window(app: &AppHandle<Wry>) {
 
 fn show_tray_window(app: &AppHandle<Wry>, position: tauri::PhysicalPosition<f64>) {
     if let Some(window) = app.get_webview_window(TRAY_WINDOW) {
-        let _ = window.set_position(LogicalPosition::new(
-            (position.x - 180.0).max(8.0),
-            position.y + 12.0,
-        ));
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+            return;
+        }
+
+        let scale_factor = window.scale_factor().unwrap_or(1.0);
+        let position = position.to_logical::<f64>(scale_factor);
+        let _ = window.set_position(tray_popup_position(position));
         let _ = window.show();
         let _ = window.set_focus();
         let _ = app.emit("burnrate-refresh-requested", ());
     }
+}
+
+fn tray_popup_position(position: LogicalPosition<f64>) -> LogicalPosition<f64> {
+    LogicalPosition::new((position.x - 180.0).max(8.0), (position.y + 12.0).max(8.0))
 }
 
 fn tray_icon() -> tauri::Result<Image<'static>> {
@@ -165,5 +173,13 @@ mod tests {
 
         assert_eq!(icon.width(), 32);
         assert_eq!(icon.height(), 32);
+    }
+
+    #[test]
+    fn tray_popup_position_clamps_left_and_top_edges() {
+        let position = tray_popup_position(LogicalPosition::new(20.0, -40.0));
+
+        assert_eq!(position.x, 8.0);
+        assert_eq!(position.y, 8.0);
     }
 }

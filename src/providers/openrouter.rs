@@ -12,7 +12,7 @@ const DEFAULT_ENDPOINT: &str = "https://openrouter.ai/api/v1/credits";
 
 pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<UsageSnapshot> {
     let token = require_token(account)?;
-    let url = endpoint(account, "BURNRATE_OPENROUTER_CREDITS_URL", DEFAULT_ENDPOINT);
+    let url = endpoint(account, "BURNRATE_OPENROUTER_CREDITS_URL", DEFAULT_ENDPOINT)?;
     let value: serde_json::Value = http
         .get(url)
         .bearer_auth(token)

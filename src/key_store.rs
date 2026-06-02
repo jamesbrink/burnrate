@@ -29,6 +29,26 @@ pub(crate) fn set_secret(account: &mut AccountConfig, secret: Option<String>) ->
     Ok(())
 }
 
+pub(crate) fn migrate_secret(previous: &AccountConfig, account: &mut AccountConfig) -> Result<()> {
+    if previous.secret_storage == account.secret_storage {
+        return Ok(());
+    }
+
+    let Some(secret) = get_secret(previous)? else {
+        clear_secret_refs(account);
+        return Ok(());
+    };
+
+    set_secret(account, Some(secret))?;
+    remove_secret(previous)?;
+    Ok(())
+}
+
+fn clear_secret_refs(account: &mut AccountConfig) {
+    account.keyring_account = None;
+    account.plaintext_secret = None;
+}
+
 pub(crate) fn get_secret(account: &AccountConfig) -> Result<Option<String>> {
     match account.secret_storage {
         SecretStorageMode::Keyring => {
@@ -108,5 +128,17 @@ mod tests {
     fn plaintext_validation_requires_explicit_secret() {
         let account = account(SecretStorageMode::Plaintext);
         assert!(validate_plaintext_mode(&account).is_err());
+    }
+
+    #[test]
+    fn migration_clears_stale_refs_when_previous_secret_is_missing() {
+        let previous = account(SecretStorageMode::Plaintext);
+        let mut next = account(SecretStorageMode::Keyring);
+        next.keyring_account = Some("stale".to_string());
+
+        migrate_secret(&previous, &mut next).unwrap();
+
+        assert!(next.keyring_account.is_none());
+        assert!(next.plaintext_secret.is_none());
     }
 }

@@ -41,7 +41,7 @@ pub(crate) fn detect() -> Option<AccountConfig> {
 
 pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<UsageSnapshot> {
     let token = require_token(account)?;
-    let mut url = endpoint(account, "BURNRATE_CLAUDE_USAGE_URL", DEFAULT_ENDPOINT);
+    let mut url = endpoint(account, "BURNRATE_CLAUDE_USAGE_URL", DEFAULT_ENDPOINT)?;
     if !url.contains('?') {
         let end = Utc::now();
         let start = end - Duration::days(1);

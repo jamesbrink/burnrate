@@ -46,7 +46,7 @@ pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<Usag
             account,
             "BURNRATE_CODEX_RATE_LIMITS_URL",
             DEFAULT_ENDPOINT,
-        ))
+        )?)
         .bearer_auth(token)
         .send()
         .await
