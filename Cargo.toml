@@ -23,6 +23,15 @@ include = [
   "LICENSE",
 ]
 
+# `custom-protocol` switches Tauri from the dev server (devUrl) to the embedded
+# `dist/` assets. The `tauri` CLI enables it automatically for `tauri build`, but
+# plain `cargo build --release` and `cargo install burnrate` do not — so it must
+# be on by default, or those binaries load http://localhost:5173 and render blank.
+# `tauri dev` opts back out via `--no-default-features` to keep live reload.
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
