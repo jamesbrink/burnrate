@@ -169,9 +169,49 @@ export function App() {
 
     let frame = 0;
     const measure = () => {
-      const rect = element.getBoundingClientRect();
-      const width = Math.ceil(Math.max(element.scrollWidth, rect.width));
-      const height = Math.ceil(Math.max(element.scrollHeight, rect.height));
+      const px = (value: string) => Number.parseFloat(value) || 0;
+      const style = window.getComputedStyle(element);
+      const paddingX = px(style.paddingLeft) + px(style.paddingRight);
+      const paddingY = px(style.paddingTop) + px(style.paddingBottom);
+      const header = element.querySelector<HTMLElement>(".prefs-header");
+      const notice = element.querySelector<HTMLElement>(".notice");
+      const layout = element.querySelector<HTMLElement>(".prefs-layout");
+      const sidebar = element.querySelector<HTMLElement>(".prefs-list");
+      const main = element.querySelector<HTMLElement>(".prefs-main");
+      const layoutStyle = layout ? window.getComputedStyle(layout) : null;
+      const rowGap = layoutStyle
+        ? px(layoutStyle.rowGap || layoutStyle.gap)
+        : 0;
+      const columnGap = layoutStyle
+        ? px(layoutStyle.columnGap || layoutStyle.gap)
+        : 0;
+      const headerStyle = header ? window.getComputedStyle(header) : null;
+      const headerMargin = headerStyle ? px(headerStyle.marginBottom) : 0;
+      const noticeStyle = notice ? window.getComputedStyle(notice) : null;
+      const noticeMargin = noticeStyle ? px(noticeStyle.marginBottom) : 0;
+      const hasSingleColumn =
+        layout !== null &&
+        window.getComputedStyle(layout).gridTemplateColumns.split(" ").length <=
+          1;
+      const sidebarWidth = sidebar?.scrollWidth ?? 0;
+      const mainWidth = main?.scrollWidth ?? 0;
+      const layoutWidth = hasSingleColumn
+        ? Math.max(sidebarWidth, mainWidth)
+        : sidebarWidth + columnGap + mainWidth;
+      const layoutHeight = hasSingleColumn
+        ? (sidebar?.scrollHeight ?? 0) + rowGap + (main?.scrollHeight ?? 0)
+        : Math.max(sidebar?.scrollHeight ?? 0, main?.scrollHeight ?? 0);
+      const width = Math.ceil(
+        Math.max(element.scrollWidth, layoutWidth + paddingX),
+      );
+      const height = Math.ceil(
+        paddingY +
+          (header?.offsetHeight ?? 0) +
+          headerMargin +
+          (notice?.offsetHeight ?? 0) +
+          noticeMargin +
+          layoutHeight,
+      );
       const last = lastPreferenceSize.current;
       if (
         Math.abs(width - last.width) <= 1 &&
@@ -188,17 +228,9 @@ export function App() {
     };
 
     scheduleMeasure();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(scheduleMeasure);
-    observer?.observe(element);
-    window.addEventListener("resize", scheduleMeasure);
 
     return () => {
       cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener("resize", scheduleMeasure);
     };
   }, [
     isTrayView,

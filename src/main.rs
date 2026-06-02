@@ -14,13 +14,14 @@ use std::time::Duration;
 #[cfg(target_os = "macos")]
 use tauri::menu::{IsMenuItem, PredefinedMenuItem, Submenu};
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Size, State, Wry,
-    menu::Menu,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, LogicalUnit, Manager, PixelUnit, Position,
+    Size, State, WindowSizeConstraints, Wry, menu::Menu,
 };
 
 const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const PREFERENCES_MIN_WIDTH: f64 = 360.0;
 const PREFERENCES_MIN_HEIGHT: f64 = 360.0;
+const PREFERENCES_MAX_CONTENT_WIDTH: f64 = 1180.0;
 const PREFERENCES_SCREEN_MARGIN: f64 = 18.0;
 
 #[tauri::command]
@@ -107,7 +108,8 @@ fn resize_preferences_to_content(app: AppHandle, width: f64, height: f64) -> Res
     let available_height = (work_size.height - (PREFERENCES_SCREEN_MARGIN * 2.0)).max(1.0);
     let min_width = PREFERENCES_MIN_WIDTH.min(available_width);
     let min_height = PREFERENCES_MIN_HEIGHT.min(available_height);
-    let target_width = (width + chrome_width)
+    let preferred_width = width.min(PREFERENCES_MAX_CONTENT_WIDTH);
+    let target_width = (preferred_width + chrome_width)
         .ceil()
         .clamp(min_width, available_width);
     let target_height = (height + chrome_height)
@@ -115,7 +117,12 @@ fn resize_preferences_to_content(app: AppHandle, width: f64, height: f64) -> Res
         .clamp(min_height, available_height);
 
     window
-        .set_min_size(Some(Size::Logical(LogicalSize::new(min_width, min_height))))
+        .set_size_constraints(WindowSizeConstraints {
+            min_width: Some(PixelUnit::Logical(LogicalUnit::new(min_width))),
+            min_height: Some(PixelUnit::Logical(LogicalUnit::new(min_height))),
+            max_width: Some(PixelUnit::Logical(LogicalUnit::new(available_width))),
+            max_height: Some(PixelUnit::Logical(LogicalUnit::new(available_height))),
+        })
         .map_err(|error| error.to_string())?;
     window
         .set_size(Size::Logical(LogicalSize::new(target_width, target_height)))
