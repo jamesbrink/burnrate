@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use tauri::{
-    App, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Wry,
+    App, AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Wry,
     image::Image,
     menu::{IsMenuItem, Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -19,6 +19,10 @@ pub(crate) const TRAY_WINDOW: &str = "tray";
 /// Clicking the status item first blurs the popover (hiding it) and then fires
 /// a click event; without this guard the click would immediately reopen it.
 const TRAY_REOPEN_GUARD: Duration = Duration::from_millis(250);
+/// Gap (in logical px, scaled to physical at use) between the popover and the
+/// work-area edges, and the drop below the cursor.
+const TRAY_MARGIN: f64 = 8.0;
+const TRAY_OFFSET_Y: f64 = 12.0;
 
 /// Runtime UI state for the tray popover window, managed by Tauri. Kept separate
 /// from `AppState` so window concerns don't leak into config/provider state.
@@ -31,9 +35,10 @@ pub(crate) struct TrayWindowState {
 struct TrayWindowInner {
     /// When the popover was last hidden (toggle or blur), to drive the reopen guard.
     last_hidden_at: Option<Instant>,
-    /// Cursor anchor (logical desktop coords) recorded at show time, so a later
-    /// content resize can re-run `tray_popup_position` and stay anchored.
-    last_anchor: Option<LogicalPosition<f64>>,
+    /// Cursor anchor (global physical desktop coords) recorded at show time, so a
+    /// later content resize can re-run `popup_position` and stay anchored on the
+    /// monitor where the tray was clicked.
+    last_anchor: Option<PhysicalPosition<f64>>,
 }
 
 impl TrayWindowState {
@@ -44,14 +49,14 @@ impl TrayWindowState {
             .last_hidden_at = Some(Instant::now());
     }
 
-    fn set_anchor(&self, anchor: LogicalPosition<f64>) {
+    fn set_anchor(&self, anchor: PhysicalPosition<f64>) {
         self.inner
             .lock()
             .expect("tray window state lock")
             .last_anchor = Some(anchor);
     }
 
-    pub(crate) fn anchor(&self) -> Option<LogicalPosition<f64>> {
+    pub(crate) fn anchor(&self) -> Option<PhysicalPosition<f64>> {
         self.inner
             .lock()
             .expect("tray window state lock")
@@ -284,38 +289,62 @@ fn show_tray_window(app: &AppHandle<Wry>, position: tauri::PhysicalPosition<f64>
         return;
     }
 
-    let scale_factor = window.scale_factor().unwrap_or(1.0);
-    let position = position.to_logical::<f64>(scale_factor);
+    // Work in global physical pixels anchored to the monitor under the cursor —
+    // not the window's current monitor — so the popover opens on whichever
+    // display the tray was clicked on, and lands correctly under mixed DPI.
+    let (scale, work_pos, work_size) = cursor_monitor_geometry(app, position);
     let window_size = window
         .outer_size()
-        .map(|size| size.to_logical::<f64>(scale_factor))
-        .unwrap_or_else(|_| LogicalSize::new(360.0, 440.0));
-    let work_area = window
-        .current_monitor()
-        .ok()
-        .flatten()
-        .or_else(|| window.primary_monitor().ok().flatten())
-        .map(|monitor| {
-            let area = monitor.work_area();
-            (
-                area.position.to_logical::<f64>(monitor.scale_factor()),
-                area.size.to_logical::<f64>(monitor.scale_factor()),
-            )
-        })
-        .unwrap_or_else(|| {
-            (
-                LogicalPosition::new(0.0, 0.0),
-                LogicalSize::new(1920.0, 1080.0),
-            )
-        });
+        .map(|size| PhysicalSize::new(size.width as f64, size.height as f64))
+        .unwrap_or_else(|_| PhysicalSize::new(360.0 * scale, 440.0 * scale));
     tray_state.set_anchor(position);
-    // Position while still hidden so there's no visible jump, then reveal.
-    let _ = window.set_position(tray_popup_position(position, window_size, work_area));
+    let target = popup_position(
+        position,
+        window_size,
+        work_pos,
+        work_size,
+        TRAY_MARGIN * scale,
+        TRAY_OFFSET_Y * scale,
+    );
+    // Position while still hidden (physical coords are unambiguous across
+    // monitors), then reveal.
+    let _ = window.set_position(PhysicalPosition::new(
+        target.x.round() as i32,
+        target.y.round() as i32,
+    ));
     let _ = window.show();
     #[cfg(target_os = "macos")]
     activate_app();
     let _ = window.set_focus();
     let _ = app.emit("burnrate-refresh-requested", ());
+}
+
+/// Physical work-area geometry (scale, origin, size) of the monitor under
+/// `point`, falling back to the primary monitor, then a sane default.
+pub(crate) fn cursor_monitor_geometry(
+    app: &AppHandle<Wry>,
+    point: PhysicalPosition<f64>,
+) -> (f64, PhysicalPosition<f64>, PhysicalSize<f64>) {
+    let monitor = app
+        .monitor_from_point(point.x, point.y)
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten());
+    match monitor {
+        Some(monitor) => {
+            let area = monitor.work_area();
+            (
+                monitor.scale_factor(),
+                PhysicalPosition::new(area.position.x as f64, area.position.y as f64),
+                PhysicalSize::new(area.size.width as f64, area.size.height as f64),
+            )
+        }
+        None => (
+            1.0,
+            PhysicalPosition::new(0.0, 0.0),
+            PhysicalSize::new(1920.0, 1080.0),
+        ),
+    }
 }
 
 pub(crate) fn hide_tray_window(app: &AppHandle<Wry>) {
@@ -361,19 +390,25 @@ pub(crate) fn apply_tray_vibrancy(app: &AppHandle<Wry>) {
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn apply_tray_vibrancy(_app: &AppHandle<Wry>) {}
 
-pub(crate) fn tray_popup_position(
-    position: LogicalPosition<f64>,
-    window_size: LogicalSize<f64>,
-    work_area: (LogicalPosition<f64>, LogicalSize<f64>),
-) -> LogicalPosition<f64> {
-    let (work_position, work_size) = work_area;
-    let min_x = work_position.x + 8.0;
-    let min_y = work_position.y + 8.0;
-    let max_x = (work_position.x + work_size.width - window_size.width - 8.0).max(min_x);
-    let max_y = (work_position.y + work_size.height - window_size.height - 8.0).max(min_y);
-    LogicalPosition::new(
-        (position.x - window_size.width / 2.0).clamp(min_x, max_x),
-        (position.y + 12.0).clamp(min_y, max_y),
+/// Place the popover's top-left so it's centered under `cursor` and dropped
+/// `offset_y` below it, clamped to stay fully within the work area. All inputs
+/// and the result are in the same physical-pixel space (the monitor under the
+/// cursor), which keeps multi-monitor and mixed-DPI placement correct.
+pub(crate) fn popup_position(
+    cursor: PhysicalPosition<f64>,
+    window_size: PhysicalSize<f64>,
+    work_position: PhysicalPosition<f64>,
+    work_size: PhysicalSize<f64>,
+    margin: f64,
+    offset_y: f64,
+) -> PhysicalPosition<f64> {
+    let min_x = work_position.x + margin;
+    let min_y = work_position.y + margin;
+    let max_x = (work_position.x + work_size.width - window_size.width - margin).max(min_x);
+    let max_y = (work_position.y + work_size.height - window_size.height - margin).max(min_y);
+    PhysicalPosition::new(
+        (cursor.x - window_size.width / 2.0).clamp(min_x, max_x),
+        (cursor.y + offset_y).clamp(min_y, max_y),
     )
 }
 
@@ -461,21 +496,55 @@ mod tests {
     }
 
     #[test]
-    fn tray_popup_position_clamps_to_work_area() {
-        let size = LogicalSize::new(380.0, 520.0);
-        let work_area = (
-            LogicalPosition::new(0.0, 0.0),
-            LogicalSize::new(1024.0, 768.0),
+    fn popup_position_clamps_to_work_area() {
+        let size = PhysicalSize::new(380.0, 520.0);
+        let work_pos = PhysicalPosition::new(0.0, 0.0);
+        let work_size = PhysicalSize::new(1024.0, 768.0);
+        let position = popup_position(
+            PhysicalPosition::new(20.0, -40.0),
+            size,
+            work_pos,
+            work_size,
+            8.0,
+            12.0,
         );
-        let position = tray_popup_position(LogicalPosition::new(20.0, -40.0), size, work_area);
 
         assert_eq!(position.x, 8.0);
         assert_eq!(position.y, 8.0);
 
-        let position = tray_popup_position(LogicalPosition::new(1000.0, 760.0), size, work_area);
+        let position = popup_position(
+            PhysicalPosition::new(1000.0, 760.0),
+            size,
+            work_pos,
+            work_size,
+            8.0,
+            12.0,
+        );
 
         assert_eq!(position.x, 636.0);
         assert_eq!(position.y, 240.0);
+    }
+
+    #[test]
+    fn popup_position_anchors_to_a_secondary_monitor() {
+        // A second monitor sitting to the right of the primary (origin 1440,0).
+        // The popover must land on it, not be clamped back to the primary.
+        let size = PhysicalSize::new(360.0, 440.0);
+        let work_pos = PhysicalPosition::new(1440.0, 0.0);
+        let work_size = PhysicalSize::new(1440.0, 900.0);
+        let position = popup_position(
+            PhysicalPosition::new(1700.0, 100.0),
+            size,
+            work_pos,
+            work_size,
+            8.0,
+            12.0,
+        );
+
+        // x: 1700 - 180 = 1520 (within [1448, 2512]); y: 100 + 12 = 112.
+        assert_eq!(position.x, 1520.0);
+        assert_eq!(position.y, 112.0);
+        assert!(position.x >= 1448.0, "stays on the secondary monitor");
     }
 
     #[test]
@@ -528,15 +597,18 @@ mod tests {
     }
 
     #[test]
-    fn tray_popup_position_keeps_tall_window_on_screen() {
+    fn popup_position_keeps_tall_window_on_screen() {
         // A resized (taller) popover anchored near the bottom edge still clamps
         // fully on-screen.
-        let size = LogicalSize::new(360.0, 700.0);
-        let work_area = (
-            LogicalPosition::new(0.0, 0.0),
-            LogicalSize::new(1024.0, 768.0),
+        let size = PhysicalSize::new(360.0, 700.0);
+        let position = popup_position(
+            PhysicalPosition::new(500.0, 760.0),
+            size,
+            PhysicalPosition::new(0.0, 0.0),
+            PhysicalSize::new(1024.0, 768.0),
+            8.0,
+            12.0,
         );
-        let position = tray_popup_position(LogicalPosition::new(500.0, 760.0), size, work_area);
 
         assert_eq!(position.y, 768.0 - 700.0 - 8.0);
         assert!(position.y >= 8.0);

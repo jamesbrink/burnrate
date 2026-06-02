@@ -14,8 +14,8 @@ use std::time::Duration;
 #[cfg(target_os = "macos")]
 use tauri::menu::{IsMenuItem, PredefinedMenuItem, Submenu};
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, LogicalUnit, Manager, PixelUnit, Position,
-    Size, State, WindowSizeConstraints, Wry, menu::Menu,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, LogicalUnit, Manager, PhysicalPosition,
+    PhysicalSize, PixelUnit, Position, Size, State, WindowSizeConstraints, Wry, menu::Menu,
 };
 
 const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
@@ -26,6 +26,7 @@ const PREFERENCES_SCREEN_MARGIN: f64 = 18.0;
 const TRAY_CONTENT_WIDTH: f64 = 360.0;
 const TRAY_MIN_HEIGHT: f64 = 200.0;
 const TRAY_SCREEN_MARGIN: f64 = 8.0;
+const TRAY_OFFSET_Y: f64 = 12.0;
 
 #[tauri::command]
 async fn dashboard(app: AppHandle, state: State<'_, AppState>) -> Result<DashboardState, String> {
@@ -178,7 +179,6 @@ fn resize_tray_to_content(
         .ok_or_else(|| "no monitor available for tray window".to_string())?;
     let work_area = monitor.work_area();
     let work_size = work_area.size.to_logical::<f64>(monitor.scale_factor());
-    let work_position = work_area.position.to_logical::<f64>(monitor.scale_factor());
 
     let available_width = (work_size.width - (TRAY_SCREEN_MARGIN * 2.0)).max(1.0);
     let available_height = (work_size.height - (TRAY_SCREEN_MARGIN * 2.0)).max(1.0);
@@ -209,29 +209,45 @@ fn resize_tray_to_content(
         .set_size(Size::Logical(LogicalSize::new(target_width, target_height)))
         .map_err(|error| error.to_string())?;
 
-    // Re-anchor under the cursor/menu bar with the new size, falling back to
-    // clamping the current position fully on-screen if no anchor was recorded.
-    let new_size = LogicalSize::new(target_width, target_height);
-    let work = (work_position, work_size);
+    // Re-anchor in physical pixels (unambiguous across monitors) from the
+    // physical cursor anchor recorded at show time. The popover is already on
+    // the clicked monitor, so its current monitor is the right one to clamp to.
+    let m_scale = monitor.scale_factor();
+    let work_pos_phys =
+        PhysicalPosition::new(work_area.position.x as f64, work_area.position.y as f64);
+    let work_size_phys =
+        PhysicalSize::new(work_area.size.width as f64, work_area.size.height as f64);
+    let window_phys = PhysicalSize::new(target_width * m_scale, target_height * m_scale);
+    let margin = TRAY_SCREEN_MARGIN * m_scale;
     let target = match state.anchor() {
-        Some(anchor) => tray::tray_popup_position(anchor, new_size, work),
+        Some(anchor) => tray::popup_position(
+            anchor,
+            window_phys,
+            work_pos_phys,
+            work_size_phys,
+            margin,
+            TRAY_OFFSET_Y * m_scale,
+        ),
         None => {
-            let current = window
-                .outer_position()
-                .map_err(|error| error.to_string())?
-                .to_logical::<f64>(scale_factor);
-            let min_x = work_position.x + TRAY_SCREEN_MARGIN;
-            let min_y = work_position.y + TRAY_SCREEN_MARGIN;
+            let current = window.outer_position().map_err(|error| error.to_string())?;
+            let min_x = work_pos_phys.x + margin;
+            let min_y = work_pos_phys.y + margin;
             let max_x =
-                (work_position.x + work_size.width - target_width - TRAY_SCREEN_MARGIN).max(min_x);
-            let max_y = (work_position.y + work_size.height - target_height - TRAY_SCREEN_MARGIN)
-                .max(min_y);
-            LogicalPosition::new(current.x.clamp(min_x, max_x), current.y.clamp(min_y, max_y))
+                (work_pos_phys.x + work_size_phys.width - window_phys.width - margin).max(min_x);
+            let max_y =
+                (work_pos_phys.y + work_size_phys.height - window_phys.height - margin).max(min_y);
+            PhysicalPosition::new(
+                (current.x as f64).clamp(min_x, max_x),
+                (current.y as f64).clamp(min_y, max_y),
+            )
         }
     };
 
     window
-        .set_position(Position::Logical(target))
+        .set_position(PhysicalPosition::new(
+            target.x.round() as i32,
+            target.y.round() as i32,
+        ))
         .map_err(|error| error.to_string())
 }
 
