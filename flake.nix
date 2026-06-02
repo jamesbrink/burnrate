@@ -89,7 +89,7 @@
             {
               category = "dev";
               name = "dev";
-              help = "Start Vite dev server for the dashboard UI";
+              help = "Start the Tauri desktop app and tray icon";
               command = "exec ./scripts/dev \"$@\"";
             }
             {
@@ -132,7 +132,7 @@
         };
 
         apps = {
-          dev = mkScriptApp "dev" "dev" "Start the Burnrate dashboard dev server";
+          dev = mkScriptApp "dev" "dev" "Start the Burnrate Tauri desktop app and tray icon";
           build-app = mkScriptApp "build-app" "build-app" "Build frontend assets and the release binary";
           check = mkScriptApp "check" "check" "Run Rust fmt/clippy and TypeScript typecheck";
           test = mkScriptApp "test" "test" "Run Rust and frontend tests";
