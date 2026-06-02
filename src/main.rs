@@ -9,7 +9,7 @@ mod tray;
 
 use app_state::AppState;
 use models::{AccountInput, AccountView, AppSettings, DashboardState, UsageSnapshot};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, LogicalSize, Manager, Size, State};
 
 #[tauri::command]
 async fn dashboard(app: AppHandle, state: State<'_, AppState>) -> Result<DashboardState, String> {
@@ -66,6 +66,44 @@ async fn refresh_snapshots(
     Ok(snapshots)
 }
 
+#[tauri::command]
+fn resize_preferences_to_content(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let window = app
+        .get_webview_window(tray::MAIN_WINDOW)
+        .ok_or_else(|| "preferences window is unavailable".to_string())?;
+    let scale_factor = window.scale_factor().map_err(|error| error.to_string())?;
+    let inner = window
+        .inner_size()
+        .map_err(|error| error.to_string())?
+        .to_logical::<f64>(scale_factor);
+    let outer = window
+        .outer_size()
+        .map_err(|error| error.to_string())?
+        .to_logical::<f64>(scale_factor);
+    let chrome_width = (outer.width - inner.width).max(0.0);
+    let chrome_height = (outer.height - inner.height).max(0.0);
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .or(window
+            .primary_monitor()
+            .map_err(|error| error.to_string())?)
+        .ok_or_else(|| "no monitor available for preferences window".to_string())?;
+    let work_area = monitor
+        .work_area()
+        .size
+        .to_logical::<f64>(monitor.scale_factor());
+    let target_width = (width + chrome_width).ceil().clamp(1.0, work_area.width);
+    let target_height = (height + chrome_height).ceil().clamp(1.0, work_area.height);
+
+    window
+        .set_min_size(None::<Size>)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_size(Size::Logical(LogicalSize::new(target_width, target_height)))
+        .map_err(|error| error.to_string())
+}
+
 fn main() {
     let state = AppState::load().expect("failed to initialize Burnrate state");
     let hide_from_dock = state.settings().hide_from_dock;
@@ -85,7 +123,8 @@ fn main() {
             save_settings,
             remove_account,
             detect_accounts,
-            refresh_snapshots
+            refresh_snapshots,
+            resize_preferences_to_content
         ])
         .run(tauri::generate_context!())
         .expect("error while running Burnrate");

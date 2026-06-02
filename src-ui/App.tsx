@@ -1,10 +1,18 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   detectAccounts,
   loadDashboard,
   onRefreshRequested,
   refreshSnapshots,
   removeAccount,
+  resizePreferencesToContent,
   saveAccount,
   saveSettings,
 } from "./api";
@@ -27,6 +35,7 @@ export function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastPreferenceSize = useRef({ width: 0, height: 0 });
 
   async function reload() {
     setBusy(true);
@@ -69,6 +78,61 @@ export function App() {
   const accounts = state?.accounts ?? [];
   const summary = useMemo(() => summarize(snapshots), [snapshots]);
   const settings = state?.settings ?? { hideFromDock: true };
+
+  useLayoutEffect(() => {
+    if (isTrayView) {
+      return;
+    }
+    const element = document.querySelector<HTMLElement>(".prefs-shell");
+    if (!element) {
+      return;
+    }
+
+    let frame = 0;
+    const measure = () => {
+      const rect = element.getBoundingClientRect();
+      const width = Math.ceil(Math.max(element.scrollWidth, rect.width));
+      const height = Math.ceil(Math.max(element.scrollHeight, rect.height));
+      const last = lastPreferenceSize.current;
+      if (
+        Math.abs(width - last.width) <= 1 &&
+        Math.abs(height - last.height) <= 1
+      ) {
+        return;
+      }
+      lastPreferenceSize.current = { width, height };
+      void resizePreferencesToContent(width, height);
+    };
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+
+    scheduleMeasure();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(scheduleMeasure);
+    observer?.observe(element);
+    window.addEventListener("resize", scheduleMeasure);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", scheduleMeasure);
+    };
+  }, [
+    isTrayView,
+    accounts.length,
+    snapshots,
+    settings.hideFromDock,
+    summary.label,
+    busy,
+    error,
+    activeId,
+    form.provider,
+    form.secretStorage,
+  ]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();

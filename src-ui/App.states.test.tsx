@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   onRefreshRequested: vi.fn(),
   refreshSnapshots: vi.fn(),
   removeAccount: vi.fn(),
+  resizePreferencesToContent: vi.fn(),
   saveAccount: vi.fn(),
   saveSettings: vi.fn(),
 }));
@@ -19,6 +20,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.onRefreshRequested.mockResolvedValue(() => {});
   api.refreshSnapshots.mockResolvedValue([]);
+  api.resizePreferencesToContent.mockResolvedValue(undefined);
   api.detectAccounts.mockResolvedValue([]);
   api.removeAccount.mockResolvedValue([]);
   api.saveAccount.mockResolvedValue([]);

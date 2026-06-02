@@ -267,6 +267,16 @@ export async function refreshSnapshots(): Promise<UsageSnapshot[]> {
   }));
 }
 
+export async function resizePreferencesToContent(
+  width: number,
+  height: number,
+): Promise<void> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    await invoke("resize_preferences_to_content", { width, height });
+  }
+}
+
 export async function onRefreshRequested(handler: () => void | Promise<void>) {
   /* v8 ignore next 3: native Tauri event path */
   if (isTauri) {
