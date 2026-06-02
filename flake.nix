@@ -26,6 +26,20 @@
           pkgs.webkitgtk_4_1
           pkgs.libayatana-appindicator
         ];
+        mkScriptApp = name: script: description:
+          (flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin name ''
+              exec ${self}/scripts/${script} "$@"
+            '';
+          }) // {
+            meta.description = description;
+          };
+        mkCommandApp = name: command: description:
+          (flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin name command;
+          }) // {
+            meta.description = description;
+          };
       in
       {
         devShells.default = pkgs.devshell.mkShell {
@@ -118,12 +132,13 @@
         };
 
         apps = {
-          dev = flake-utils.lib.mkApp { drv = pkgs.writeShellScriptBin "dev" "exec ${self}/scripts/dev"; };
-          build-app = flake-utils.lib.mkApp { drv = pkgs.writeShellScriptBin "build-app" "exec ${self}/scripts/build-app"; };
-          check = flake-utils.lib.mkApp { drv = pkgs.writeShellScriptBin "check" "exec ${self}/scripts/check"; };
-          test = flake-utils.lib.mkApp { drv = pkgs.writeShellScriptBin "test" "exec ${self}/scripts/test"; };
-          fmt = flake-utils.lib.mkApp { drv = pkgs.writeShellScriptBin "fmt" "exec ${self}/scripts/fmt"; };
-          clean = flake-utils.lib.mkApp { drv = pkgs.writeShellScriptBin "clean" "exec ${self}/scripts/clean"; };
+          dev = mkScriptApp "dev" "dev" "Start the Burnrate dashboard dev server";
+          build-app = mkScriptApp "build-app" "build-app" "Build frontend assets and the release binary";
+          check = mkScriptApp "check" "check" "Run Rust fmt/clippy and TypeScript typecheck";
+          test = mkScriptApp "test" "test" "Run Rust and frontend tests";
+          fmt = mkScriptApp "fmt" "fmt" "Format Rust and frontend files";
+          clean = mkScriptApp "clean" "clean" "Remove build artifacts";
+          package-crate = mkCommandApp "package-crate" "exec cargo package \"$@\"" "Verify the crates.io package archive";
         };
       });
 }
