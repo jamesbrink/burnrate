@@ -11,9 +11,11 @@ use app_state::AppState;
 use models::{AccountInput, AccountView, AppSettings, DashboardState};
 use std::time::Duration;
 
+#[cfg(target_os = "macos")]
+use tauri::menu::{IsMenuItem, PredefinedMenuItem, Submenu};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Size, State, Wry,
-    menu::{IsMenuItem, Menu, PredefinedMenuItem, Submenu},
+    menu::Menu,
 };
 
 const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
