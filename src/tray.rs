@@ -1,6 +1,6 @@
 use chrono::Utc;
 use tauri::{
-    App, AppHandle, Emitter, Manager, Wry,
+    App, AppHandle, Emitter, LogicalPosition, Manager, Wry,
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -9,6 +9,8 @@ use tauri::{
 use crate::models::{SnapshotStatus, TraySummary, UsageSnapshot};
 
 const TRAY_ID: &str = "main";
+const MAIN_WINDOW: &str = "main";
+const TRAY_WINDOW: &str = "tray";
 
 pub(crate) fn summarize(snapshots: &[UsageSnapshot]) -> TraySummary {
     let critical_count = snapshots
@@ -54,7 +56,7 @@ pub(crate) fn summarize(snapshots: &[UsageSnapshot]) -> TraySummary {
 }
 
 pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show Burnrate", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Open Burnrate", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &refresh, &quit])?;
@@ -78,10 +80,11 @@ pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
+                position,
                 ..
             } = event
             {
-                show_main_window(tray.app_handle());
+                show_tray_window(tray.app_handle(), position);
             }
         })
         .build(app)?;
@@ -96,9 +99,21 @@ pub(crate) fn update_summary(app: &AppHandle<Wry>, summary: &TraySummary) {
 }
 
 fn show_main_window(app: &AppHandle<Wry>) {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.show();
         let _ = window.set_focus();
+    }
+}
+
+fn show_tray_window(app: &AppHandle<Wry>, position: tauri::PhysicalPosition<f64>) {
+    if let Some(window) = app.get_webview_window(TRAY_WINDOW) {
+        let _ = window.set_position(LogicalPosition::new(
+            (position.x - 180.0).max(8.0),
+            position.y + 12.0,
+        ));
+        let _ = window.show();
+        let _ = window.set_focus();
+        let _ = app.emit("burnrate-refresh-requested", ());
     }
 }
 

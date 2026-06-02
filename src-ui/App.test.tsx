@@ -26,3 +26,65 @@ test("adds a manual account in browser fallback mode", async () => {
 
   expect(await screen.findByText("OpenRouter Team")).toBeInTheDocument();
 });
+
+test("saves the hide dock setting in browser fallback mode", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  const toggle = await screen.findByLabelText("Hide Dock");
+  await user.click(toggle);
+
+  expect(toggle).toBeChecked();
+});
+
+test("edits and resets an existing account", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "Accounts" });
+  const accountButton = screen
+    .getAllByRole("button")
+    .find((button) => button.textContent?.includes("Claude Code"));
+  expect(accountButton).toBeTruthy();
+
+  await user.click(accountButton!);
+  expect(screen.getByRole("heading", { name: "Edit Account" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Label")).toHaveValue("Claude Code");
+
+  await user.click(screen.getByTitle("Reset form"));
+  expect(screen.getByRole("heading", { name: "Add Account" })).toBeInTheDocument();
+});
+
+test("updates provider, storage, endpoint, enabled state, and removes an account", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "Accounts" });
+  await user.selectOptions(screen.getByLabelText("Provider"), "codex");
+  expect(screen.getByLabelText("Label")).toHaveValue("Codex");
+
+  await user.click(screen.getByRole("button", { name: "Plaintext" }));
+  await user.type(screen.getByLabelText("Endpoint"), "http://localhost:8787");
+  await user.click(screen.getAllByLabelText("Enabled")[0]);
+  await user.clear(screen.getByLabelText("Label"));
+  await user.type(screen.getByLabelText("Label"), "Remove Me");
+  await user.click(screen.getByRole("button", { name: "Add" }));
+
+  expect(await screen.findByText("Remove Me")).toBeInTheDocument();
+
+  const removeButtons = screen.getAllByTitle("Remove account");
+  await user.click(removeButtons[removeButtons.length - 1]);
+
+  expect(screen.queryByText("Remove Me")).not.toBeInTheDocument();
+});
+
+test("runs detect and refresh actions", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "Accounts" });
+  await user.click(screen.getByTitle("Detect accounts"));
+  await user.click(screen.getByTitle("Refresh"));
+
+  expect(await screen.findByText("Burnrate: 1 warning")).toBeInTheDocument();
+});

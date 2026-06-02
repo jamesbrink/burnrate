@@ -20,13 +20,23 @@ The crates.io package includes the built `dist/` frontend assets so the installe
 
 Secrets are stored in the OS keyring by default. Plaintext storage is available only when explicitly selected for an account.
 
+## Tray
+
+Burnrate starts tray-first. Left-click the tray icon to open a compact account and usage summary. Right-click the tray icon for actions such as opening the full app, refreshing usage, or quitting.
+
+The dashboard includes a simple Hide Dock setting for macOS users who want Burnrate to behave like a pure menu-bar utility.
+
 ## Development
 
 ```sh
 npm install
 npm run dev
-cargo run
 ```
+
+`npm run dev` and the devshell `dev` helper launch the Tauri app, including the
+tray icon. Tauri starts the Vite dashboard server through `npm run dev:web`.
+Frontend edits hot-reload through Vite HMR. Rust/Tauri edits are watched by
+`tauri dev` and restart the desktop process.
 
 Inside `nix develop`, Burnrate prints a helper menu and exposes the helper commands on `PATH`:
 
@@ -38,6 +48,12 @@ test
 fmt
 clean
 package-crate
+```
+
+Coverage gates target at least 80%:
+
+```sh
+npm run coverage
 ```
 
 ## Release

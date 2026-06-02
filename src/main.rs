@@ -8,7 +8,7 @@ mod providers;
 mod tray;
 
 use app_state::AppState;
-use models::{AccountInput, AccountView, DashboardState, UsageSnapshot};
+use models::{AccountInput, AccountView, AppSettings, DashboardState, UsageSnapshot};
 use tauri::{AppHandle, State};
 
 #[tauri::command]
@@ -29,6 +29,19 @@ fn save_account(
     input: AccountInput,
 ) -> Result<Vec<AccountView>, String> {
     state.save_account(input).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: AppSettings,
+) -> Result<AppSettings, String> {
+    let settings = state
+        .save_settings(settings)
+        .map_err(|error| error.to_string())?;
+    apply_activation_policy(&app, settings.hide_from_dock);
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -54,10 +67,12 @@ async fn refresh_snapshots(
 
 fn main() {
     let state = AppState::load().expect("failed to initialize Burnrate state");
+    let hide_from_dock = state.settings().hide_from_dock;
 
     tauri::Builder::default()
         .manage(state)
-        .setup(|app| {
+        .setup(move |app| {
+            apply_activation_policy(app.handle(), hide_from_dock);
             tray::install(app)?;
             Ok(())
         })
@@ -65,10 +80,20 @@ fn main() {
             dashboard,
             list_accounts,
             save_account,
+            save_settings,
             remove_account,
             detect_accounts,
             refresh_snapshots
         ])
         .run(tauri::generate_context!())
         .expect("error while running Burnrate");
+}
+
+fn apply_activation_policy(app: &AppHandle, hide_from_dock: bool) {
+    let policy = if hide_from_dock {
+        tauri::ActivationPolicy::Accessory
+    } else {
+        tauri::ActivationPolicy::Regular
+    };
+    let _ = app.set_activation_policy(policy);
 }

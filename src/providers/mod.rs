@@ -149,9 +149,29 @@ fn require_token(account: &AccountConfig) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
     use serde_json::json;
+    use tempfile::tempdir;
 
     use super::*;
+    use crate::models::SecretStorageMode;
+
+    fn account() -> AccountConfig {
+        AccountConfig {
+            id: "openrouter-main".to_string(),
+            provider: ProviderKind::OpenRouter,
+            label: "OpenRouter".to_string(),
+            enabled: true,
+            auto_detected: false,
+            credential_path: None,
+            endpoint_override: None,
+            secret_storage: SecretStorageMode::Plaintext,
+            keyring_account: None,
+            plaintext_secret: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
 
     #[test]
     fn finds_nested_tokens() {
@@ -162,5 +182,63 @@ mod tests {
         }));
 
         assert_eq!(token, Some("tok_123".to_string()));
+    }
+
+    #[test]
+    fn endpoint_prefers_account_override() {
+        let mut account = account();
+        account.endpoint_override = Some("https://example.test".to_string());
+
+        assert_eq!(
+            endpoint(&account, "BURNRATE_TEST_ENDPOINT", "https://default.test"),
+            "https://example.test"
+        );
+    }
+
+    #[test]
+    fn json_helpers_read_numbers_and_text() {
+        let value = json!({
+            "quota": {
+                "remaining": "42.5",
+                "reset_at": "2026-06-01T12:00:00Z"
+            }
+        });
+
+        assert_eq!(number(&value, &["/quota/remaining"]), Some(42.5));
+        assert_eq!(
+            text(&value, &["/quota/reset_at"]),
+            Some("2026-06-01T12:00:00Z".to_string())
+        );
+        assert_eq!(number(&value, &["/missing"]), None);
+    }
+
+    #[test]
+    fn reads_token_from_file_and_directory_candidates() {
+        let dir = tempdir().unwrap();
+        let token_path = dir.path().join("auth.json");
+        std::fs::write(&token_path, r#"{"auth":{"accessToken":"tok_file"}}"#).unwrap();
+
+        let mut account = account();
+        account.credential_path = Some(dir.path().display().to_string());
+
+        assert_eq!(
+            token_from_config(&account).unwrap(),
+            Some("tok_file".to_string())
+        );
+    }
+
+    #[test]
+    fn requires_token_for_accounts_without_credentials() {
+        let error = require_token(&account()).unwrap_err();
+
+        assert!(error.to_string().contains("no credential found"));
+    }
+
+    #[tokio::test]
+    async fn refresh_account_maps_provider_errors_to_snapshots() {
+        let snapshot = ProviderClient::new().refresh_account(&account()).await;
+
+        assert_eq!(snapshot.status, SnapshotStatus::Error);
+        assert!(snapshot.message.unwrap().contains("no credential found"));
     }
 }

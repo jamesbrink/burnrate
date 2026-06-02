@@ -5,6 +5,7 @@ use anyhow::Result;
 use crate::{
     config::{self, AppConfig},
     key_store,
+    models::AppSettings,
     models::{AccountInput, AccountView, DashboardState, UsageSnapshot},
     providers::{self, ProviderClient},
     tray,
@@ -32,6 +33,17 @@ impl AppState {
 
     pub(crate) fn list_accounts(&self) -> Result<Vec<AccountView>> {
         Ok(self.config.lock().expect("config lock").views())
+    }
+
+    pub(crate) fn settings(&self) -> AppSettings {
+        self.config.lock().expect("config lock").settings.clone()
+    }
+
+    pub(crate) fn save_settings(&self, settings: AppSettings) -> Result<AppSettings> {
+        let mut config = self.config.lock().expect("config lock");
+        config.settings = settings;
+        config::save_to_path(&self.config_path, &config)?;
+        Ok(config.settings.clone())
     }
 
     pub(crate) fn save_account(&self, input: AccountInput) -> Result<Vec<AccountView>> {
@@ -95,6 +107,7 @@ impl AppState {
             accounts,
             snapshots,
             tray_summary,
+            settings: self.settings(),
         })
     }
 }

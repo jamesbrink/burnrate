@@ -85,6 +85,20 @@ h2 {
   gap: 8px;
 }
 
+.dock-toggle {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #4e5e6f;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.dock-toggle input {
+  margin: 0;
+}
+
 .icon-button {
   width: 36px;
   height: 36px;
@@ -120,6 +134,10 @@ h2 {
   border: 1px solid #d9a6a6;
   background: #fff6f4;
   color: #8b2b2b;
+}
+
+.notice.compact {
+  margin: 0;
 }
 
 .metrics {
@@ -416,6 +434,82 @@ h2 {
   to {
     transform: rotate(360deg);
   }
+}
+
+.tray-panel {
+  min-height: 100vh;
+  padding: 12px;
+  background: #f3f5f7;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.tray-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.tray-panel-head h1 {
+  font-size: 18px;
+}
+
+.tray-panel-head p {
+  color: #607080;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.tray-panel-section {
+  display: grid;
+  gap: 7px;
+}
+
+.tray-snapshot,
+.tray-account {
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 9px 10px;
+}
+
+.tray-snapshot.warning {
+  border-color: #d9aa4f;
+}
+
+.tray-snapshot.exhausted,
+.tray-snapshot.error {
+  border-color: #cc7777;
+}
+
+.tray-snapshot > div,
+.tray-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tray-snapshot strong,
+.tray-account span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tray-snapshot span,
+.tray-account small {
+  color: #647282;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tray-snapshot p,
+.tray-empty {
+  color: #394756;
+  font-size: 13px;
+  margin-top: 4px;
 }
 
 @media (max-width: 860px) {

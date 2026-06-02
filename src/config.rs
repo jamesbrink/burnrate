@@ -8,13 +8,18 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::models::{AccountConfig, AccountInput, AccountView, ProviderKind, SecretStorageMode};
+use crate::models::{
+    AccountConfig, AccountInput, AccountView, AppSettings, ProviderKind, SecretStorageMode,
+};
 
 const CONFIG_FILE: &str = "accounts.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AppConfig {
+    #[serde(default)]
+    pub settings: AppSettings,
+    #[serde(default)]
     pub accounts: Vec<AccountConfig>,
 }
 
@@ -176,6 +181,92 @@ mod tests {
 
         assert_eq!(loaded.accounts.len(), 1);
         assert_eq!(loaded.accounts[0].provider, ProviderKind::OpenRouter);
+        assert!(!loaded.settings.hide_from_dock);
+    }
+
+    #[test]
+    fn loads_legacy_config_without_settings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        fs::write(&path, r#"{"accounts":[]}"#).unwrap();
+
+        let loaded = load_from_path(&path).unwrap();
+
+        assert!(loaded.accounts.is_empty());
+        assert!(!loaded.settings.hide_from_dock);
+    }
+
+    #[test]
+    fn views_report_secret_state_without_exposing_secret() {
+        let mut config = AppConfig::default();
+        let account = config.upsert_manual(AccountInput {
+            id: Some("openrouter-main".to_string()),
+            provider: ProviderKind::OpenRouter,
+            label: "OpenRouter".to_string(),
+            enabled: true,
+            endpoint_override: Some("https://example.test".to_string()),
+            secret_storage: SecretStorageMode::Plaintext,
+            secret: None,
+        });
+        config.accounts[0].plaintext_secret = Some("sk-test".to_string());
+
+        let view = config.views().pop().unwrap();
+
+        assert_eq!(view.id, account.id);
+        assert!(view.has_secret);
+        assert_eq!(
+            view.endpoint_override.as_deref(),
+            Some("https://example.test")
+        );
+    }
+
+    #[test]
+    fn upsert_updates_existing_manual_account() {
+        let mut config = AppConfig::default();
+        config.upsert_manual(AccountInput {
+            id: Some("openrouter-main".to_string()),
+            provider: ProviderKind::OpenRouter,
+            label: "OpenRouter".to_string(),
+            enabled: true,
+            endpoint_override: None,
+            secret_storage: SecretStorageMode::Keyring,
+            secret: None,
+        });
+
+        config.upsert_manual(AccountInput {
+            id: Some("openrouter-main".to_string()),
+            provider: ProviderKind::Codex,
+            label: "Codex Manual".to_string(),
+            enabled: false,
+            endpoint_override: Some("http://localhost".to_string()),
+            secret_storage: SecretStorageMode::Plaintext,
+            secret: None,
+        });
+
+        assert_eq!(config.accounts.len(), 1);
+        assert_eq!(config.accounts[0].provider, ProviderKind::Codex);
+        assert!(!config.accounts[0].enabled);
+        assert!(!config.accounts[0].auto_detected);
+    }
+
+    #[test]
+    fn remove_returns_removed_account() {
+        let mut config = AppConfig::default();
+        config.upsert_manual(AccountInput {
+            id: Some("openrouter-main".to_string()),
+            provider: ProviderKind::OpenRouter,
+            label: "OpenRouter".to_string(),
+            enabled: true,
+            endpoint_override: None,
+            secret_storage: SecretStorageMode::Keyring,
+            secret: None,
+        });
+
+        let removed = config.remove("openrouter-main").unwrap();
+
+        assert_eq!(removed.id, "openrouter-main");
+        assert!(config.accounts.is_empty());
+        assert!(config.remove("missing").is_none());
     }
 
     #[test]

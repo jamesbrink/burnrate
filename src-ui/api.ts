@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { AccountInput, AccountView, DashboardState, UsageSnapshot } from "./types";
+import type { AccountInput, AccountView, AppSettings, DashboardState, UsageSnapshot } from "./types";
 
 const isTauri = "__TAURI_INTERNALS__" in window;
 
@@ -46,6 +46,10 @@ let mockAccounts: AccountView[] = [
   },
 ];
 
+let mockSettings: AppSettings = {
+  hideFromDock: false,
+};
+
 const mockSnapshots: UsageSnapshot[] = [
   {
     accountId: "claude-code-local",
@@ -80,6 +84,7 @@ const mockSnapshots: UsageSnapshot[] = [
 ];
 
 export async function loadDashboard(): Promise<DashboardState> {
+  /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
     return invoke<DashboardState>("dashboard");
   }
@@ -93,10 +98,12 @@ export async function loadDashboard(): Promise<DashboardState> {
       warningCount: 1,
       updatedAt: new Date().toISOString(),
     },
+    settings: mockSettings,
   };
 }
 
 export async function saveAccount(input: AccountInput): Promise<AccountView[]> {
+  /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
     return invoke<AccountView[]>("save_account", { input });
   }
@@ -121,6 +128,7 @@ export async function saveAccount(input: AccountInput): Promise<AccountView[]> {
 }
 
 export async function removeAccount(id: string): Promise<AccountView[]> {
+  /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
     return invoke<AccountView[]>("remove_account", { id });
   }
@@ -128,7 +136,18 @@ export async function removeAccount(id: string): Promise<AccountView[]> {
   return mockAccounts;
 }
 
+export async function saveSettings(settings: AppSettings): Promise<AppSettings> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    return invoke<AppSettings>("save_settings", { settings });
+  }
+
+  mockSettings = settings;
+  return mockSettings;
+}
+
 export async function detectAccounts(): Promise<AccountView[]> {
+  /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
     return invoke<AccountView[]>("detect_accounts");
   }
@@ -136,6 +155,7 @@ export async function detectAccounts(): Promise<AccountView[]> {
 }
 
 export async function refreshSnapshots(): Promise<UsageSnapshot[]> {
+  /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
     return invoke<UsageSnapshot[]>("refresh_snapshots");
   }
@@ -143,6 +163,7 @@ export async function refreshSnapshots(): Promise<UsageSnapshot[]> {
 }
 
 export async function onRefreshRequested(handler: () => void | Promise<void>) {
+  /* v8 ignore next 3: native Tauri event path */
   if (isTauri) {
     return listen("burnrate-refresh-requested", handler);
   }

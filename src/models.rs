@@ -26,6 +26,12 @@ pub(crate) enum SecretStorageMode {
     Plaintext,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AppSettings {
+    pub hide_from_dock: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AccountConfig {
@@ -118,6 +124,7 @@ pub(crate) struct DashboardState {
     pub accounts: Vec<AccountView>,
     pub snapshots: Vec<UsageSnapshot>,
     pub tray_summary: TraySummary,
+    pub settings: AppSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,4 +135,21 @@ pub(crate) struct TraySummary {
     pub critical_count: usize,
     pub warning_count: usize,
     pub updated_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_kind_uses_stable_config_names() {
+        assert_eq!(ProviderKind::ClaudeCode.as_str(), "claude-code");
+        assert_eq!(ProviderKind::Codex.as_str(), "codex");
+        assert_eq!(ProviderKind::OpenRouter.as_str(), "openrouter");
+    }
+
+    #[test]
+    fn default_settings_keep_dock_visible() {
+        assert!(!AppSettings::default().hide_from_dock);
+    }
 }

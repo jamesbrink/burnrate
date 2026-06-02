@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default Burnrate desktop window permissions.",
-  "windows": ["main"],
+  "windows": ["main", "tray"],
   "permissions": ["core:default", "core:event:default"]
 }

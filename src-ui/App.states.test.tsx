@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   refreshSnapshots: vi.fn(),
   removeAccount: vi.fn(),
   saveAccount: vi.fn(),
+  saveSettings: vi.fn(),
 }));
 
 vi.mock("./api", () => api);
@@ -21,9 +22,13 @@ beforeEach(() => {
   api.detectAccounts.mockResolvedValue([]);
   api.removeAccount.mockResolvedValue([]);
   api.saveAccount.mockResolvedValue([]);
+  api.saveSettings.mockResolvedValue({ hideFromDock: false });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  window.history.replaceState({}, "", "/");
+});
 
 test("shows a loading refresh control while dashboard data is pending", async () => {
   let resolveDashboard: (state: DashboardState) => void = () => {};
@@ -72,6 +77,47 @@ test("renders stale snapshot state", async () => {
   expect(screen.getByText("Last refresh is older than the quota window.")).toBeInTheDocument();
 });
 
+test("renders compact tray view from the tray window route", async () => {
+  window.history.replaceState({}, "", "/?view=tray");
+  api.loadDashboard.mockResolvedValue(
+    dashboardState({
+      accounts: [
+        {
+          id: "codex-local",
+          provider: "codex",
+          label: "Codex",
+          enabled: true,
+          autoDetected: true,
+          credentialPath: "~/.codex/auth.json",
+          endpointOverride: null,
+          secretStorage: "keyring",
+          hasSecret: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      snapshots: [
+        {
+          accountId: "codex-local",
+          provider: "codex",
+          label: "Codex",
+          status: "warning",
+          quota: { used: 90, limit: 100, remaining: 10, unit: "requests", resetAt: null },
+          burnRate: { perHour: 3.75, projectedDepletionAt: null },
+          message: null,
+          fetchedAt: new Date().toISOString(),
+        },
+      ],
+    }),
+  );
+
+  render(<App />);
+
+  expect(await screen.findByRole("region", { name: "Usage" })).toBeInTheDocument();
+  expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
+  expect(screen.getByText("10 requests left")).toBeInTheDocument();
+});
+
 function dashboardState(overrides: Partial<DashboardState> = {}): DashboardState {
   const accounts: AccountView[] = overrides.accounts ?? [];
   const snapshots: UsageSnapshot[] = overrides.snapshots ?? [];
@@ -86,5 +132,6 @@ function dashboardState(overrides: Partial<DashboardState> = {}): DashboardState
       warningCount: 0,
       updatedAt: new Date().toISOString(),
     },
+    settings: overrides.settings ?? { hideFromDock: false },
   };
 }

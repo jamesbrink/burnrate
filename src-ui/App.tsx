@@ -16,10 +16,13 @@ import {
   refreshSnapshots,
   removeAccount,
   saveAccount,
+  saveSettings,
 } from "./api";
+import { TrayPanel } from "./TrayPanel";
 import type {
   AccountInput,
   AccountView,
+  AppSettings,
   DashboardState,
   ProviderKind,
   SecretStorageMode,
@@ -52,6 +55,7 @@ const emptyForm: AccountInput = {
 };
 
 export function App() {
+  const isTrayView = new URLSearchParams(window.location.search).get("view") === "tray";
   const [state, setState] = useState<DashboardState | null>(null);
   const [snapshots, setSnapshots] = useState<UsageSnapshot[]>([]);
   const [form, setForm] = useState<AccountInput>(emptyForm);
@@ -99,6 +103,7 @@ export function App() {
 
   const accounts = state?.accounts ?? [];
   const summary = useMemo(() => summarize(snapshots), [snapshots]);
+  const settings = state?.settings ?? { hideFromDock: false };
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -113,7 +118,7 @@ export function App() {
       setState((previous) =>
         previous
           ? { ...previous, accounts }
-          : { accounts, snapshots: [], traySummary: summary },
+          : { accounts, snapshots: [], traySummary: summary, settings },
       );
       setForm(emptyForm);
       setActiveId(null);
@@ -145,7 +150,7 @@ export function App() {
       setState((previous) =>
         previous
           ? { ...previous, accounts }
-          : { accounts, snapshots: [], traySummary: summary },
+          : { accounts, snapshots: [], traySummary: summary, settings },
       );
     } catch (err) {
       setError(String(err));
@@ -162,13 +167,42 @@ export function App() {
       setState((previous) =>
         previous
           ? { ...previous, accounts }
-          : { accounts, snapshots: [], traySummary: summary },
+          : { accounts, snapshots: [], traySummary: summary, settings },
       );
     } catch (err) {
       setError(String(err));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onSettingsChange(settings: AppSettings) {
+    setBusy(true);
+    setError(null);
+    try {
+      const nextSettings = await saveSettings(settings);
+      setState((previous) =>
+        previous
+          ? { ...previous, settings: nextSettings }
+          : { accounts: [], snapshots, traySummary: summary, settings: nextSettings },
+      );
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (isTrayView) {
+    return (
+      <TrayPanel
+        state={state}
+        snapshots={snapshots}
+        busy={busy}
+        error={error}
+        onRefresh={() => void refreshOnly()}
+      />
+    );
   }
 
   return (
@@ -179,6 +213,15 @@ export function App() {
           <p>{summary.label}</p>
         </div>
         <div className="toolbar">
+          <label className="dock-toggle" title="Hide Burnrate from the macOS Dock">
+            <input
+              type="checkbox"
+              checked={settings.hideFromDock}
+              disabled={busy}
+              onChange={(event) => void onSettingsChange({ hideFromDock: event.target.checked })}
+            />
+            Hide Dock
+          </label>
           <button className="icon-button" onClick={onDetect} title="Detect accounts">
             <Wifi size={18} />
           </button>

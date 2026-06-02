@@ -64,8 +64,13 @@ export interface TraySummary {
   updatedAt: string;
 }
 
+export interface AppSettings {
+  hideFromDock: boolean;
+}
+
 export interface DashboardState {
   accounts: AccountView[];
   snapshots: UsageSnapshot[];
   traySummary: TraySummary;
+  settings: AppSettings;
 }
