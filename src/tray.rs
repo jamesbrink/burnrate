@@ -8,6 +8,8 @@ use tauri::{
 
 use crate::models::{SnapshotStatus, TraySummary, UsageSnapshot};
 
+const TRAY_ID: &str = "main";
+
 pub(crate) fn summarize(snapshots: &[UsageSnapshot]) -> TraySummary {
     let critical_count = snapshots
         .iter()
@@ -57,7 +59,7 @@ pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &refresh, &quit])?;
 
-    TrayIconBuilder::with_id("main")
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(tray_icon()?)
         .icon_as_template(true)
         .tooltip("Burnrate")
@@ -85,6 +87,12 @@ pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
         .build(app)?;
 
     Ok(())
+}
+
+pub(crate) fn update_summary(app: &AppHandle<Wry>, summary: &TraySummary) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_tooltip(Some(summary.label.as_str()));
+    }
 }
 
 fn show_main_window(app: &AppHandle<Wry>) {

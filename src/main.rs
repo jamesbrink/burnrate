@@ -9,11 +9,13 @@ mod tray;
 
 use app_state::AppState;
 use models::{AccountInput, AccountView, DashboardState, UsageSnapshot};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[tauri::command]
-async fn dashboard(state: State<'_, AppState>) -> Result<DashboardState, String> {
-    state.dashboard().await.map_err(|error| error.to_string())
+async fn dashboard(app: AppHandle, state: State<'_, AppState>) -> Result<DashboardState, String> {
+    let dashboard = state.dashboard().await.map_err(|error| error.to_string())?;
+    tray::update_summary(&app, &dashboard.tray_summary);
+    Ok(dashboard)
 }
 
 #[tauri::command]
@@ -40,8 +42,14 @@ fn detect_accounts(state: State<'_, AppState>) -> Result<Vec<AccountView>, Strin
 }
 
 #[tauri::command]
-async fn refresh_snapshots(state: State<'_, AppState>) -> Result<Vec<UsageSnapshot>, String> {
-    Ok(state.snapshots().await)
+async fn refresh_snapshots(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<UsageSnapshot>, String> {
+    let snapshots = state.snapshots().await;
+    let summary = tray::summarize(&snapshots);
+    tray::update_summary(&app, &summary);
+    Ok(snapshots)
 }
 
 fn main() {
