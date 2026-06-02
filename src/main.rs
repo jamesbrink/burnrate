@@ -213,6 +213,7 @@ fn main() {
         .manage(state)
         .setup(move |app| {
             tray::apply_activation_policy(app.handle(), true);
+            tray::set_dock_icon_if_unbundled();
             if let Some(window) = app.get_webview_window(tray::MAIN_WINDOW) {
                 let app_handle = app.handle().clone();
                 window.on_window_event(move |event| {

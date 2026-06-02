@@ -118,6 +118,51 @@ pub(crate) fn apply_activation_policy(app: &AppHandle<Wry>, hide_from_dock: bool
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn apply_activation_policy(_app: &AppHandle<Wry>, _hide_from_dock: bool) {}
 
+/// On macOS the Dock icon comes from the `.app` bundle's `CFBundleIconFile`. A
+/// bare binary (`cargo build` / `cargo install burnrate`) has no bundle, so
+/// when Preferences flips the activation policy to `Regular` the Dock shows a
+/// generic executable icon. Set the application icon at runtime from the
+/// embedded PNG so the unbundled binary still shows the Burnrate icon. The
+/// bundled app already ships a multi-resolution `icon.icns`, so leave it be.
+#[cfg(target_os = "macos")]
+pub(crate) fn set_dock_icon_if_unbundled() {
+    use objc2::{AnyThread, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSData;
+
+    const ICON_PNG: &[u8] = include_bytes!("../icons/icon.png");
+
+    if running_in_app_bundle() {
+        return;
+    }
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let data = NSData::with_bytes(ICON_PNG);
+    let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    // SAFETY: `NSApplication` is touched on the main thread (proven by `mtm`)
+    // and `image` is a valid, freshly-decoded `NSImage`.
+    unsafe { app.setApplicationIconImage(Some(&image)) };
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn set_dock_icon_if_unbundled() {}
+
+#[cfg(target_os = "macos")]
+fn running_in_app_bundle() -> bool {
+    std::env::current_exe()
+        .map(|path| path_is_in_app_bundle(&path.to_string_lossy()))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn path_is_in_app_bundle(path: &str) -> bool {
+    path.contains(".app/Contents/MacOS/")
+}
+
 pub(crate) fn update_summary(app: &AppHandle<Wry>, summary: &TraySummary) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(summary.label.as_str()));
@@ -270,6 +315,18 @@ mod tests {
 
         assert!(icon.width() >= 128);
         assert!(icon.height() >= 128);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn detects_app_bundle_versus_bare_binary() {
+        assert!(path_is_in_app_bundle(
+            "/Applications/Burnrate.app/Contents/MacOS/burnrate"
+        ));
+        assert!(!path_is_in_app_bundle(
+            "/Users/dev/Projects/burnrate/target/release/burnrate"
+        ));
+        assert!(!path_is_in_app_bundle("/usr/local/bin/burnrate"));
     }
 
     #[test]

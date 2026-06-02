@@ -59,6 +59,13 @@ tokio = { version = "1", features = [
 ] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
+# Runtime Dock icon for the unbundled binary (see src/tray.rs). These versions
+# match what tao/wry already resolve, so they add no new dependency downloads.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage"] }
+objc2-foundation = { version = "0.3", features = ["NSData"] }
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
