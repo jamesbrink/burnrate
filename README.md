@@ -1,61 +1,84 @@
 # Burnrate
 
-Burnrate is a tray-first desktop quota monitor for Claude Code, Codex, and OpenRouter. It ships as a Tauri 2 desktop app and as a binary-only Rust crate for `cargo install burnrate`.
+Burnrate is a tray-first desktop app for watching quota, credits, and usage burn rate across local AI developer tools and API accounts.
+
+It is built with Tauri 2, Rust, React, and TypeScript. The primary distribution path is native desktop bundles from GitHub Releases, with a secondary binary-only Rust crate for `cargo install burnrate`.
+
+## Features
+
+- Tray-first usage summary with a compact left-click account view.
+- Right-click tray actions for opening the full dashboard, refreshing usage, and quitting.
+- Claude Code account detection from local Claude configuration.
+- Codex account detection from `CODEX_HOME` or `~/.codex`.
+- OpenRouter API key accounts using the `/api/v1/credits` endpoint.
+- OS keyring storage for secrets by default, with an explicit plaintext fallback mode.
+- macOS Hide Dock setting for menu-bar style use.
 
 ## Install
 
-The primary install path is the native app bundle from GitHub Releases. Rust users can also install the bundled binary crate:
+Download the native app bundle for your platform from GitHub Releases when releases are available.
+
+Rust users can install the binary crate:
 
 ```sh
 cargo install burnrate
 ```
 
-The crates.io package includes the built `dist/` frontend assets so the installed binary can launch the dashboard without a separate JavaScript build.
-
-## Providers
-
-- Claude Code: detects `CLAUDE_CONFIG_DIR` or `~/.claude` and reads OAuth-style local credentials when available.
-- Codex: detects `CODEX_HOME` or `~/.codex` and reads local auth material when available.
-- OpenRouter: supports manual API-key accounts and fetches `/api/v1/credits`.
-
-Secrets are stored in the OS keyring by default. Plaintext storage is available only when explicitly selected for an account.
-
-## Tray
-
-Burnrate starts tray-first. Left-click the tray icon to open a compact account and usage summary. Right-click the tray icon for actions such as opening the full app, refreshing usage, or quitting.
-
-The dashboard includes a simple Hide Dock setting for macOS users who want Burnrate to behave like a pure menu-bar utility.
+The crate includes the built frontend assets needed to launch the Tauri dashboard after installation.
 
 ## Development
+
+Install JavaScript dependencies, then run the desktop app:
 
 ```sh
 npm install
 npm run dev
 ```
 
-`npm run dev` and the devshell `dev` helper launch the Tauri app, including the
-tray icon. Tauri starts the Vite dashboard server through `npm run dev:web`.
-Frontend edits hot-reload through Vite HMR. Rust/Tauri edits are watched by
-`tauri dev` and restart the desktop process.
+`npm run dev` starts `tauri dev`, which launches the actual desktop app and tray icon. Tauri starts the Vite dev server through `npm run dev:web`; frontend edits hot-reload through Vite HMR, while Rust and Tauri edits restart the desktop process.
 
-Inside `nix develop`, Burnrate prints a helper menu and exposes the helper commands on `PATH`:
+The Nix devshell exposes the same workflow as short helper commands:
 
 ```sh
+nix develop
 dev
-build-app
 check
 test
 fmt
-clean
+build-app
+build-pure
 package-crate
+clean
 ```
 
-Coverage gates target at least 80%:
+Burnrate also has a pure Nix package target:
 
 ```sh
-npm run coverage
+nix build .#burnrate
 ```
+
+The flake package metadata is derived from `Cargo.toml`, including the app version, description, homepage, repository release URL, main program, and MIT license mapping.
+
+## Verification
+
+Run the standard local gates:
+
+```sh
+./scripts/check
+./scripts/test
+npm run coverage
+cargo package --allow-dirty
+```
+
+Coverage is expected to stay at or above 80% for the configured UI and Rust coverage gates.
 
 ## Release
 
-`release-plz` opens release PRs, tags versions, and publishes the Rust crate. The GitHub release workflow builds native Tauri artifacts and uploads checksums for the generated bundles.
+Burnrate is prepared for two release channels:
+
+- `release-plz` manages crate release PRs, version tags, and crates.io publishing.
+- GitHub Actions build native Tauri bundles, including macOS artifacts, and upload checksums with each GitHub Release.
+
+## License
+
+Burnrate is licensed under the MIT License. See [LICENSE](LICENSE).
