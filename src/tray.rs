@@ -1,6 +1,6 @@
 use chrono::Utc;
 use tauri::{
-    App, AppHandle, Emitter, LogicalPosition, Manager, Wry,
+    App, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Size, Wry,
     image::Image,
     menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -14,6 +14,10 @@ use crate::{
 const TRAY_ID: &str = "main";
 const MAIN_WINDOW: &str = "main";
 const TRAY_WINDOW: &str = "tray";
+const PREFERENCES_WIDTH: f64 = 860.0;
+const PREFERENCES_HEIGHT: f64 = 820.0;
+const PREFERENCES_MIN_WIDTH: f64 = 780.0;
+const PREFERENCES_MIN_HEIGHT: f64 = 760.0;
 
 pub(crate) fn summarize(snapshots: &[UsageSnapshot]) -> TraySummary {
     let critical_count = snapshots
@@ -131,6 +135,14 @@ fn show_main_window(app: &AppHandle<Wry>) {
     let _ = app.show();
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.unminimize();
+        let _ = window.set_min_size(Some(Size::Logical(LogicalSize::new(
+            PREFERENCES_MIN_WIDTH,
+            PREFERENCES_MIN_HEIGHT,
+        ))));
+        let _ = window.set_size(Size::Logical(LogicalSize::new(
+            PREFERENCES_WIDTH,
+            PREFERENCES_HEIGHT,
+        )));
         let _ = window.show();
         let _ = window.set_focus();
     }

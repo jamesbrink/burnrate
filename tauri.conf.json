@@ -16,9 +16,9 @@
         "label": "main",
         "title": "Burnrate Preferences",
         "width": 860,
-        "height": 640,
+        "height": 820,
         "minWidth": 780,
-        "minHeight": 620,
+        "minHeight": 760,
         "visible": false,
         "resizable": true,
         "decorations": true
