@@ -2,11 +2,14 @@ use chrono::Utc;
 use tauri::{
     App, AppHandle, Emitter, LogicalPosition, Manager, Wry,
     image::Image,
-    menu::{Menu, MenuItem},
+    menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
-use crate::models::{SnapshotStatus, TraySummary, UsageSnapshot};
+use crate::{
+    app_state::AppState,
+    models::{AppSettings, SnapshotStatus, TraySummary, UsageSnapshot},
+};
 
 const TRAY_ID: &str = "main";
 const MAIN_WINDOW: &str = "main";
@@ -56,10 +59,31 @@ pub(crate) fn summarize(snapshots: &[UsageSnapshot]) -> TraySummary {
 }
 
 pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Open Burnrate", true, None::<&str>)?;
+    rebuild(app.handle(), app.state::<AppState>().settings())
+}
+
+pub(crate) fn rebuild(app: &AppHandle<Wry>, settings: AppSettings) -> tauri::Result<()> {
+    let preferences = MenuItem::with_id(
+        app,
+        "preferences",
+        "Open Preferences",
+        true,
+        None::<&str>,
+    )?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &refresh, &quit])?;
+    let hide_dock = CheckMenuItem::with_id(
+        app,
+        "hide-dock",
+        "Hide Dock Icon",
+        true,
+        settings.hide_from_dock,
+        None::<&str>,
+    )?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Burnrate", true, None::<&str>)?;
+    let items: [&dyn IsMenuItem<Wry>; 4] = [&preferences, &refresh, &hide_dock, &quit];
+    let menu = Menu::with_items(app, &items)?;
+
+    let _ = app.remove_tray_by_id(TRAY_ID);
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(tray_icon()?)
@@ -68,11 +92,11 @@ pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => show_main_window(app),
+            "preferences" => show_main_window(app),
             "refresh" => {
                 let _ = app.emit("burnrate-refresh-requested", ());
-                show_main_window(app);
             }
+            "hide-dock" => toggle_hide_dock(app),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -92,6 +116,15 @@ pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
     Ok(())
 }
 
+pub(crate) fn apply_activation_policy(app: &AppHandle<Wry>, hide_from_dock: bool) {
+    let policy = if hide_from_dock {
+        tauri::ActivationPolicy::Accessory
+    } else {
+        tauri::ActivationPolicy::Regular
+    };
+    let _ = app.set_activation_policy(policy);
+}
+
 pub(crate) fn update_summary(app: &AppHandle<Wry>, summary: &TraySummary) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(summary.label.as_str()));
@@ -99,9 +132,22 @@ pub(crate) fn update_summary(app: &AppHandle<Wry>, summary: &TraySummary) {
 }
 
 fn show_main_window(app: &AppHandle<Wry>) {
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+    }
+}
+
+fn toggle_hide_dock(app: &AppHandle<Wry>) {
+    let state = app.state::<AppState>();
+    let mut settings = state.settings();
+    settings.hide_from_dock = !settings.hide_from_dock;
+    if let Ok(settings) = state.save_settings(settings) {
+        apply_activation_policy(app, settings.hide_from_dock);
+        let _ = rebuild(app, settings);
     }
 }
 
@@ -183,5 +229,18 @@ mod tests {
 
         assert_eq!(position.x, 8.0);
         assert_eq!(position.y, 8.0);
+    }
+
+    #[test]
+    fn install_removes_existing_tray_before_rebuild() {
+        let src = include_str!("tray.rs");
+        let remove_pos = src
+            .find("remove_tray_by_id(TRAY_ID)")
+            .expect("tray rebuild should remove the previous tray by id");
+        let build_pos = src
+            .find("TrayIconBuilder::with_id(TRAY_ID)")
+            .expect("tray rebuild should build the tray by id");
+
+        assert!(remove_pos < build_pos);
     }
 }

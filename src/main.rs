@@ -40,7 +40,8 @@ fn save_settings(
     let settings = state
         .save_settings(settings)
         .map_err(|error| error.to_string())?;
-    apply_activation_policy(&app, settings.hide_from_dock);
+    tray::apply_activation_policy(&app, settings.hide_from_dock);
+    tray::rebuild(&app, settings.clone()).map_err(|error| error.to_string())?;
     Ok(settings)
 }
 
@@ -72,7 +73,7 @@ fn main() {
     tauri::Builder::default()
         .manage(state)
         .setup(move |app| {
-            apply_activation_policy(app.handle(), hide_from_dock);
+            tray::apply_activation_policy(app.handle(), hide_from_dock);
             tray::install(app)?;
             Ok(())
         })
@@ -87,13 +88,4 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Burnrate");
-}
-
-fn apply_activation_policy(app: &AppHandle, hide_from_dock: bool) {
-    let policy = if hide_from_dock {
-        tauri::ActivationPolicy::Accessory
-    } else {
-        tauri::ActivationPolicy::Regular
-    };
-    let _ = app.set_activation_policy(policy);
 }
