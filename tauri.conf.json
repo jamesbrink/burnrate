@@ -56,6 +56,9 @@
     "createUpdaterArtifacts": false,
     "category": "DeveloperTool",
     "shortDescription": "Desktop quota and usage monitor",
-    "longDescription": "Burnrate monitors usage and remaining quota across Claude Code, Codex, and OpenRouter accounts."
+    "longDescription": "Burnrate monitors usage and remaining quota across Claude Code, Codex, and OpenRouter accounts.",
+    "macOS": {
+      "entitlements": "entitlements.macos.plist"
+    }
   }
 }

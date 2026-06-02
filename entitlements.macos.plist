@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- WKWebView needs JIT and writable/executable JS memory under the hardened
+       runtime; without these a Developer ID-signed build crashes the webview. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- reqwest makes outbound HTTPS calls to the provider APIs. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

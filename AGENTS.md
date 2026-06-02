@@ -34,7 +34,11 @@ burnrate`).
   `BURNRATE_CONFIG_DIR`.
 - `key_store.rs` — secret storage: OS **keyring by default**, **plaintext only
   when explicitly selected**, with migration between modes and an in-process
-  read cache. Secrets never live in `accounts.json` under keyring mode.
+  read cache. Secrets never live in `accounts.json` under keyring mode. macOS
+  binds a keychain "Always Allow" grant to the app's code signature, so an
+  unsigned build re-prompts every launch; a code-signed install
+  (`APPLE_SIGNING_IDENTITY` → `package-dmg`, with `entitlements.macos.plist` for
+  the hardened runtime) makes the grant persist.
 - `models.rs` — every serde wire type shared with the UI. Structs are
   `camelCase`, enums `kebab-case`. This is the single source of truth that
   `src-ui/types.ts` mirrors by hand — keep them in sync.

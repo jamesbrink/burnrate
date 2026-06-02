@@ -10,8 +10,13 @@ set -eu
 # Preferences makes it Dock-visible.
 #
 # DMG bundling only runs on macOS. Extra args are forwarded to `cargo tauri
-# build` (e.g. `package-dmg --target universal-apple-darwin`). Signing is
-# skipped for local builds; distribution artifacts are signed in CI.
+# build` (e.g. `package-dmg --target universal-apple-darwin`).
+#
+# Set APPLE_SIGNING_IDENTITY to code-sign the app with a stable identity. That
+# matters because macOS binds a keychain "Always Allow" grant to the requesting
+# app's code signature: an unsigned binary changes identity every build, so the
+# grant never persists and the app re-prompts on every launch. A Developer
+# ID-signed install gets a stable signature, so "Always Allow" sticks.
 
 os="$(uname -s)"
 if [ "$os" != "Darwin" ]; then
@@ -19,7 +24,21 @@ if [ "$os" != "Darwin" ]; then
   exit 1
 fi
 
-cargo tauri build --no-sign --bundles dmg "$@"
+if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+  echo "package-dmg: signing with APPLE_SIGNING_IDENTITY=\"$APPLE_SIGNING_IDENTITY\""
+  cargo tauri build --bundles dmg "$@"
+else
+  echo "package-dmg: building UNSIGNED (--no-sign)." >&2
+  echo "  An unsigned app re-prompts for keychain access on every launch." >&2
+  hint="$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -nE 's/^[[:space:]]*[0-9]+\)[[:space:]]+[0-9A-F]+[[:space:]]+"(Developer ID Application:.*)"$/\1/p' \
+    | head -1)"
+  if [ -n "$hint" ]; then
+    echo "  To make 'Always Allow' persist, re-run signed:" >&2
+    echo "    APPLE_SIGNING_IDENTITY=\"$hint\" package-dmg" >&2
+  fi
+  cargo tauri build --no-sign --bundles dmg "$@"
+fi
 
 dmg="$(find target -path '*/bundle/dmg/*.dmg' -type f 2>/dev/null | sort | tail -1)"
 if [ -n "$dmg" ]; then

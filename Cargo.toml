@@ -16,6 +16,7 @@ include = [
   "Cargo.lock",
   "build.rs",
   "tauri.conf.json",
+  "entitlements.macos.plist",
   "capabilities/**",
   "gen/**",
   "icons/**",
