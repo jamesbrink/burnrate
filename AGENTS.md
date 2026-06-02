@@ -56,6 +56,9 @@ burnrate`).
   the cursor-anchored `tray` popover window, `summarize()` reduces snapshots to
   a single status/label, and the macOS activation policy switch (Accessory =
   hidden from Dock, Regular = shown while Preferences is open).
+  `set_dock_icon_if_unbundled()` sets the Dock icon at runtime (via `objc2`
+  `NSApplication.setApplicationIconImage`) so the bare, non-bundled binary still
+  shows the Burnrate icon; the `.app` bundle's `icon.icns` is left untouched.
 
 ### Frontend (`src-ui/`, React 18 + Vite)
 
