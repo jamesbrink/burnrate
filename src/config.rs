@@ -89,16 +89,24 @@ impl AppConfig {
         Some(self.accounts.remove(index))
     }
 
-    pub(crate) fn merge_detected(&mut self, detected: Vec<AccountConfig>) {
+    pub(crate) fn merge_detected(&mut self, detected: Vec<AccountConfig>) -> bool {
+        let mut changed = false;
         for account in detected {
             if let Some(existing) = self.accounts.iter_mut().find(|item| item.id == account.id) {
-                existing.auto_detected = true;
-                existing.credential_path = account.credential_path.clone();
-                existing.updated_at = Utc::now();
+                let account_changed =
+                    !existing.auto_detected || existing.credential_path != account.credential_path;
+                if account_changed {
+                    existing.auto_detected = true;
+                    existing.credential_path = account.credential_path.clone();
+                    existing.updated_at = Utc::now();
+                    changed = true;
+                }
             } else {
                 self.accounts.push(account);
+                changed = true;
             }
         }
+        changed
     }
 }
 
@@ -117,6 +125,7 @@ pub(crate) fn config_path() -> Result<PathBuf> {
     Ok(config_dir()?.join(CONFIG_FILE))
 }
 
+#[cfg(test)]
 pub(crate) fn load_from_path(path: &Path) -> Result<AppConfig> {
     if !path.exists() {
         return Ok(AppConfig::default());
@@ -125,6 +134,34 @@ pub(crate) fn load_from_path(path: &Path) -> Result<AppConfig> {
     let contents =
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
     serde_json::from_str(&contents).with_context(|| format!("failed to parse {}", path.display()))
+}
+
+pub(crate) fn load_or_recover_from_path(path: &Path) -> Result<(AppConfig, bool)> {
+    if !path.exists() {
+        return Ok((AppConfig::default(), true));
+    }
+
+    let contents =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    match serde_json::from_str(&contents) {
+        Ok(config) => Ok((config, false)),
+        Err(error) => {
+            let backup = recovered_config_path(path)?;
+            fs::rename(path, &backup).with_context(|| {
+                format!(
+                    "failed to move malformed config {} to {}",
+                    path.display(),
+                    backup.display()
+                )
+            })?;
+            eprintln!(
+                "Burnrate moved malformed config {} to {}: {error}",
+                path.display(),
+                backup.display()
+            );
+            Ok((AppConfig::default(), true))
+        }
+    }
 }
 
 pub(crate) fn save_to_path(path: &Path, config: &AppConfig) -> Result<()> {
@@ -137,6 +174,14 @@ pub(crate) fn save_to_path(path: &Path, config: &AppConfig) -> Result<()> {
 
     let contents = serde_json::to_string_pretty(config)?;
     write_private_file(path, &contents)
+}
+
+fn recovered_config_path(path: &Path) -> Result<PathBuf> {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before UNIX epoch")?
+        .as_secs();
+    Ok(path.with_extension(format!("json.invalid-{nonce}")))
 }
 
 fn write_private_file(path: &Path, contents: &str) -> Result<()> {
@@ -278,6 +323,26 @@ mod tests {
     }
 
     #[test]
+    fn recovers_malformed_config_by_moving_it_aside() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        fs::write(&path, "{not-json").unwrap();
+
+        let (loaded, should_save) = load_or_recover_from_path(&path).unwrap();
+
+        assert!(loaded.accounts.is_empty());
+        assert!(should_save);
+        assert!(!path.exists());
+        assert!(fs::read_dir(dir.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("invalid")
+        }));
+    }
+
+    #[test]
     fn views_report_secret_state_without_exposing_secret() {
         let mut config = AppConfig::default();
         let account = config.upsert_manual(AccountInput {
@@ -393,10 +458,12 @@ mod tests {
             PathBuf::from("/tmp/codex"),
         );
 
-        config.merge_detected(vec![detected.clone()]);
-        config.merge_detected(vec![detected]);
+        assert!(config.merge_detected(vec![detected.clone()]));
+        let updated_at = config.accounts[0].updated_at;
+        assert!(!config.merge_detected(vec![detected]));
 
         assert_eq!(config.accounts.len(), 1);
         assert!(config.accounts[0].auto_detected);
+        assert_eq!(config.accounts[0].updated_at, updated_at);
     }
 }

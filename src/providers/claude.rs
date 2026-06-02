@@ -18,8 +18,8 @@ use tokio::{process::Command as TokioCommand, time::timeout};
 use crate::{
     config::default_auto_account,
     models::{
-        AccountConfig, BurnRateSnapshot, ProviderKind, QuotaSnapshot, SnapshotStatus,
-        SubscriptionSnapshot, UsageBucketSnapshot, UsageSnapshot,
+        AccountConfig, ProviderKind, QuotaSnapshot, SnapshotStatus, SubscriptionSnapshot,
+        UsageBucketSnapshot, UsageSnapshot,
     },
 };
 
@@ -173,7 +173,9 @@ pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<Usag
 }
 
 async fn fetch_oauth_usage(http: &Client, account: &AccountConfig) -> Result<ClaudeOAuthUsage> {
-    ensure_claude_code_auth().await?;
+    if should_check_claude_auth(account) {
+        ensure_claude_code_auth().await?;
+    }
     let credentials = read_credentials(account).await?;
     let oauth = credentials.claude_ai_oauth;
     let now = now_millis();
@@ -200,6 +202,9 @@ async fn fetch_oauth_usage(http: &Client, account: &AccountConfig) -> Result<Cla
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        if status == StatusCode::UNAUTHORIZED {
+            forget_cached_usage(account);
+        }
         return Err(anyhow!(format_usage_http_error(
             "Claude Code usage API error",
             status,
@@ -278,6 +283,13 @@ fn remember_success(account: &AccountConfig, snapshot: UsageSnapshot, now: u64) 
     );
 }
 
+fn forget_cached_usage(account: &AccountConfig) {
+    usage_cache()
+        .lock()
+        .expect("Claude usage cache should not be poisoned")
+        .remove(&account.id);
+}
+
 fn remember_failure_and_stale(
     account: &AccountConfig,
     now: u64,
@@ -286,10 +298,6 @@ fn remember_failure_and_stale(
     let mut cache = usage_cache()
         .lock()
         .expect("Claude usage cache should not be poisoned");
-    if message.contains("401") {
-        cache.remove(&account.id);
-        return None;
-    }
     let entry = cache
         .entry(account.id.clone())
         .or_insert_with(|| ClaudeUsageCacheEntry {
@@ -636,7 +644,6 @@ fn parse_claude_oauth_usage(account: &AccountConfig, usage: ClaudeOAuthUsage) ->
             .map(|extra| extra.is_enabled),
     );
     let quota = primary_quota(&buckets);
-    let burn_rate_used = quota.as_ref().map(|quota| quota.used).unwrap_or(0.0);
     let status = overall_status(&buckets);
 
     UsageSnapshot {
@@ -647,10 +654,6 @@ fn parse_claude_oauth_usage(account: &AccountConfig, usage: ClaudeOAuthUsage) ->
         subscription,
         usage_buckets: buckets,
         quota,
-        burn_rate: Some(BurnRateSnapshot {
-            per_hour: burn_rate_used / 24.0,
-            projected_depletion_at: None,
-        }),
         message: None,
         fetched_at: Utc::now(),
     }
@@ -740,6 +743,13 @@ fn now_millis() -> u64 {
 }
 
 fn claude_code_user_agent() -> String {
+    static USER_AGENT: OnceLock<String> = OnceLock::new();
+    USER_AGENT
+        .get_or_init(detect_claude_code_user_agent)
+        .clone()
+}
+
+fn detect_claude_code_user_agent() -> String {
     let output = Command::new("claude").arg("--version").output();
     match output {
         Ok(output) if output.status.success() => {
@@ -749,6 +759,10 @@ fn claude_code_user_agent() -> String {
         }
         _ => "claude-code/0.0.0".to_string(),
     }
+}
+
+fn should_check_claude_auth(account: &AccountConfig) -> bool {
+    account.endpoint_override.is_none() && !env_present("BURNRATE_CLAUDE_USAGE_URL")
 }
 
 #[cfg(test)]

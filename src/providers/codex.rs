@@ -14,8 +14,8 @@ use tokio::{
 use crate::{
     config::default_auto_account,
     models::{
-        AccountConfig, BurnRateSnapshot, ProviderKind, QuotaSnapshot, SubscriptionSnapshot,
-        UsageBucketSnapshot, UsageSnapshot,
+        AccountConfig, ProviderKind, QuotaSnapshot, SubscriptionSnapshot, UsageBucketSnapshot,
+        UsageSnapshot,
     },
 };
 
@@ -281,7 +281,6 @@ fn parse_codex_app_server_snapshot(
 
     let subscription = subscription_from_app_server(snapshot.plan_type.as_deref());
     let quota = primary_quota(&buckets);
-    let burn_rate_used = quota.as_ref().map(|quota| quota.used).unwrap_or(0.0);
     let mut status = overall_status(&buckets);
     if snapshot
         .rate_limit_reached_type
@@ -299,10 +298,6 @@ fn parse_codex_app_server_snapshot(
         subscription,
         usage_buckets: buckets,
         quota,
-        burn_rate: Some(BurnRateSnapshot {
-            per_hour: burn_rate_used / 24.0,
-            projected_depletion_at: None,
-        }),
         message: snapshot
             .rate_limit_reached_type
             .filter(|reason| !reason.is_empty())
@@ -318,10 +313,13 @@ fn extract_app_server_snapshot(value: &Value) -> Option<CodexRateLimitSnapshot> 
         .or_else(|| result.get("rate_limits_by_limit_id"))
         .and_then(Value::as_object)
         .and_then(|limits| {
-            limits
-                .get("codex")
-                .or_else(|| limits.values().next())
-                .cloned()
+            limits.get("codex").cloned().or_else(|| {
+                if limits.len() == 1 {
+                    limits.values().next().cloned()
+                } else {
+                    None
+                }
+            })
         })
         .or_else(|| result.get("rateLimits").cloned())
         .or_else(|| result.get("rate_limits").cloned())
@@ -431,22 +429,24 @@ fn parse_codex_legacy_rate_limits(
                     .map(|(limit, remaining)| limit - remaining)
             })
             .unwrap_or(0.0);
-        let reset_at = datetime(
-            result,
-            &["/reset_at", "/quota/reset_at", "/rate_limits/0/reset_at"],
-        );
-        buckets.push(bucket_from_parts(
-            "requests",
-            "Requests",
-            None,
-            QuotaSnapshot {
-                used,
-                limit,
-                remaining,
-                unit: "requests".to_string(),
-                reset_at,
-            },
-        ));
+        if limit.is_some() || remaining.is_some() || used > 0.0 {
+            let reset_at = datetime(
+                result,
+                &["/reset_at", "/quota/reset_at", "/rate_limits/0/reset_at"],
+            );
+            buckets.push(bucket_from_parts(
+                "requests",
+                "Requests",
+                None,
+                QuotaSnapshot {
+                    used,
+                    limit,
+                    remaining,
+                    unit: "requests".to_string(),
+                    reset_at,
+                },
+            ));
+        }
     }
 
     let subscription = subscription_from_json(
@@ -464,7 +464,6 @@ fn parse_codex_legacy_rate_limits(
         ],
     );
     let quota = primary_quota(&buckets);
-    let burn_rate_used = quota.as_ref().map(|quota| quota.used).unwrap_or(0.0);
     let status = overall_status(&buckets);
 
     UsageSnapshot {
@@ -475,10 +474,6 @@ fn parse_codex_legacy_rate_limits(
         subscription,
         usage_buckets: buckets,
         quota,
-        burn_rate: Some(BurnRateSnapshot {
-            per_hour: burn_rate_used / 24.0,
-            projected_depletion_at: None,
-        }),
         message: None,
         fetched_at: Utc::now(),
     }
@@ -572,6 +567,36 @@ mod tests {
         assert_eq!(snapshot.usage_buckets[0].label, "5-hour");
         assert_eq!(snapshot.usage_buckets[1].label, "Weekly");
         assert_eq!(snapshot.usage_buckets[2].label, "Credits");
+    }
+
+    #[test]
+    fn ignores_ambiguous_app_server_limit_maps_without_codex_key() {
+        let snapshot = parse_codex_rate_limits(
+            &account(),
+            &json!({
+                "id": 2,
+                "result": {
+                    "rateLimitsByLimitId": {
+                        "chat": {
+                            "planType": "pro",
+                            "primary": {
+                                "usedPercent": 99,
+                                "windowDurationMins": 300
+                            }
+                        },
+                        "gpt-image": {
+                            "planType": "pro",
+                            "primary": {
+                                "usedPercent": 10,
+                                "windowDurationMins": 300
+                            }
+                        }
+                    }
+                }
+            }),
+        );
+
+        assert!(snapshot.usage_buckets.is_empty());
     }
 
     #[tokio::test]

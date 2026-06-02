@@ -100,7 +100,6 @@ const mockSnapshots: UsageSnapshot[] = [
       unit: "tokens",
       resetAt: null,
     },
-    burnRate: { perHour: 22000, projectedDepletionAt: null },
     message: null,
     fetchedAt: new Date().toISOString(),
   },
@@ -147,7 +146,6 @@ const mockSnapshots: UsageSnapshot[] = [
       unit: "requests",
       resetAt: null,
     },
-    burnRate: { perHour: 3.4, projectedDepletionAt: null },
     message: null,
     fetchedAt: new Date().toISOString(),
   },
@@ -177,7 +175,6 @@ const mockSnapshots: UsageSnapshot[] = [
       unit: "credits",
       resetAt: null,
     },
-    burnRate: { perHour: 0.3, projectedDepletionAt: null },
     message: null,
     fetchedAt: new Date().toISOString(),
   },
@@ -257,14 +254,24 @@ export async function detectAccounts(): Promise<AccountView[]> {
 }
 
 export async function refreshSnapshots(): Promise<UsageSnapshot[]> {
+  return (await refreshDashboard()).snapshots;
+}
+
+export async function refreshDashboard(): Promise<DashboardState> {
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
-    return invoke<UsageSnapshot[]>("refresh_snapshots");
+    return invoke<DashboardState>("refresh_snapshots");
   }
-  return mockSnapshots.map((snapshot) => ({
+  const snapshots = mockSnapshots.map((snapshot) => ({
     ...snapshot,
     fetchedAt: new Date().toISOString(),
   }));
+  return {
+    accounts: mockAccounts,
+    snapshots,
+    traySummary: summarizeMockSnapshots(snapshots),
+    settings: mockSettings,
+  };
 }
 
 export async function resizePreferencesToContent(
@@ -289,4 +296,70 @@ export async function onRefreshRequested(handler: () => void | Promise<void>) {
   window.addEventListener("burnrate-refresh-requested", listener);
   return () =>
     window.removeEventListener("burnrate-refresh-requested", listener);
+}
+
+export async function onDashboardUpdated(
+  handler: (dashboard: DashboardState) => void | Promise<void>,
+) {
+  /* v8 ignore next 3: native Tauri event path */
+  if (isTauri) {
+    return listen<DashboardState>("burnrate-dashboard-updated", (event) =>
+      handler(event.payload),
+    );
+  }
+
+  return () => {};
+}
+
+export async function onSettingsUpdated(
+  handler: (settings: AppSettings) => void | Promise<void>,
+) {
+  /* v8 ignore next 3: native Tauri event path */
+  if (isTauri) {
+    return listen<AppSettings>("burnrate-settings-updated", (event) =>
+      handler(event.payload),
+    );
+  }
+
+  return () => {};
+}
+
+function summarizeMockSnapshots(snapshots: UsageSnapshot[]) {
+  const criticalCount = snapshots.filter((snapshot) =>
+    ["exhausted", "error"].includes(snapshot.status),
+  ).length;
+  const warningCount = snapshots.filter(
+    (snapshot) => snapshot.status === "warning",
+  ).length;
+  const staleCount = snapshots.filter(
+    (snapshot) => snapshot.status === "stale",
+  ).length;
+  const status =
+    criticalCount > 0
+      ? "exhausted"
+      : warningCount > 0
+        ? "warning"
+        : staleCount > 0
+          ? "stale"
+          : snapshots.length > 0
+            ? "healthy"
+            : "not-configured";
+  const label =
+    status === "exhausted"
+      ? `Burnrate: ${criticalCount} critical`
+      : status === "warning"
+        ? `Burnrate: ${warningCount} warning`
+        : status === "stale"
+          ? "Burnrate: data is stale"
+          : status === "healthy"
+            ? "Burnrate: all quotas healthy"
+            : "Burnrate: no enabled accounts";
+
+  return {
+    label,
+    status,
+    criticalCount,
+    warningCount,
+    updatedAt: new Date().toISOString(),
+  } as const;
 }

@@ -11,7 +11,7 @@
     "test": "vitest run",
     "coverage": "npm run coverage:ui && npm run coverage:rust",
     "coverage:ui": "vitest run --coverage",
-    "coverage:rust": "cargo llvm-cov --workspace --lcov --output-path coverage/rust-lcov.info --fail-under-lines 80 --ignore-filename-regex 'src/(main|app_state|tray|key_store)[.]rs'",
+    "coverage:rust": "cargo llvm-cov --workspace --lcov --output-path coverage/rust-lcov.info --fail-under-lines 80 --ignore-filename-regex 'src/(main|app_state|tray)[.]rs'",
     "fmt": "prettier --write ."
   },
   "dependencies": {

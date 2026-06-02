@@ -9,8 +9,10 @@ import {
 import {
   detectAccounts,
   loadDashboard,
+  onDashboardUpdated,
   onRefreshRequested,
-  refreshSnapshots,
+  onSettingsUpdated,
+  refreshDashboard,
   removeAccount,
   resizePreferencesToContent,
   saveAccount,
@@ -55,7 +57,9 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
-      setSnapshots(await refreshSnapshots());
+      const dashboard = await refreshDashboard();
+      setState(dashboard);
+      setSnapshots(dashboard.snapshots);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -76,8 +80,35 @@ export function App() {
   }, []);
 
   const accounts = state?.accounts ?? [];
-  const summary = useMemo(() => summarize(snapshots), [snapshots]);
+  const summary = useMemo(
+    () => summaryFromBackend(state?.traySummary, snapshots),
+    [state?.traySummary, snapshots],
+  );
   const settings = state?.settings ?? { hideFromDock: true };
+
+  useEffect(() => {
+    let cleanupDashboard: (() => void) | undefined;
+    let cleanupSettings: (() => void) | undefined;
+    void onDashboardUpdated((dashboard) => {
+      setState(dashboard);
+      setSnapshots(dashboard.snapshots);
+    }).then((unlisten) => {
+      cleanupDashboard = unlisten;
+    });
+    void onSettingsUpdated((settings) => {
+      setState((previous) =>
+        previous
+          ? { ...previous, settings }
+          : { accounts: [], snapshots, traySummary: summary, settings },
+      );
+    }).then((unlisten) => {
+      cleanupSettings = unlisten;
+    });
+    return () => {
+      cleanupDashboard?.();
+      cleanupSettings?.();
+    };
+  }, [snapshots, summary]);
 
   useLayoutEffect(() => {
     if (isTrayView) {
@@ -216,7 +247,7 @@ export function App() {
   function updateAccounts(
     accounts: AccountView[],
     settings: AppSettings,
-    summary: ReturnType<typeof summarize>,
+    summary: ReturnType<typeof summaryFromBackend>,
   ) {
     setState((previous) =>
       previous
@@ -259,34 +290,69 @@ export function App() {
   );
 }
 
-function summarize(snapshots: UsageSnapshot[]) {
+function summaryFromBackend(
+  traySummary: DashboardState["traySummary"] | null | undefined,
+  snapshots: UsageSnapshot[],
+) {
+  if (traySummary) {
+    return {
+      ...traySummary,
+      shortLabel: shortSummaryLabel(traySummary.status),
+    };
+  }
+
   const criticalCount = snapshots.filter((snapshot) =>
     ["exhausted", "error"].includes(snapshot.status),
   ).length;
   const warningCount = snapshots.filter(
     (snapshot) => snapshot.status === "warning",
   ).length;
-  const label =
+  const staleCount = snapshots.filter(
+    (snapshot) => snapshot.status === "stale",
+  ).length;
+  const status =
     criticalCount > 0
-      ? `Burnrate: ${criticalCount} critical`
+      ? "exhausted"
       : warningCount > 0
+        ? "warning"
+        : staleCount > 0
+          ? "stale"
+          : snapshots.length > 0
+            ? "healthy"
+            : "not-configured";
+  const label =
+    status === "exhausted"
+      ? `Burnrate: ${criticalCount} critical`
+      : status === "warning"
         ? `Burnrate: ${warningCount} warning`
-        : snapshots.length > 0
+        : status === "stale"
+          ? "Burnrate: data is stale"
+          : status === "healthy"
           ? "Burnrate: all quotas healthy"
           : "Burnrate: no enabled accounts";
 
   return {
     label,
-    shortLabel:
-      criticalCount > 0 ? "Critical" : warningCount > 0 ? "Warning" : "Healthy",
-    status:
-      criticalCount > 0
-        ? "exhausted"
-        : warningCount > 0
-          ? "warning"
-          : "healthy",
+    shortLabel: shortSummaryLabel(status),
+    status,
     criticalCount,
     warningCount,
     updatedAt: new Date().toISOString(),
   } as const;
+}
+
+function shortSummaryLabel(status: DashboardState["traySummary"]["status"]) {
+  switch (status) {
+    case "exhausted":
+    case "error":
+      return "Critical";
+    case "warning":
+      return "Warning";
+    case "stale":
+      return "Stale";
+    case "not-configured":
+      return "Idle";
+    case "healthy":
+      return "Healthy";
+  }
 }

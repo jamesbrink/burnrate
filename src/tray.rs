@@ -1,6 +1,6 @@
 use chrono::Utc;
 use tauri::{
-    App, AppHandle, Emitter, LogicalPosition, Manager, Wry,
+    App, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Wry,
     image::Image,
     menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -148,6 +148,7 @@ fn toggle_hide_dock(app: &AppHandle<Wry>) {
     settings.hide_from_dock = !settings.hide_from_dock;
     if let Ok(settings) = state.save_settings(settings) {
         apply_activation_policy(app, settings.hide_from_dock);
+        let _ = app.emit("burnrate-settings-updated", &settings);
         let _ = rebuild(app, settings);
     }
 }
@@ -161,14 +162,48 @@ fn show_tray_window(app: &AppHandle<Wry>, position: tauri::PhysicalPosition<f64>
 
         let scale_factor = window.scale_factor().unwrap_or(1.0);
         let position = position.to_logical::<f64>(scale_factor);
-        let _ = window.set_position(tray_popup_position(position));
+        let window_size = window
+            .outer_size()
+            .map(|size| size.to_logical::<f64>(scale_factor))
+            .unwrap_or_else(|_| LogicalSize::new(380.0, 520.0));
+        let work_area = window
+            .current_monitor()
+            .ok()
+            .flatten()
+            .or_else(|| window.primary_monitor().ok().flatten())
+            .map(|monitor| {
+                let area = monitor.work_area();
+                (
+                    area.position.to_logical::<f64>(monitor.scale_factor()),
+                    area.size.to_logical::<f64>(monitor.scale_factor()),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    LogicalPosition::new(0.0, 0.0),
+                    LogicalSize::new(1920.0, 1080.0),
+                )
+            });
+        let _ = window.set_position(tray_popup_position(position, window_size, work_area));
         let _ = window.show();
         let _ = app.emit("burnrate-refresh-requested", ());
     }
 }
 
-fn tray_popup_position(position: LogicalPosition<f64>) -> LogicalPosition<f64> {
-    LogicalPosition::new((position.x - 180.0).max(8.0), (position.y + 12.0).max(8.0))
+fn tray_popup_position(
+    position: LogicalPosition<f64>,
+    window_size: LogicalSize<f64>,
+    work_area: (LogicalPosition<f64>, LogicalSize<f64>),
+) -> LogicalPosition<f64> {
+    let (work_position, work_size) = work_area;
+    let min_x = work_position.x + 8.0;
+    let min_y = work_position.y + 8.0;
+    let max_x = (work_position.x + work_size.width - window_size.width - 8.0).max(min_x);
+    let max_y = (work_position.y + work_size.height - window_size.height - 8.0).max(min_y);
+    LogicalPosition::new(
+        (position.x - window_size.width / 2.0).clamp(min_x, max_x),
+        (position.y + 12.0).clamp(min_y, max_y),
+    )
 }
 
 fn tray_icon() -> tauri::Result<Image<'static>> {
@@ -191,7 +226,6 @@ mod tests {
             subscription: None,
             usage_buckets: Vec::new(),
             quota: None,
-            burn_rate: None,
             message: None,
             fetched_at: Utc::now(),
         }
@@ -232,11 +266,21 @@ mod tests {
     }
 
     #[test]
-    fn tray_popup_position_clamps_left_and_top_edges() {
-        let position = tray_popup_position(LogicalPosition::new(20.0, -40.0));
+    fn tray_popup_position_clamps_to_work_area() {
+        let size = LogicalSize::new(380.0, 520.0);
+        let work_area = (
+            LogicalPosition::new(0.0, 0.0),
+            LogicalSize::new(1024.0, 768.0),
+        );
+        let position = tray_popup_position(LogicalPosition::new(20.0, -40.0), size, work_area);
 
         assert_eq!(position.x, 8.0);
         assert_eq!(position.y, 8.0);
+
+        let position = tray_popup_position(LogicalPosition::new(1000.0, 760.0), size, work_area);
+
+        assert_eq!(position.x, 636.0);
+        assert_eq!(position.y, 240.0);
     }
 
     #[test]

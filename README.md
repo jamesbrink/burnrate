@@ -69,7 +69,7 @@ Claude Code usage requires a first-party `claude.ai` OAuth login with a detected
 claude auth login
 ```
 
-Burnrate deliberately stores only non-secret account configuration in its app data. Manual account secrets are stored in the OS keyring unless plaintext storage is explicitly selected for that account.
+Burnrate deliberately stores only non-secret account configuration in its app data. Manual account secrets are stored in the OS keyring unless plaintext storage is explicitly selected for that account. Plaintext fallback is opt-in and should be treated as local-cleartext storage, especially on non-Unix platforms where Burnrate cannot apply Unix-style `0600` file permissions.
 
 ## Verification
 

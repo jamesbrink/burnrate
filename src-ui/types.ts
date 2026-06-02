@@ -67,11 +67,6 @@ export interface UsageBucketSnapshot {
   status: SnapshotStatus;
 }
 
-export interface BurnRateSnapshot {
-  perHour: number;
-  projectedDepletionAt: string | null;
-}
-
 export interface UsageSnapshot {
   accountId: string;
   provider: ProviderKind;
@@ -80,7 +75,6 @@ export interface UsageSnapshot {
   subscription?: SubscriptionSnapshot | null;
   usageBuckets: UsageBucketSnapshot[];
   quota: QuotaSnapshot | null;
-  burnRate: BurnRateSnapshot | null;
   message: string | null;
   fetchedAt: string;
 }

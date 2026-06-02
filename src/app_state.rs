@@ -20,9 +20,11 @@ pub(crate) struct AppState {
 impl AppState {
     pub(crate) fn load() -> Result<Self> {
         let config_path = config::config_path()?;
-        let mut config = config::load_from_path(&config_path)?;
-        config.merge_detected(providers::detect_accounts());
-        config::save_to_path(&config_path, &config)?;
+        let (mut config, should_save) = config::load_or_recover_from_path(&config_path)?;
+        let detected_changed = config.merge_detected(providers::detect_accounts());
+        if should_save || detected_changed {
+            config::save_to_path(&config_path, &config)?;
+        }
 
         Ok(Self {
             config_path,
@@ -85,8 +87,9 @@ impl AppState {
 
     pub(crate) fn detect_accounts(&self) -> Result<Vec<AccountView>> {
         let mut config = self.config.lock().expect("config lock");
-        config.merge_detected(providers::detect_accounts());
-        config::save_to_path(&self.config_path, &config)?;
+        if config.merge_detected(providers::detect_accounts()) {
+            config::save_to_path(&self.config_path, &config)?;
+        }
         Ok(config.views())
     }
 
@@ -101,16 +104,26 @@ impl AppState {
             .cloned()
             .collect::<Vec<_>>();
 
-        let mut tasks = tokio::task::JoinSet::new();
+        let mut tasks = Vec::with_capacity(accounts.len());
         for (index, account) in accounts.into_iter().enumerate() {
             let provider_client = self.provider_client.clone();
-            tasks.spawn(async move { (index, provider_client.refresh_account(&account).await) });
+            let task_account = account.clone();
+            let handle =
+                tokio::spawn(async move { provider_client.refresh_account(&task_account).await });
+            tasks.push((index, account, handle));
         }
 
         let mut snapshots = Vec::with_capacity(tasks.len());
-        while let Some(result) = tasks.join_next().await {
-            if let Ok(snapshot) = result {
-                snapshots.push(snapshot);
+        for (index, account, handle) in tasks {
+            match handle.await {
+                Ok(snapshot) => snapshots.push((index, snapshot)),
+                Err(error) => snapshots.push((
+                    index,
+                    providers::error_snapshot(
+                        &account,
+                        anyhow::anyhow!("provider task panicked: {error}"),
+                    ),
+                )),
             }
         }
         snapshots.sort_by_key(|(index, _)| *index);

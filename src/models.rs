@@ -97,7 +97,6 @@ pub(crate) struct UsageSnapshot {
     #[serde(default)]
     pub usage_buckets: Vec<UsageBucketSnapshot>,
     pub quota: Option<QuotaSnapshot>,
-    pub burn_rate: Option<BurnRateSnapshot>,
     pub message: Option<String>,
     pub fetched_at: DateTime<Utc>,
 }
@@ -156,13 +155,6 @@ pub(crate) struct QuotaSnapshot {
     pub remaining: Option<f64>,
     pub unit: String,
     pub reset_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct BurnRateSnapshot {
-    pub per_hour: f64,
-    pub projected_depletion_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

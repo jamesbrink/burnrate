@@ -2,9 +2,11 @@
 
 ## Git
 
-- Use conventional commits: `feat:`, `fix:`, `test:`, `chore:`, `docs:`, `refactor:`, and similar.
-- Use proper branch names such as `feat/<topic>`, `fix/<topic>`, or `chore/<topic>` unless the user explicitly directs work to continue on `main`.
-- Commit in coherent chunks after meaningful, verified progress.
+- Always work from a proper branch such as `feat/<topic>`, `fix/<topic>`, `chore/<topic>`, or `docs/<topic>`; do not continue directly on `main` unless the user explicitly asks for it.
+- For miscellaneous fixes, jump to a short `chore/<topic>` or `fix/<topic>` branch before editing.
+- Use detailed conventional commits: `feat(scope): summary`, `fix(scope): summary`, `test(scope): summary`, `chore(scope): summary`, `docs(scope): summary`, `refactor(scope): summary`, and similar.
+- Commit messages should be specific enough to explain the behavioral or maintenance outcome without reading the diff.
+- Commit in coherent chunks after meaningful, verified progress, unless the user explicitly says not to commit.
 
 ## Engineering Practice
 

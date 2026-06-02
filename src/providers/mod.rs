@@ -58,7 +58,7 @@ pub(crate) fn detect_accounts() -> Vec<AccountConfig> {
     accounts
 }
 
-fn error_snapshot(account: &AccountConfig, error: anyhow::Error) -> UsageSnapshot {
+pub(crate) fn error_snapshot(account: &AccountConfig, error: anyhow::Error) -> UsageSnapshot {
     UsageSnapshot {
         account_id: account.id.clone(),
         provider: account.provider,
@@ -67,7 +67,6 @@ fn error_snapshot(account: &AccountConfig, error: anyhow::Error) -> UsageSnapsho
         subscription: None,
         usage_buckets: Vec::new(),
         quota: None,
-        burn_rate: None,
         message: Some(error.to_string()),
         fetched_at: Utc::now(),
     }

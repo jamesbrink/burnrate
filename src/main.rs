@@ -8,8 +8,14 @@ mod providers;
 mod tray;
 
 use app_state::AppState;
-use models::{AccountInput, AccountView, AppSettings, DashboardState, UsageSnapshot};
-use tauri::{AppHandle, LogicalSize, Manager, Size, State};
+use models::{AccountInput, AccountView, AppSettings, DashboardState};
+use std::time::Duration;
+
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, Size, State};
+
+const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const PREFERENCES_MIN_WIDTH: f64 = 360.0;
+const PREFERENCES_MIN_HEIGHT: f64 = 360.0;
 
 #[tauri::command]
 async fn dashboard(app: AppHandle, state: State<'_, AppState>) -> Result<DashboardState, String> {
@@ -59,11 +65,11 @@ fn detect_accounts(state: State<'_, AppState>) -> Result<Vec<AccountView>, Strin
 async fn refresh_snapshots(
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<Vec<UsageSnapshot>, String> {
-    let snapshots = state.snapshots().await;
-    let summary = tray::summarize(&snapshots);
-    tray::update_summary(&app, &summary);
-    Ok(snapshots)
+) -> Result<DashboardState, String> {
+    let dashboard = state.dashboard().await.map_err(|error| error.to_string())?;
+    tray::update_summary(&app, &dashboard.tray_summary);
+    let _ = app.emit("burnrate-dashboard-updated", &dashboard);
+    Ok(dashboard)
 }
 
 #[tauri::command]
@@ -93,15 +99,43 @@ fn resize_preferences_to_content(app: AppHandle, width: f64, height: f64) -> Res
         .work_area()
         .size
         .to_logical::<f64>(monitor.scale_factor());
-    let target_width = (width + chrome_width).ceil().clamp(1.0, work_area.width);
-    let target_height = (height + chrome_height).ceil().clamp(1.0, work_area.height);
+    let min_width = PREFERENCES_MIN_WIDTH.min(work_area.width);
+    let min_height = PREFERENCES_MIN_HEIGHT.min(work_area.height);
+    let target_width = (width + chrome_width)
+        .ceil()
+        .clamp(min_width, work_area.width);
+    let target_height = (height + chrome_height)
+        .ceil()
+        .clamp(min_height, work_area.height);
 
     window
-        .set_min_size(None::<Size>)
+        .set_min_size(Some(Size::Logical(LogicalSize::new(min_width, min_height))))
         .map_err(|error| error.to_string())?;
     window
         .set_size(Size::Logical(LogicalSize::new(target_width, target_height)))
         .map_err(|error| error.to_string())
+}
+
+fn spawn_background_refresh(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            refresh_dashboard_for_app(&app).await;
+            tokio::time::sleep(BACKGROUND_REFRESH_INTERVAL).await;
+        }
+    });
+}
+
+async fn refresh_dashboard_for_app(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    match state.dashboard().await {
+        Ok(dashboard) => {
+            tray::update_summary(app, &dashboard.tray_summary);
+            let _ = app.emit("burnrate-dashboard-updated", &dashboard);
+        }
+        Err(error) => {
+            eprintln!("Burnrate background refresh failed: {error}");
+        }
+    }
 }
 
 fn main() {
@@ -114,6 +148,7 @@ fn main() {
             tray::apply_activation_policy(app.handle(), hide_from_dock);
             let _ = app.handle().remove_menu();
             tray::install(app)?;
+            spawn_background_refresh(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

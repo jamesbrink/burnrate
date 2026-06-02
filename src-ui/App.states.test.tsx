@@ -6,8 +6,10 @@ import type { AccountView, DashboardState, UsageSnapshot } from "./types";
 const api = vi.hoisted(() => ({
   detectAccounts: vi.fn(),
   loadDashboard: vi.fn(),
+  onDashboardUpdated: vi.fn(),
   onRefreshRequested: vi.fn(),
-  refreshSnapshots: vi.fn(),
+  onSettingsUpdated: vi.fn(),
+  refreshDashboard: vi.fn(),
   removeAccount: vi.fn(),
   resizePreferencesToContent: vi.fn(),
   saveAccount: vi.fn(),
@@ -18,8 +20,10 @@ vi.mock("./api", () => api);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  api.onDashboardUpdated.mockResolvedValue(() => {});
   api.onRefreshRequested.mockResolvedValue(() => {});
-  api.refreshSnapshots.mockResolvedValue([]);
+  api.onSettingsUpdated.mockResolvedValue(() => {});
+  api.refreshDashboard.mockResolvedValue(dashboardState());
   api.resizePreferencesToContent.mockResolvedValue(undefined);
   api.detectAccounts.mockResolvedValue([]);
   api.removeAccount.mockResolvedValue([]);
@@ -93,7 +97,6 @@ test("renders stale snapshot state", async () => {
             unit: "requests",
             resetAt: null,
           },
-          burnRate: { perHour: 3.75, projectedDepletionAt: null },
           message: "Last refresh is older than the quota window.",
           fetchedAt: new Date().toISOString(),
         },
@@ -103,10 +106,53 @@ test("renders stale snapshot state", async () => {
 
   render(<App />);
 
-  expect(await screen.findByText("Stale")).toBeInTheDocument();
+  expect((await screen.findAllByText("Stale")).length).toBeGreaterThan(1);
+  expect(screen.getByText("Burnrate: data is stale")).toBeInTheDocument();
   expect(
     screen.getByText("Last refresh is older than the quota window."),
   ).toBeInTheDocument();
+});
+
+test("applies dashboard updates emitted by the backend", async () => {
+  let onDashboard: (dashboard: DashboardState) => void = () => {};
+  api.loadDashboard.mockResolvedValue(dashboardState());
+  api.onDashboardUpdated.mockImplementation((handler) => {
+    onDashboard = handler;
+    return Promise.resolve(() => {});
+  });
+
+  render(<App />);
+
+  expect(
+    await screen.findByText("Burnrate: no enabled accounts"),
+  ).toBeInTheDocument();
+
+  onDashboard(
+    dashboardState({
+      snapshots: [
+        {
+          accountId: "codex-local",
+          provider: "codex",
+          label: "Codex",
+          status: "warning",
+          subscription: null,
+          usageBuckets: [],
+          quota: null,
+          message: null,
+          fetchedAt: new Date().toISOString(),
+        },
+      ],
+      traySummary: {
+        label: "Burnrate: 1 warning",
+        status: "warning",
+        criticalCount: 0,
+        warningCount: 1,
+        updatedAt: new Date().toISOString(),
+      },
+    }),
+  );
+
+  expect(await screen.findByText("Burnrate: 1 warning")).toBeInTheDocument();
 });
 
 test("renders compact tray view from the tray window route", async () => {
@@ -161,7 +207,6 @@ test("renders compact tray view from the tray window route", async () => {
             unit: "requests",
             resetAt: null,
           },
-          burnRate: { perHour: 3.75, projectedDepletionAt: null },
           message: null,
           fetchedAt: new Date().toISOString(),
         },
@@ -183,18 +228,44 @@ function dashboardState(
 ): DashboardState {
   const accounts: AccountView[] = overrides.accounts ?? [];
   const snapshots: UsageSnapshot[] = overrides.snapshots ?? [];
+  const criticalCount = snapshots.filter((snapshot) =>
+    ["exhausted", "error"].includes(snapshot.status),
+  ).length;
+  const warningCount = snapshots.filter(
+    (snapshot) => snapshot.status === "warning",
+  ).length;
+  const staleCount = snapshots.filter(
+    (snapshot) => snapshot.status === "stale",
+  ).length;
+  const status =
+    criticalCount > 0
+      ? "exhausted"
+      : warningCount > 0
+        ? "warning"
+        : staleCount > 0
+          ? "stale"
+          : snapshots.length > 0
+            ? "healthy"
+            : "not-configured";
+  const label =
+    status === "exhausted"
+      ? `Burnrate: ${criticalCount} critical`
+      : status === "warning"
+        ? `Burnrate: ${warningCount} warning`
+        : status === "stale"
+          ? "Burnrate: data is stale"
+          : status === "healthy"
+            ? "Burnrate: all quotas healthy"
+            : "Burnrate: no enabled accounts";
 
   return {
     accounts,
     snapshots,
-    traySummary: {
-      label:
-        snapshots.length > 0
-          ? "Burnrate: all quotas healthy"
-          : "Burnrate: no enabled accounts",
-      status: snapshots.length > 0 ? "healthy" : "not-configured",
-      criticalCount: 0,
-      warningCount: 0,
+    traySummary: overrides.traySummary ?? {
+      label,
+      status,
+      criticalCount,
+      warningCount,
       updatedAt: new Date().toISOString(),
     },
     settings: overrides.settings ?? { hideFromDock: false },
