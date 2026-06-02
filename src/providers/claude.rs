@@ -12,6 +12,7 @@ use reqwest::Client;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
+#[cfg(target_os = "macos")]
 use sha2::{Digest, Sha256};
 use tokio::{process::Command as TokioCommand, time::timeout};
 

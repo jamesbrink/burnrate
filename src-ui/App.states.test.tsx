@@ -1,6 +1,14 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
+import {
+  bucketFromQuota,
+  bucketPercent,
+  formatLimit,
+  formatNumber,
+  formatReset,
+} from "./format";
+import { TrayPanel } from "./TrayPanel";
 import type { AccountView, DashboardState, UsageSnapshot } from "./types";
 
 const api = vi.hoisted(() => ({
@@ -223,6 +231,192 @@ test("renders compact tray view from the tray window route", async () => {
   expect(screen.getByText("10 / 100 requests")).toBeInTheDocument();
 });
 
+test("falls back to frontend summaries for older dashboard payloads", async () => {
+  api.loadDashboard.mockResolvedValue(
+    dashboardState({
+      snapshots: [snapshot("healthy"), snapshot("error")],
+      traySummary: undefined as unknown as DashboardState["traySummary"],
+    }),
+  );
+
+  render(<App />);
+
+  expect(await screen.findByText("Burnrate: 1 critical")).toBeInTheDocument();
+});
+
+test("falls back to frontend warning and stale summaries", async () => {
+  api.loadDashboard.mockResolvedValue(
+    dashboardState({
+      snapshots: [snapshot("warning")],
+      traySummary: undefined as unknown as DashboardState["traySummary"],
+    }),
+  );
+
+  render(<App />);
+
+  expect(await screen.findByText("Burnrate: 1 warning")).toBeInTheDocument();
+
+  cleanup();
+  api.loadDashboard.mockResolvedValue(
+    dashboardState({
+      snapshots: [snapshot("stale")],
+      traySummary: undefined as unknown as DashboardState["traySummary"],
+    }),
+  );
+  render(<App />);
+
+  expect(
+    await screen.findByText("Burnrate: data is stale"),
+  ).toBeInTheDocument();
+});
+
+test("renders fallback healthy and empty summaries", async () => {
+  api.loadDashboard.mockResolvedValue(
+    dashboardState({
+      snapshots: [snapshot("healthy")],
+      traySummary: undefined as unknown as DashboardState["traySummary"],
+    }),
+  );
+
+  render(<App />);
+
+  expect(
+    await screen.findByText("Burnrate: all quotas healthy"),
+  ).toBeInTheDocument();
+
+  cleanup();
+  api.loadDashboard.mockResolvedValue(
+    dashboardState({
+      snapshots: [],
+      traySummary: undefined as unknown as DashboardState["traySummary"],
+    }),
+  );
+  render(<App />);
+
+  expect(
+    await screen.findByText("Burnrate: no enabled accounts"),
+  ).toBeInTheDocument();
+});
+
+test("renders tray summary branches and account disabled state", () => {
+  const { rerender } = render(
+    <TrayPanel
+      state={dashboardState({
+        accounts: [
+          {
+            id: "disabled-openrouter",
+            provider: "openrouter",
+            label: "OpenRouter",
+            enabled: false,
+            autoDetected: false,
+            credentialPath: null,
+            endpointOverride: null,
+            secretStorage: "plaintext",
+            hasSecret: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      })}
+      snapshots={[]}
+      busy={false}
+      error="network offline"
+      onRefresh={() => {}}
+    />,
+  );
+
+  expect(screen.getByText("No enabled accounts")).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent("network offline");
+  expect(screen.getByText("Disabled")).toBeInTheDocument();
+
+  rerender(
+    <TrayPanel
+      state={dashboardState()}
+      snapshots={[snapshot("error")]}
+      busy={false}
+      error={null}
+      onRefresh={() => {}}
+    />,
+  );
+  expect(screen.getByText("Critical usage")).toBeInTheDocument();
+
+  rerender(
+    <TrayPanel
+      state={dashboardState()}
+      snapshots={[snapshot("stale")]}
+      busy={false}
+      error={null}
+      onRefresh={() => {}}
+    />,
+  );
+  expect(screen.getByText("Usage data is stale")).toBeInTheDocument();
+
+  rerender(
+    <TrayPanel
+      state={dashboardState()}
+      snapshots={[snapshot("healthy")]}
+      busy
+      error={null}
+      onRefresh={() => {}}
+    />,
+  );
+  expect(screen.getByText("All quotas healthy")).toBeInTheDocument();
+  expect(screen.getByTitle("Refresh")).toBeDisabled();
+});
+
+test("dispatches tray refresh requests", async () => {
+  window.history.replaceState({}, "", "/?view=tray");
+  api.loadDashboard.mockResolvedValue(dashboardState());
+  api.refreshDashboard.mockResolvedValue(
+    dashboardState({
+      snapshots: [snapshot("healthy")],
+    }),
+  );
+
+  render(<App />);
+
+  fireEvent.click(await screen.findByTitle("Refresh"));
+
+  expect(await screen.findByText("All quotas healthy")).toBeInTheDocument();
+  expect(api.refreshDashboard).toHaveBeenCalledOnce();
+});
+
+test("formats quota fallback and reset edge cases", () => {
+  expect(bucketFromQuota(snapshot("healthy", { quota: null }))).toBeNull();
+  expect(
+    formatLimit({
+      id: "unknown",
+      label: "Unknown",
+      window: null,
+      used: 0,
+      limit: null,
+      remaining: null,
+      unit: "%",
+      resetAt: null,
+      status: "healthy",
+    }),
+  ).toBe("Unknown");
+  expect(
+    bucketPercent({
+      id: "over",
+      label: "Over",
+      window: null,
+      used: 0,
+      limit: 100,
+      remaining: 125,
+      unit: "%",
+      resetAt: null,
+      status: "healthy",
+    }),
+  ).toBe(100);
+  expect(formatNumber(101.25)).toBe("101");
+  expect(formatReset(null)).toBe("");
+  expect(formatReset("not a date")).toBe("");
+  expect(
+    formatReset(new Date(Date.now() + 49 * 60 * 60 * 1000).toISOString()),
+  ).toMatch(/^resets /);
+});
+
 function dashboardState(
   overrides: Partial<DashboardState> = {},
 ): DashboardState {
@@ -269,5 +463,47 @@ function dashboardState(
       updatedAt: new Date().toISOString(),
     },
     settings: overrides.settings ?? { hideFromDock: false },
+  };
+}
+
+function snapshot(
+  status: UsageSnapshot["status"],
+  overrides: Partial<UsageSnapshot> = {},
+): UsageSnapshot {
+  return {
+    accountId: `${status}-account`,
+    provider: "codex",
+    label: "Codex",
+    status,
+    subscription: {
+      plan: "pro",
+      planLabel: "Pro",
+      rateLimitTier: null,
+      extraUsageEnabled: true,
+      source: "test",
+    },
+    usageBuckets: [
+      {
+        id: "5-hour",
+        label: "5-hour",
+        window: "5-hour",
+        used: 25,
+        limit: 100,
+        remaining: 75,
+        unit: "%",
+        resetAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        status,
+      },
+    ],
+    quota: {
+      used: 25,
+      limit: 100,
+      remaining: 75,
+      unit: "%",
+      resetAt: null,
+    },
+    message: null,
+    fetchedAt: new Date().toISOString(),
+    ...overrides,
   };
 }

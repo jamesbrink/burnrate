@@ -328,8 +328,8 @@ function summaryFromBackend(
         : status === "stale"
           ? "Burnrate: data is stale"
           : status === "healthy"
-          ? "Burnrate: all quotas healthy"
-          : "Burnrate: no enabled accounts";
+            ? "Burnrate: all quotas healthy"
+            : "Burnrate: no enabled accounts";
 
   return {
     label,

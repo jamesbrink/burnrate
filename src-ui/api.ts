@@ -324,7 +324,7 @@ export async function onSettingsUpdated(
   return () => {};
 }
 
-function summarizeMockSnapshots(snapshots: UsageSnapshot[]) {
+export function summarizeMockSnapshots(snapshots: UsageSnapshot[]) {
   const criticalCount = snapshots.filter((snapshot) =>
     ["exhausted", "error"].includes(snapshot.status),
   ).length;

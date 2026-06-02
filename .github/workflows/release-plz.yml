@@ -25,6 +25,8 @@ jobs:
       - run: npm run build
       - name: Verify bundled frontend assets are committed
         run: git diff --exit-code -- dist
+      - name: Remove frontend install artifacts
+        run: rm -rf node_modules
       - uses: release-plz/action@v0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

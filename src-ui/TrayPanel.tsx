@@ -109,7 +109,9 @@ function TraySnapshot({ snapshot }: { snapshot: UsageSnapshot }) {
     <article className={`tray-card ${snapshot.status}`}>
       <div className="tray-card-head">
         <div className="tray-provider">
-          <span className="provider-mark">{providerMarks[snapshot.provider]}</span>
+          <span className="provider-mark">
+            {providerMarks[snapshot.provider]}
+          </span>
           <div>
             <strong>{snapshot.label}</strong>
             <span>{providerLabels[snapshot.provider]}</span>

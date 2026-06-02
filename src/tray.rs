@@ -117,6 +117,7 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>, settings: AppSettings) -> tauri::Res
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn apply_activation_policy(app: &AppHandle<Wry>, hide_from_dock: bool) {
     let policy = if hide_from_dock {
         tauri::ActivationPolicy::Accessory
@@ -125,6 +126,9 @@ pub(crate) fn apply_activation_policy(app: &AppHandle<Wry>, hide_from_dock: bool
     };
     let _ = app.set_activation_policy(policy);
 }
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn apply_activation_policy(_app: &AppHandle<Wry>, _hide_from_dock: bool) {}
 
 pub(crate) fn update_summary(app: &AppHandle<Wry>, summary: &TraySummary) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
