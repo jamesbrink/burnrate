@@ -12,13 +12,14 @@ use models::{AccountInput, AccountView, AppSettings, DashboardState};
 use std::time::Duration;
 
 use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, Size, State, Wry,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Size, State, Wry,
     menu::{IsMenuItem, Menu, PredefinedMenuItem, Submenu},
 };
 
 const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const PREFERENCES_MIN_WIDTH: f64 = 360.0;
 const PREFERENCES_MIN_HEIGHT: f64 = 360.0;
+const PREFERENCES_SCREEN_MARGIN: f64 = 18.0;
 
 #[tauri::command]
 async fn dashboard(app: AppHandle, state: State<'_, AppState>) -> Result<DashboardState, String> {
@@ -97,24 +98,42 @@ fn resize_preferences_to_content(app: AppHandle, width: f64, height: f64) -> Res
             .primary_monitor()
             .map_err(|error| error.to_string())?)
         .ok_or_else(|| "no monitor available for preferences window".to_string())?;
-    let work_area = monitor
-        .work_area()
-        .size
-        .to_logical::<f64>(monitor.scale_factor());
-    let min_width = PREFERENCES_MIN_WIDTH.min(work_area.width);
-    let min_height = PREFERENCES_MIN_HEIGHT.min(work_area.height);
+    let work_area = monitor.work_area();
+    let work_size = work_area.size.to_logical::<f64>(monitor.scale_factor());
+    let work_position = work_area.position.to_logical::<f64>(monitor.scale_factor());
+    let available_width = (work_size.width - (PREFERENCES_SCREEN_MARGIN * 2.0)).max(1.0);
+    let available_height = (work_size.height - (PREFERENCES_SCREEN_MARGIN * 2.0)).max(1.0);
+    let min_width = PREFERENCES_MIN_WIDTH.min(available_width);
+    let min_height = PREFERENCES_MIN_HEIGHT.min(available_height);
     let target_width = (width + chrome_width)
         .ceil()
-        .clamp(min_width, work_area.width);
+        .clamp(min_width, available_width);
     let target_height = (height + chrome_height)
         .ceil()
-        .clamp(min_height, work_area.height);
+        .clamp(min_height, available_height);
 
     window
         .set_min_size(Some(Size::Logical(LogicalSize::new(min_width, min_height))))
         .map_err(|error| error.to_string())?;
     window
         .set_size(Size::Logical(LogicalSize::new(target_width, target_height)))
+        .map_err(|error| error.to_string())?;
+
+    let current_position = window
+        .outer_position()
+        .map_err(|error| error.to_string())?
+        .to_logical::<f64>(scale_factor);
+    let min_x = work_position.x + PREFERENCES_SCREEN_MARGIN;
+    let min_y = work_position.y + PREFERENCES_SCREEN_MARGIN;
+    let max_x =
+        (work_position.x + work_size.width - target_width - PREFERENCES_SCREEN_MARGIN).max(min_x);
+    let max_y =
+        (work_position.y + work_size.height - target_height - PREFERENCES_SCREEN_MARGIN).max(min_y);
+    let target_x = current_position.x.clamp(min_x, max_x);
+    let target_y = current_position.y.clamp(min_y, max_y);
+
+    window
+        .set_position(Position::Logical(LogicalPosition::new(target_x, target_y)))
         .map_err(|error| error.to_string())
 }
 

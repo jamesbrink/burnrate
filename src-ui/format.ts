@@ -36,9 +36,19 @@ export function formatNumber(value: number): string {
 
 export function formatLimit(bucket: UsageBucketSnapshot): string {
   const remaining =
-    bucket.remaining === null ? "Unknown" : formatNumber(bucket.remaining);
-  const limit = bucket.limit === null ? "" : ` / ${formatNumber(bucket.limit)}`;
+    bucket.remaining === null
+      ? "Unknown"
+      : formatBucketNumber(bucket.remaining, bucket.unit);
+  const limit =
+    bucket.limit === null
+      ? ""
+      : ` / ${formatBucketNumber(bucket.limit, bucket.unit)}`;
   return `${remaining}${limit}`;
+}
+
+function formatBucketNumber(value: number, unit: string): string {
+  const formatted = formatNumber(value);
+  return unit === "USD" ? `$${formatted}` : formatted;
 }
 
 export function formatReset(value: string | null): string {

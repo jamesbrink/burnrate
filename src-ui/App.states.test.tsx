@@ -460,6 +460,19 @@ test("formats quota fallback and reset edge cases", () => {
     }),
   ).toBe("Unknown");
   expect(
+    formatLimit({
+      id: "credits",
+      label: "Credits",
+      window: null,
+      used: 66.4,
+      limit: 125,
+      remaining: 58.6,
+      unit: "USD",
+      resetAt: null,
+      status: "healthy",
+    }),
+  ).toBe("$58.6 / $125");
+  expect(
     bucketPercent({
       id: "over",
       label: "Over",

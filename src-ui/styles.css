@@ -24,6 +24,12 @@ body {
   background: #eef0f2;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 button,
 input,
 select {
@@ -46,12 +52,17 @@ p {
 }
 
 .prefs-shell {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 360px;
   padding: 18px;
   background: #f4f5f6;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .prefs-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -124,16 +135,20 @@ p {
 }
 
 .notice {
+  flex: 0 0 auto;
   min-height: 40px;
   padding: 9px 11px;
   margin-bottom: 12px;
 }
 
 .prefs-layout {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
+  overflow: hidden;
 }
 
 .prefs-list,
@@ -146,12 +161,18 @@ p {
 }
 
 .prefs-list {
+  align-self: start;
+  max-height: 100%;
+  overflow: auto;
   padding: 12px;
   display: grid;
   gap: 8px;
 }
 
 .prefs-main {
+  max-height: 100%;
+  min-height: 0;
+  overflow: auto;
   padding: 12px;
   display: grid;
   gap: 12px;
