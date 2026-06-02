@@ -84,6 +84,10 @@ pub(crate) struct UsageSnapshot {
     pub provider: ProviderKind,
     pub label: String,
     pub status: SnapshotStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscription: Option<SubscriptionSnapshot>,
+    #[serde(default)]
+    pub usage_buckets: Vec<UsageBucketSnapshot>,
     pub quota: Option<QuotaSnapshot>,
     pub burn_rate: Option<BurnRateSnapshot>,
     pub message: Option<String>,
@@ -99,6 +103,41 @@ pub(crate) enum SnapshotStatus {
     Error,
     Stale,
     NotConfigured,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum SubscriptionPlan {
+    Free,
+    Pro,
+    Max,
+    Team,
+    Enterprise,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SubscriptionSnapshot {
+    pub plan: SubscriptionPlan,
+    pub plan_label: String,
+    pub rate_limit_tier: Option<String>,
+    pub extra_usage_enabled: Option<bool>,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UsageBucketSnapshot {
+    pub id: String,
+    pub label: String,
+    pub window: Option<String>,
+    pub used: f64,
+    pub limit: Option<f64>,
+    pub remaining: Option<f64>,
+    pub unit: String,
+    pub reset_at: Option<DateTime<Utc>>,
+    pub status: SnapshotStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,5 +190,17 @@ mod tests {
     #[test]
     fn default_settings_keep_dock_visible() {
         assert!(!AppSettings::default().hide_from_dock);
+    }
+
+    #[test]
+    fn subscription_plans_use_stable_wire_names() {
+        assert_eq!(
+            serde_json::to_string(&SubscriptionPlan::Max).unwrap(),
+            "\"max\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SubscriptionPlan::Unknown).unwrap(),
+            "\"unknown\""
+        );
     }
 }

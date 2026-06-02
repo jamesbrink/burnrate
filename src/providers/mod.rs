@@ -5,12 +5,15 @@ mod openrouter;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use reqwest::{Client, Url};
 
 use crate::{
     key_store,
-    models::{AccountConfig, ProviderKind, SnapshotStatus, UsageSnapshot},
+    models::{
+        AccountConfig, ProviderKind, QuotaSnapshot, SnapshotStatus, SubscriptionPlan,
+        SubscriptionSnapshot, UsageBucketSnapshot, UsageSnapshot,
+    },
 };
 
 const PROVIDER_TIMEOUT: Duration = Duration::from_secs(15);
@@ -61,6 +64,8 @@ fn error_snapshot(account: &AccountConfig, error: anyhow::Error) -> UsageSnapsho
         provider: account.provider,
         label: account.label.clone(),
         status: SnapshotStatus::Error,
+        subscription: None,
+        usage_buckets: Vec::new(),
         quota: None,
         burn_rate: None,
         message: Some(error.to_string()),
@@ -107,12 +112,372 @@ fn number(value: &serde_json::Value, keys: &[&str]) -> Option<f64> {
     })
 }
 
+fn bool_value(value: &serde_json::Value, keys: &[&str]) -> Option<bool> {
+    keys.iter().find_map(|key| {
+        let value = value.pointer(key)?;
+        value.as_bool().or_else(|| {
+            value
+                .as_str()
+                .and_then(|item| match item.to_ascii_lowercase().as_str() {
+                    "true" | "yes" | "1" => Some(true),
+                    "false" | "no" | "0" => Some(false),
+                    _ => None,
+                })
+        })
+    })
+}
+
 fn text(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
     keys.iter().find_map(|key| {
         value
             .pointer(key)
             .and_then(|value| value.as_str())
             .map(ToString::to_string)
+    })
+}
+
+fn datetime(value: &serde_json::Value, keys: &[&str]) -> Option<DateTime<Utc>> {
+    text(value, keys)
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(&value).ok())
+        .map(|value| value.with_timezone(&Utc))
+}
+
+fn status_from_remaining(limit: Option<f64>, remaining: Option<f64>) -> SnapshotStatus {
+    match (limit, remaining) {
+        (Some(limit), Some(remaining)) if limit > 0.0 && remaining / limit <= 0.05 => {
+            SnapshotStatus::Exhausted
+        }
+        (Some(limit), Some(remaining)) if limit > 0.0 && remaining / limit <= 0.2 => {
+            SnapshotStatus::Warning
+        }
+        _ => SnapshotStatus::Healthy,
+    }
+}
+
+fn quota_from_bucket(bucket: &UsageBucketSnapshot) -> QuotaSnapshot {
+    QuotaSnapshot {
+        used: bucket.used,
+        limit: bucket.limit,
+        remaining: bucket.remaining,
+        unit: bucket.unit.clone(),
+        reset_at: bucket.reset_at,
+    }
+}
+
+fn primary_quota(buckets: &[UsageBucketSnapshot]) -> Option<QuotaSnapshot> {
+    buckets.first().map(quota_from_bucket)
+}
+
+fn overall_status(buckets: &[UsageBucketSnapshot]) -> SnapshotStatus {
+    if buckets
+        .iter()
+        .any(|bucket| matches!(bucket.status, SnapshotStatus::Exhausted | SnapshotStatus::Error))
+    {
+        SnapshotStatus::Exhausted
+    } else if buckets
+        .iter()
+        .any(|bucket| bucket.status == SnapshotStatus::Warning)
+    {
+        SnapshotStatus::Warning
+    } else {
+        SnapshotStatus::Healthy
+    }
+}
+
+fn bucket_from_parts(
+    id: impl Into<String>,
+    label: impl Into<String>,
+    window: Option<String>,
+    used: f64,
+    limit: Option<f64>,
+    remaining: Option<f64>,
+    unit: impl Into<String>,
+    reset_at: Option<DateTime<Utc>>,
+) -> UsageBucketSnapshot {
+    UsageBucketSnapshot {
+        id: id.into(),
+        label: label.into(),
+        window,
+        used,
+        limit,
+        remaining,
+        unit: unit.into(),
+        reset_at,
+        status: status_from_remaining(limit, remaining),
+    }
+}
+
+fn parse_usage_buckets(value: &serde_json::Value, default_unit: &str) -> Vec<UsageBucketSnapshot> {
+    let mut buckets = Vec::new();
+    for pointer in [
+        "/result/rate_limits",
+        "/result/usage_buckets",
+        "/result/buckets",
+        "/data/rate_limits",
+        "/data/usage_buckets",
+        "/data/buckets",
+        "/usage/rate_limits",
+        "/usage/buckets",
+        "/rate_limits",
+        "/usage_buckets",
+        "/buckets",
+        "/limits",
+    ] {
+        let Some(items) = value.pointer(pointer).and_then(|value| value.as_array()) else {
+            continue;
+        };
+        for (index, item) in items.iter().enumerate() {
+            if let Some(bucket) = parse_usage_bucket(item, index, default_unit) {
+                buckets.push(bucket);
+            }
+        }
+        if !buckets.is_empty() {
+            return buckets;
+        }
+    }
+
+    Vec::new()
+}
+
+fn parse_usage_bucket(
+    value: &serde_json::Value,
+    index: usize,
+    default_unit: &str,
+) -> Option<UsageBucketSnapshot> {
+    let limit = number(
+        value,
+        &[
+            "/limit",
+            "/quota/limit",
+            "/max",
+            "/maximum",
+            "/cap",
+            "/total",
+            "/total_allowed",
+        ],
+    );
+    let remaining = number(
+        value,
+        &[
+            "/remaining",
+            "/quota/remaining",
+            "/available",
+            "/remaining_quota",
+            "/remaining_requests",
+            "/remaining_tokens",
+        ],
+    );
+    let used = number(
+        value,
+        &[
+            "/used",
+            "/quota/used",
+            "/consumed",
+            "/usage",
+            "/used_quota",
+            "/used_requests",
+            "/used_tokens",
+        ],
+    )
+    .or_else(|| limit.zip(remaining).map(|(limit, remaining)| limit - remaining))
+    .unwrap_or(0.0);
+
+    if limit.is_none() && remaining.is_none() && used == 0.0 {
+        return None;
+    }
+
+    let explicit_id = text(
+        value,
+        &[
+            "/id",
+            "/name",
+            "/key",
+            "/type",
+            "/bucket",
+            "/window",
+            "/period",
+            "/limit_type",
+        ],
+    );
+    let raw_id = explicit_id
+        .clone()
+        .unwrap_or_else(|| format!("{default_unit}-{index}"));
+    let label = explicit_id
+        .as_deref()
+        .map(bucket_label)
+        .unwrap_or_else(|| title_case(default_unit));
+    let window = bucket_window(&raw_id);
+    let reset_at = datetime(
+        value,
+        &[
+            "/reset_at",
+            "/resetAt",
+            "/resets_at",
+            "/resetsAt",
+            "/reset_time",
+            "/resetTime",
+            "/expires_at",
+            "/expiresAt",
+        ],
+    );
+    let unit = text(value, &["/unit", "/quota/unit"]).unwrap_or_else(|| default_unit.to_string());
+
+    Some(bucket_from_parts(
+        slug(&raw_id),
+        label,
+        window,
+        used.max(0.0),
+        limit,
+        remaining,
+        unit,
+        reset_at,
+    ))
+}
+
+fn bucket_label(value: &str) -> String {
+    let normalized = value.replace(['_', '-'], " ").to_ascii_lowercase();
+    if normalized.contains("5") && normalized.contains("hour") {
+        "5-hour".to_string()
+    } else if normalized.contains("week") {
+        "Weekly".to_string()
+    } else if normalized.contains("day") || normalized.contains("24") {
+        "Daily".to_string()
+    } else if normalized.contains("month") {
+        "Monthly".to_string()
+    } else if normalized.trim().is_empty() {
+        "Quota".to_string()
+    } else {
+        title_case(&normalized)
+    }
+}
+
+fn bucket_window(value: &str) -> Option<String> {
+    let normalized = value.replace(['_', '-'], " ").to_ascii_lowercase();
+    if normalized.contains("5") && normalized.contains("hour") {
+        Some("5-hour".to_string())
+    } else if normalized.contains("week") {
+        Some("weekly".to_string())
+    } else if normalized.contains("day") || normalized.contains("24") {
+        Some("daily".to_string())
+    } else if normalized.contains("month") {
+        Some("monthly".to_string())
+    } else {
+        None
+    }
+}
+
+fn title_case(value: &str) -> String {
+    value
+        .split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn slug(value: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in value.chars().flat_map(|ch| ch.to_lowercase()) {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    let out = out.trim_matches('-').to_string();
+    if out.is_empty() {
+        "quota".to_string()
+    } else {
+        out
+    }
+}
+
+fn plan_from_text(value: Option<&str>) -> SubscriptionPlan {
+    let Some(value) = value else {
+        return SubscriptionPlan::Unknown;
+    };
+    let value = value.to_ascii_lowercase();
+    if value.contains("claude_max") || value.contains("max") {
+        SubscriptionPlan::Max
+    } else if value.contains("team") {
+        SubscriptionPlan::Team
+    } else if value.contains("enterprise") {
+        SubscriptionPlan::Enterprise
+    } else if value.contains("pro") || value.contains("plus") || value.contains("stripe_subscription")
+    {
+        SubscriptionPlan::Pro
+    } else if value.contains("free") {
+        SubscriptionPlan::Free
+    } else {
+        SubscriptionPlan::Unknown
+    }
+}
+
+fn plan_label(plan: SubscriptionPlan, raw: Option<&str>) -> String {
+    match plan {
+        SubscriptionPlan::Free => "Free".to_string(),
+        SubscriptionPlan::Pro => "Pro".to_string(),
+        SubscriptionPlan::Max => raw
+            .and_then(|value| {
+                value.split('_').rev().find_map(|part| {
+                    part.strip_suffix('x')
+                        .and_then(|count| count.parse::<u32>().ok())
+                        .map(|count| format!("Max {count}x"))
+                })
+            })
+            .unwrap_or_else(|| "Max".to_string()),
+        SubscriptionPlan::Team => "Team".to_string(),
+        SubscriptionPlan::Enterprise => "Enterprise".to_string(),
+        SubscriptionPlan::Unknown => "Unknown plan".to_string(),
+    }
+}
+
+fn subscription_from_json(
+    value: &serde_json::Value,
+    source: &str,
+    plan_keys: &[&str],
+) -> Option<SubscriptionSnapshot> {
+    let raw_plan = text(value, plan_keys);
+    let rate_limit_tier = text(
+        value,
+        &[
+            "/rate_limit_tier",
+            "/rateLimitTier",
+            "/organizationRateLimitTier",
+            "/oauthAccount/organizationRateLimitTier",
+            "/account/rate_limit_tier",
+            "/account/rateLimitTier",
+        ],
+    );
+    let plan = plan_from_text(raw_plan.as_deref().or(rate_limit_tier.as_deref()));
+    if plan == SubscriptionPlan::Unknown && raw_plan.is_none() && rate_limit_tier.is_none() {
+        return None;
+    }
+    let extra_usage_enabled = bool_value(
+        value,
+        &[
+            "/extra_usage_enabled",
+            "/extraUsageEnabled",
+            "/hasExtraUsageEnabled",
+            "/oauthAccount/hasExtraUsageEnabled",
+            "/account/hasExtraUsageEnabled",
+        ],
+    );
+
+    Some(SubscriptionSnapshot {
+        plan,
+        plan_label: plan_label(plan, rate_limit_tier.as_deref().or(raw_plan.as_deref())),
+        rate_limit_tier,
+        extra_usage_enabled,
+        source: source.to_string(),
     })
 }
 

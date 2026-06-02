@@ -3,10 +3,10 @@ use chrono::Utc;
 use reqwest::Client;
 
 use crate::models::{
-    AccountConfig, BurnRateSnapshot, QuotaSnapshot, SnapshotStatus, UsageSnapshot,
+    AccountConfig, BurnRateSnapshot, SnapshotStatus, UsageSnapshot,
 };
 
-use super::{endpoint, number, require_token};
+use super::{bucket_from_parts, endpoint, number, primary_quota, require_token};
 
 const DEFAULT_ENDPOINT: &str = "https://openrouter.ai/api/v1/credits";
 
@@ -62,18 +62,26 @@ pub(crate) fn parse_openrouter(
         _ => SnapshotStatus::Healthy,
     };
 
+    let bucket = bucket_from_parts(
+        "credits",
+        "Credits",
+        None,
+        used,
+        total,
+        remaining,
+        "credits",
+        None,
+    );
+    let quota = primary_quota(std::slice::from_ref(&bucket));
+
     UsageSnapshot {
         account_id: account.id.clone(),
         provider: account.provider,
         label: account.label.clone(),
         status,
-        quota: Some(QuotaSnapshot {
-            used,
-            limit: total,
-            remaining,
-            unit: "credits".to_string(),
-            reset_at: None,
-        }),
+        subscription: None,
+        usage_buckets: vec![bucket],
+        quota,
         burn_rate: Some(BurnRateSnapshot {
             per_hour: used / 24.0,
             projected_depletion_at: None,

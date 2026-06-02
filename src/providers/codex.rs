@@ -7,11 +7,14 @@ use reqwest::Client;
 use crate::{
     config::default_auto_account,
     models::{
-        AccountConfig, BurnRateSnapshot, ProviderKind, QuotaSnapshot, SnapshotStatus, UsageSnapshot,
+        AccountConfig, BurnRateSnapshot, ProviderKind, SubscriptionPlan, UsageSnapshot,
     },
 };
 
-use super::{endpoint, number, require_token, text};
+use super::{
+    bucket_from_parts, datetime, endpoint, number, overall_status, parse_usage_buckets,
+    primary_quota, require_token, subscription_from_json,
+};
 
 const DEFAULT_ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/rate_limits";
 
@@ -65,49 +68,64 @@ pub(crate) fn parse_codex_rate_limits(
     value: &serde_json::Value,
 ) -> UsageSnapshot {
     let result = value.get("result").unwrap_or(value);
-    let limit = number(result, &["/limit", "/quota/limit", "/rate_limits/0/limit"]);
-    let remaining = number(
-        result,
-        &["/remaining", "/quota/remaining", "/rate_limits/0/remaining"],
-    );
-    let used = number(result, &["/used", "/quota/used", "/rate_limits/0/used"])
-        .or_else(|| {
-            limit
-                .zip(remaining)
-                .map(|(limit, remaining)| limit - remaining)
-        })
-        .unwrap_or(0.0);
-    let reset_at = text(
-        result,
-        &["/reset_at", "/quota/reset_at", "/rate_limits/0/reset_at"],
-    )
-    .and_then(|value| chrono::DateTime::parse_from_rfc3339(&value).ok())
-    .map(|value| value.with_timezone(&Utc));
+    let mut buckets = parse_usage_buckets(value, "requests");
+    if buckets.is_empty() {
+        let limit = number(result, &["/limit", "/quota/limit", "/rate_limits/0/limit"]);
+        let remaining = number(
+            result,
+            &["/remaining", "/quota/remaining", "/rate_limits/0/remaining"],
+        );
+        let used = number(result, &["/used", "/quota/used", "/rate_limits/0/used"])
+            .or_else(|| {
+                limit
+                    .zip(remaining)
+                    .map(|(limit, remaining)| limit - remaining)
+            })
+            .unwrap_or(0.0);
+        let reset_at = datetime(
+            result,
+            &["/reset_at", "/quota/reset_at", "/rate_limits/0/reset_at"],
+        );
+        buckets.push(bucket_from_parts(
+            "requests",
+            "Requests",
+            None,
+            used,
+            limit,
+            remaining,
+            "requests",
+            reset_at,
+        ));
+    }
 
-    let status = match (limit, remaining) {
-        (Some(limit), Some(remaining)) if limit > 0.0 && remaining / limit <= 0.05 => {
-            SnapshotStatus::Exhausted
-        }
-        (Some(limit), Some(remaining)) if limit > 0.0 && remaining / limit <= 0.2 => {
-            SnapshotStatus::Warning
-        }
-        _ => SnapshotStatus::Healthy,
-    };
+    let subscription = subscription_from_json(
+        value,
+        "codex-app-server",
+        &[
+            "/result/plan",
+            "/result/plan_type",
+            "/result/subscription/plan",
+            "/result/account/plan",
+            "/plan",
+            "/plan_type",
+            "/subscription/plan",
+            "/account/plan",
+        ],
+    );
+    let quota = primary_quota(&buckets);
+    let burn_rate_used = quota.as_ref().map(|quota| quota.used).unwrap_or(0.0);
+    let status = overall_status(&buckets);
 
     UsageSnapshot {
         account_id: account.id.clone(),
         provider: account.provider,
         label: account.label.clone(),
         status,
-        quota: Some(QuotaSnapshot {
-            used,
-            limit,
-            remaining,
-            unit: "requests".to_string(),
-            reset_at,
-        }),
+        subscription,
+        usage_buckets: buckets,
+        quota,
         burn_rate: Some(BurnRateSnapshot {
-            per_hour: used / 24.0,
+            per_hour: burn_rate_used / 24.0,
             projected_depletion_at: None,
         }),
         message: None,
@@ -125,7 +143,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::models::SecretStorageMode;
+    use crate::models::{SecretStorageMode, SnapshotStatus};
 
     fn account() -> AccountConfig {
         AccountConfig {
@@ -164,6 +182,40 @@ mod tests {
 
         assert_eq!(snapshot.status, SnapshotStatus::Exhausted);
         assert_eq!(snapshot.quota.unwrap().used, 96.0);
+        assert_eq!(snapshot.usage_buckets[0].label, "Requests");
+    }
+
+    #[test]
+    fn maps_all_codex_subscription_buckets() {
+        let snapshot = parse_codex_rate_limits(
+            &account(),
+            &json!({
+                "result": {
+                    "plan": "pro",
+                    "rate_limit_tier": "chatgpt_pro",
+                    "rate_limits": [
+                        {
+                            "id": "5_hour",
+                            "limit": 300,
+                            "remaining": 42,
+                            "reset_at": "2026-06-01T17:00:00Z"
+                        },
+                        {
+                            "id": "weekly",
+                            "limit": 1000,
+                            "used": 150
+                        }
+                    ]
+                }
+            }),
+        );
+
+        let subscription = snapshot.subscription.unwrap();
+        assert_eq!(subscription.plan, SubscriptionPlan::Pro);
+        assert_eq!(snapshot.status, SnapshotStatus::Warning);
+        assert_eq!(snapshot.usage_buckets.len(), 2);
+        assert_eq!(snapshot.usage_buckets[0].label, "5-hour");
+        assert_eq!(snapshot.usage_buckets[1].label, "Weekly");
     }
 
     #[tokio::test]

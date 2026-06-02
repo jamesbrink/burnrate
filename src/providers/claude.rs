@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
@@ -7,11 +7,15 @@ use reqwest::Client;
 use crate::{
     config::default_auto_account,
     models::{
-        AccountConfig, BurnRateSnapshot, ProviderKind, QuotaSnapshot, SnapshotStatus, UsageSnapshot,
+        AccountConfig, BurnRateSnapshot, ProviderKind, SubscriptionPlan, SubscriptionSnapshot,
+        UsageSnapshot,
     },
 };
 
-use super::{endpoint, number, require_token, text};
+use super::{
+    bucket_from_parts, endpoint, number, overall_status, parse_usage_buckets, primary_quota,
+    require_token, subscription_from_json, text,
+};
 
 const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com/v1/organizations/usage_report/messages";
 
@@ -65,12 +69,24 @@ pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<Usag
         .await
         .context("failed to decode Anthropic usage")?;
 
-    Ok(parse_claude_usage(account, &value))
+    Ok(parse_claude_usage_with_subscription(
+        account,
+        &value,
+        local_subscription_metadata().ok().flatten(),
+    ))
 }
 
 pub(crate) fn parse_claude_usage(
     account: &AccountConfig,
     value: &serde_json::Value,
+) -> UsageSnapshot {
+    parse_claude_usage_with_subscription(account, value, None)
+}
+
+fn parse_claude_usage_with_subscription(
+    account: &AccountConfig,
+    value: &serde_json::Value,
+    local_subscription: Option<SubscriptionSnapshot>,
 ) -> UsageSnapshot {
     let used = number(
         value,
@@ -93,27 +109,86 @@ pub(crate) fn parse_claude_usage(
     let reset_at = text(value, &["/reset_at", "/quota/reset_at"])
         .and_then(|value| chrono::DateTime::parse_from_rfc3339(&value).ok())
         .map(|value| value.with_timezone(&Utc));
-
-    let status = status_from_remaining(limit, remaining);
+    let mut buckets = parse_usage_buckets(value, "tokens");
+    if buckets.is_empty() {
+        buckets.push(bucket_from_parts(
+            "tokens",
+            "Tokens",
+            None,
+            used,
+            limit,
+            remaining,
+            "tokens",
+            reset_at,
+        ));
+    }
+    let subscription = local_subscription.or_else(|| {
+        subscription_from_json(
+            value,
+            "anthropic-usage",
+            &[
+                "/plan",
+                "/plan_type",
+                "/subscription/plan",
+                "/account/plan",
+                "/organization/type",
+                "/organizationType",
+                "/oauthAccount/organizationType",
+            ],
+        )
+    });
+    let quota = primary_quota(&buckets);
+    let burn_rate_used = quota.as_ref().map(|quota| quota.used).unwrap_or(used);
+    let status = overall_status(&buckets);
     UsageSnapshot {
         account_id: account.id.clone(),
         provider: account.provider,
         label: account.label.clone(),
         status,
-        quota: Some(QuotaSnapshot {
-            used,
-            limit,
-            remaining,
-            unit: "tokens".to_string(),
-            reset_at,
-        }),
+        subscription,
+        usage_buckets: buckets,
+        quota,
         burn_rate: Some(BurnRateSnapshot {
-            per_hour: used / 24.0,
+            per_hour: burn_rate_used / 24.0,
             projected_depletion_at: None,
         }),
         message: None,
         fetched_at: Utc::now(),
     }
+}
+
+pub(crate) fn local_subscription_metadata() -> Result<Option<SubscriptionSnapshot>> {
+    let path = claude_metadata_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    parse_claude_subscription_metadata(&path)
+}
+
+fn claude_metadata_path() -> Result<PathBuf> {
+    if let Ok(path) = std::env::var("BURNRATE_CLAUDE_METADATA_FILE") {
+        return Ok(PathBuf::from(path));
+    }
+    Ok(dirs::home_dir()
+        .context("could not find home directory")?
+        .join(".claude.json"))
+}
+
+fn parse_claude_subscription_metadata(path: &Path) -> Result<Option<SubscriptionSnapshot>> {
+    let contents =
+        std::fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_str(&contents)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    Ok(subscription_from_json(
+        &value,
+        "claude-local-metadata",
+        &[
+            "/oauthAccount/organizationType",
+            "/oauthAccount/billingType",
+            "/organizationType",
+            "/billingType",
+        ],
+    ))
 }
 
 fn aggregate_number(value: &serde_json::Value, key: &str) -> f64 {
@@ -136,18 +211,6 @@ fn aggregate_number(value: &serde_json::Value, key: &str) -> f64 {
     }
 }
 
-fn status_from_remaining(limit: Option<f64>, remaining: Option<f64>) -> SnapshotStatus {
-    match (limit, remaining) {
-        (Some(limit), Some(remaining)) if limit > 0.0 && remaining / limit <= 0.05 => {
-            SnapshotStatus::Exhausted
-        }
-        (Some(limit), Some(remaining)) if limit > 0.0 && remaining / limit <= 0.2 => {
-            SnapshotStatus::Warning
-        }
-        _ => SnapshotStatus::Healthy,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
@@ -158,7 +221,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::models::SecretStorageMode;
+    use crate::models::{SecretStorageMode, SnapshotStatus};
 
     fn account() -> AccountConfig {
         AccountConfig {
@@ -191,6 +254,61 @@ mod tests {
         );
 
         assert_eq!(snapshot.quota.unwrap().used, 25.0);
+        assert_eq!(snapshot.usage_buckets[0].label, "Tokens");
+    }
+
+    #[test]
+    fn maps_claude_max_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".claude.json");
+        std::fs::write(
+            &path,
+            serde_json::to_string(&json!({
+                "oauthAccount": {
+                    "billingType": "stripe_subscription",
+                    "organizationType": "claude_max",
+                    "organizationRateLimitTier": "default_claude_max_20x",
+                    "hasExtraUsageEnabled": true
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let subscription = parse_claude_subscription_metadata(&path).unwrap().unwrap();
+
+        assert_eq!(subscription.plan, SubscriptionPlan::Max);
+        assert_eq!(subscription.plan_label, "Max 20x");
+        assert_eq!(subscription.extra_usage_enabled, Some(true));
+    }
+
+    #[test]
+    fn maps_claude_usage_buckets() {
+        let snapshot = parse_claude_usage(
+            &account(),
+            &json!({
+                "usage_buckets": [
+                    {
+                        "name": "5_hour",
+                        "used": 96,
+                        "limit": 100,
+                        "remaining": 4,
+                        "reset_at": "2026-06-01T17:00:00Z"
+                    },
+                    {
+                        "name": "weekly",
+                        "used": 400,
+                        "limit": 1000,
+                        "remaining": 600
+                    }
+                ]
+            }),
+        );
+
+        assert_eq!(snapshot.status, SnapshotStatus::Exhausted);
+        assert_eq!(snapshot.usage_buckets.len(), 2);
+        assert_eq!(snapshot.usage_buckets[0].label, "5-hour");
+        assert_eq!(snapshot.usage_buckets[1].label, "Weekly");
     }
 
     #[tokio::test]
