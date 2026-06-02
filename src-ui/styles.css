@@ -278,11 +278,13 @@ p {
 .usage-head {
   justify-content: space-between;
   gap: 10px;
+  align-items: flex-start;
 }
 
 .usage-provider {
   min-width: 0;
   gap: 9px;
+  align-items: flex-start;
 }
 
 .usage-provider > span,
@@ -571,11 +573,13 @@ p {
 .tray-card-head {
   justify-content: space-between;
   gap: 10px;
+  align-items: flex-start;
 }
 
 .tray-provider {
   gap: 8px;
   min-width: 0;
+  align-items: flex-start;
 }
 
 .provider-logo {
@@ -635,6 +639,7 @@ p {
   font-size: 11px;
   color: #2f5a47;
   background: #e6f3ec;
+  margin-top: 2px;
 }
 
 .tray-status.warning {
