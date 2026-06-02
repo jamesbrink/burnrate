@@ -26,10 +26,18 @@ pub(crate) enum SecretStorageMode {
     Plaintext,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AppSettings {
     pub hide_from_dock: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            hide_from_dock: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,8 +196,8 @@ mod tests {
     }
 
     #[test]
-    fn default_settings_keep_dock_visible() {
-        assert!(!AppSettings::default().hide_from_dock);
+    fn default_settings_hide_dock_for_tray_first_launch() {
+        assert!(AppSettings::default().hide_from_dock);
     }
 
     #[test]

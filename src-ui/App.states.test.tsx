@@ -62,6 +62,20 @@ test("renders stale snapshot state", async () => {
           provider: "codex",
           label: "Codex",
           status: "stale",
+          subscription: { plan: "pro", planLabel: "Pro", rateLimitTier: null, extraUsageEnabled: null, source: "test" },
+          usageBuckets: [
+            {
+              id: "5-hour",
+              label: "5-hour",
+              window: "5-hour",
+              used: 90,
+              limit: 100,
+              remaining: 10,
+              unit: "requests",
+              resetAt: null,
+              status: "stale",
+            },
+          ],
           quota: { used: 90, limit: 100, remaining: 10, unit: "requests", resetAt: null },
           burnRate: { perHour: 3.75, projectedDepletionAt: null },
           message: "Last refresh is older than the quota window.",
@@ -102,6 +116,20 @@ test("renders compact tray view from the tray window route", async () => {
           provider: "codex",
           label: "Codex",
           status: "warning",
+          subscription: { plan: "pro", planLabel: "Pro", rateLimitTier: null, extraUsageEnabled: null, source: "test" },
+          usageBuckets: [
+            {
+              id: "5-hour",
+              label: "5-hour",
+              window: "5-hour",
+              used: 90,
+              limit: 100,
+              remaining: 10,
+              unit: "requests",
+              resetAt: null,
+              status: "warning",
+            },
+          ],
           quota: { used: 90, limit: 100, remaining: 10, unit: "requests", resetAt: null },
           burnRate: { perHour: 3.75, projectedDepletionAt: null },
           message: null,
@@ -115,7 +143,7 @@ test("renders compact tray view from the tray window route", async () => {
 
   expect(await screen.findByRole("region", { name: "Usage" })).toBeInTheDocument();
   expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
-  expect(screen.getByText("10 requests left")).toBeInTheDocument();
+  expect(screen.getByText("10 / 100 requests")).toBeInTheDocument();
 });
 
 function dashboardState(overrides: Partial<DashboardState> = {}): DashboardState {

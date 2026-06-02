@@ -1,9 +1,22 @@
-import { AlertCircle, RefreshCw } from "lucide-react";
-import type { AccountView, DashboardState, SnapshotStatus, UsageSnapshot } from "./types";
+import { AlertCircle, Clock3, RefreshCw, ShieldCheck } from "lucide-react";
+import { bucketPercent, formatLimit, formatReset, primaryBucket } from "./format";
+import type {
+  AccountView,
+  DashboardState,
+  SnapshotStatus,
+  UsageBucketSnapshot,
+  UsageSnapshot,
+} from "./types";
+
+const providerLabels = {
+  "claude-code": "Claude",
+  codex: "Codex",
+  openrouter: "OpenRouter",
+} as const;
 
 const statusLabels: Record<SnapshotStatus, string> = {
-  healthy: "Healthy",
-  warning: "Warning",
+  healthy: "OK",
+  warning: "Low",
   exhausted: "Critical",
   error: "Error",
   stale: "Stale",
@@ -28,56 +41,96 @@ export function TrayPanel({
 
   return (
     <main className="tray-panel">
-      <header className="tray-panel-head">
+      <header className="tray-header">
         <div>
           <h1>Burnrate</h1>
           <p>{summary}</p>
         </div>
-        <button className="icon-button" onClick={onRefresh} disabled={busy} title="Refresh">
-          <RefreshCw size={17} className={busy ? "spin" : ""} />
+        <button className="icon-button tray-refresh" onClick={onRefresh} disabled={busy} title="Refresh">
+          <RefreshCw size={16} className={busy ? "spin" : ""} />
         </button>
       </header>
 
       {error ? (
-        <div className="notice error compact" role="alert">
-          <AlertCircle size={17} />
+        <div className="tray-notice" role="alert">
+          <AlertCircle size={16} />
           <span>{error}</span>
         </div>
       ) : null}
 
-      <section className="tray-panel-section" aria-label="Usage">
+      <section className="tray-section" aria-label="Usage">
         {snapshots.length > 0 ? (
           snapshots.map((snapshot) => <TraySnapshot key={snapshot.accountId} snapshot={snapshot} />)
         ) : (
-          <p className="tray-empty">No enabled accounts.</p>
+          <div className="tray-empty">No enabled accounts.</div>
         )}
       </section>
 
-      <section className="tray-panel-section" aria-label="Accounts">
-        {accounts.map((account) => (
-          <TrayAccount key={account.id} account={account} />
-        ))}
-      </section>
+      {accounts.length > 0 ? (
+        <section className="tray-section tray-accounts" aria-label="Accounts">
+          {accounts.map((account) => (
+            <TrayAccount key={account.id} account={account} />
+          ))}
+        </section>
+      ) : null}
     </main>
   );
 }
 
 function TraySnapshot({ snapshot }: { snapshot: UsageSnapshot }) {
-  const remaining =
-    snapshot.quota?.remaining !== null && snapshot.quota?.remaining !== undefined
-      ? formatNumber(snapshot.quota.remaining)
-      : "Unknown";
+  const bucket = primaryBucket(snapshot);
+  const buckets = snapshot.usageBuckets.length > 0 ? snapshot.usageBuckets : bucket ? [bucket] : [];
+  const plan = snapshot.subscription?.planLabel ?? "Unknown plan";
 
   return (
-    <article className={`tray-snapshot ${snapshot.status}`}>
-      <div>
-        <strong>{snapshot.label}</strong>
-        <span>{statusLabels[snapshot.status]}</span>
+    <article className={`tray-card ${snapshot.status}`}>
+      <div className="tray-card-head">
+        <div className="tray-provider">
+          <span className="provider-mark">{providerLabels[snapshot.provider][0]}</span>
+          <div>
+            <strong>{snapshot.label}</strong>
+            <span>{providerLabels[snapshot.provider]}</span>
+          </div>
+        </div>
+        <span className={`tray-status ${snapshot.status}`}>{statusLabels[snapshot.status]}</span>
       </div>
-      <p>
-        {remaining} {snapshot.quota?.unit ?? "quota"} left
-      </p>
+
+      <div className="tray-plan">
+        <ShieldCheck size={14} />
+        <span>{plan}</span>
+        {snapshot.subscription?.extraUsageEnabled ? <small>extra usage</small> : null}
+      </div>
+
+      <div className="bucket-list">
+        {buckets.map((bucket) => (
+          <BucketRow key={bucket.id} bucket={bucket} />
+        ))}
+      </div>
+
+      {snapshot.message ? <p className="tray-message">{snapshot.message}</p> : null}
     </article>
+  );
+}
+
+function BucketRow({ bucket }: { bucket: UsageBucketSnapshot }) {
+  return (
+    <div className={`bucket-row ${bucket.status}`}>
+      <div className="bucket-meta">
+        <span>{bucket.label}</span>
+        <strong>
+          {formatLimit(bucket)} {bucket.unit}
+        </strong>
+      </div>
+      <div className="mini-meter" aria-label={`${bucket.label} remaining`}>
+        <span style={{ width: `${bucketPercent(bucket)}%` }} />
+      </div>
+      {bucket.resetAt ? (
+        <small>
+          <Clock3 size={12} />
+          {formatReset(bucket.resetAt)}
+        </small>
+      ) : null}
+    </div>
   );
 }
 
@@ -92,16 +145,10 @@ function TrayAccount({ account }: { account: AccountView }) {
 
 function summarize(snapshots: UsageSnapshot[]) {
   if (snapshots.some((snapshot) => ["exhausted", "error"].includes(snapshot.status))) {
-    return "Burnrate: critical usage";
+    return "Critical usage";
   }
   if (snapshots.some((snapshot) => snapshot.status === "warning")) {
-    return "Burnrate: warning";
+    return "Approaching a limit";
   }
-  return snapshots.length > 0 ? "Burnrate: all quotas healthy" : "Burnrate: no enabled accounts";
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: value > 100 ? 0 : 2,
-  }).format(value);
+  return snapshots.length > 0 ? "All quotas healthy" : "No enabled accounts";
 }

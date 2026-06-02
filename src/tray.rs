@@ -162,7 +162,6 @@ fn show_tray_window(app: &AppHandle<Wry>, position: tauri::PhysicalPosition<f64>
         let position = position.to_logical::<f64>(scale_factor);
         let _ = window.set_position(tray_popup_position(position));
         let _ = window.show();
-        let _ = window.set_focus();
         let _ = app.emit("burnrate-refresh-requested", ());
     }
 }

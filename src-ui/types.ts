@@ -7,6 +7,7 @@ export type SnapshotStatus =
   | "error"
   | "stale"
   | "not-configured";
+export type SubscriptionPlan = "free" | "pro" | "max" | "team" | "enterprise" | "unknown";
 
 export interface AccountView {
   id: string;
@@ -40,6 +41,26 @@ export interface QuotaSnapshot {
   resetAt: string | null;
 }
 
+export interface SubscriptionSnapshot {
+  plan: SubscriptionPlan;
+  planLabel: string;
+  rateLimitTier: string | null;
+  extraUsageEnabled: boolean | null;
+  source: string;
+}
+
+export interface UsageBucketSnapshot {
+  id: string;
+  label: string;
+  window: string | null;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+  unit: string;
+  resetAt: string | null;
+  status: SnapshotStatus;
+}
+
 export interface BurnRateSnapshot {
   perHour: number;
   projectedDepletionAt: string | null;
@@ -50,6 +71,8 @@ export interface UsageSnapshot {
   provider: ProviderKind;
   label: string;
   status: SnapshotStatus;
+  subscription?: SubscriptionSnapshot | null;
+  usageBuckets: UsageBucketSnapshot[];
   quota: QuotaSnapshot | null;
   burnRate: BurnRateSnapshot | null;
   message: string | null;

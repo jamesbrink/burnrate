@@ -10,7 +10,9 @@ test("renders provider rows and snapshot states", async () => {
 
   expect(await screen.findByText("Claude Code")).toBeInTheDocument();
   expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
-  expect(screen.getByText("Warning")).toBeInTheDocument();
+  expect(screen.getAllByText("Warning").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("5-hour").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Weekly").length).toBeGreaterThan(0);
   expect(screen.getAllByText("OpenRouter").length).toBeGreaterThan(0);
 });
 
@@ -31,10 +33,11 @@ test("saves the hide dock setting in browser fallback mode", async () => {
   const user = userEvent.setup();
   render(<App />);
 
-  const toggle = await screen.findByLabelText("Hide Dock");
+  const toggle = await screen.findByLabelText("Hide Dock Icon");
+  expect(toggle).toBeChecked();
   await user.click(toggle);
 
-  expect(toggle).toBeChecked();
+  expect(toggle).not.toBeChecked();
 });
 
 test("edits and resets an existing account", async () => {

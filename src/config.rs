@@ -262,7 +262,7 @@ mod tests {
 
         assert_eq!(loaded.accounts.len(), 1);
         assert_eq!(loaded.accounts[0].provider, ProviderKind::OpenRouter);
-        assert!(!loaded.settings.hide_from_dock);
+        assert!(loaded.settings.hide_from_dock);
     }
 
     #[test]
@@ -274,7 +274,7 @@ mod tests {
         let loaded = load_from_path(&path).unwrap();
 
         assert!(loaded.accounts.is_empty());
-        assert!(!loaded.settings.hide_from_dock);
+        assert!(loaded.settings.hide_from_dock);
     }
 
     #[test]
