@@ -1,0 +1,90 @@
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { App } from "./App";
+import type { AccountView, DashboardState, UsageSnapshot } from "./types";
+
+const api = vi.hoisted(() => ({
+  detectAccounts: vi.fn(),
+  loadDashboard: vi.fn(),
+  onRefreshRequested: vi.fn(),
+  refreshSnapshots: vi.fn(),
+  removeAccount: vi.fn(),
+  saveAccount: vi.fn(),
+}));
+
+vi.mock("./api", () => api);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.onRefreshRequested.mockResolvedValue(() => {});
+  api.refreshSnapshots.mockResolvedValue([]);
+  api.detectAccounts.mockResolvedValue([]);
+  api.removeAccount.mockResolvedValue([]);
+  api.saveAccount.mockResolvedValue([]);
+});
+
+afterEach(() => cleanup());
+
+test("shows a loading refresh control while dashboard data is pending", async () => {
+  let resolveDashboard: (state: DashboardState) => void = () => {};
+  api.loadDashboard.mockReturnValue(
+    new Promise<DashboardState>((resolve) => {
+      resolveDashboard = resolve;
+    }),
+  );
+
+  render(<App />);
+
+  expect(screen.getByTitle("Refresh")).toBeDisabled();
+  resolveDashboard(dashboardState());
+  expect(await screen.findByText("Burnrate: no enabled accounts")).toBeInTheDocument();
+});
+
+test("renders dashboard load errors", async () => {
+  api.loadDashboard.mockRejectedValue(new Error("offline"));
+
+  render(<App />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Error: offline");
+});
+
+test("renders stale snapshot state", async () => {
+  api.loadDashboard.mockResolvedValue(
+    dashboardState({
+      snapshots: [
+        {
+          accountId: "codex-local",
+          provider: "codex",
+          label: "Codex",
+          status: "stale",
+          quota: { used: 90, limit: 100, remaining: 10, unit: "requests", resetAt: null },
+          burnRate: { perHour: 3.75, projectedDepletionAt: null },
+          message: "Last refresh is older than the quota window.",
+          fetchedAt: new Date().toISOString(),
+        },
+      ],
+    }),
+  );
+
+  render(<App />);
+
+  expect(await screen.findByText("Stale")).toBeInTheDocument();
+  expect(screen.getByText("Last refresh is older than the quota window.")).toBeInTheDocument();
+});
+
+function dashboardState(overrides: Partial<DashboardState> = {}): DashboardState {
+  const accounts: AccountView[] = overrides.accounts ?? [];
+  const snapshots: UsageSnapshot[] = overrides.snapshots ?? [];
+
+  return {
+    accounts,
+    snapshots,
+    traySummary: {
+      label: snapshots.length > 0 ? "Burnrate: all quotas healthy" : "Burnrate: no enabled accounts",
+      status: snapshots.length > 0 ? "healthy" : "not-configured",
+      criticalCount: 0,
+      warningCount: 0,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+}
