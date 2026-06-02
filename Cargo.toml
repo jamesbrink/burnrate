@@ -60,8 +60,9 @@ tokio = { version = "1", features = [
 ] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
-# Runtime Dock icon for the unbundled binary (see src/tray.rs). These versions
-# match what tao/wry already resolve, so they add no new dependency downloads.
+# Runtime Dock icon for the unbundled binary (see src/tray.rs). The objc2 stack
+# already ships transitively via tao/wry at these versions; enabling the NSImage
+# feature pulls in one small extra crate (objc2-core-video).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage"] }
