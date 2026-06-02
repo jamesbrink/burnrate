@@ -1,10 +1,14 @@
 import type { UsageBucketSnapshot, UsageSnapshot } from "./types";
 
-export function primaryBucket(snapshot: UsageSnapshot): UsageBucketSnapshot | null {
+export function primaryBucket(
+  snapshot: UsageSnapshot,
+): UsageBucketSnapshot | null {
   return snapshot.usageBuckets[0] ?? bucketFromQuota(snapshot);
 }
 
-export function bucketFromQuota(snapshot: UsageSnapshot): UsageBucketSnapshot | null {
+export function bucketFromQuota(
+  snapshot: UsageSnapshot,
+): UsageBucketSnapshot | null {
   if (!snapshot.quota) return null;
   return {
     id: "quota",
@@ -31,7 +35,8 @@ export function formatNumber(value: number): string {
 }
 
 export function formatLimit(bucket: UsageBucketSnapshot): string {
-  const remaining = bucket.remaining === null ? "Unknown" : formatNumber(bucket.remaining);
+  const remaining =
+    bucket.remaining === null ? "Unknown" : formatNumber(bucket.remaining);
   const limit = bucket.limit === null ? "" : ` / ${formatNumber(bucket.limit)}`;
   return `${remaining}${limit}`;
 }
@@ -40,7 +45,10 @@ export function formatReset(value: string | null): string {
   if (!value) return "";
   const reset = new Date(value);
   if (Number.isNaN(reset.getTime())) return "";
-  const minutes = Math.max(0, Math.round((reset.getTime() - Date.now()) / 60000));
+  const minutes = Math.max(
+    0,
+    Math.round((reset.getTime() - Date.now()) / 60000),
+  );
   if (minutes < 60) return `resets in ${minutes}m`;
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `resets in ${hours}h`;

@@ -7,7 +7,7 @@ use reqwest::Client;
 use crate::{
     config::default_auto_account,
     models::{
-        AccountConfig, BurnRateSnapshot, ProviderKind, SubscriptionPlan, SubscriptionSnapshot,
+        AccountConfig, BurnRateSnapshot, ProviderKind, QuotaSnapshot, SubscriptionSnapshot,
         UsageSnapshot,
     },
 };
@@ -76,6 +76,7 @@ pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<Usag
     ))
 }
 
+#[cfg(test)]
 pub(crate) fn parse_claude_usage(
     account: &AccountConfig,
     value: &serde_json::Value,
@@ -115,11 +116,13 @@ fn parse_claude_usage_with_subscription(
             "tokens",
             "Tokens",
             None,
-            used,
-            limit,
-            remaining,
-            "tokens",
-            reset_at,
+            QuotaSnapshot {
+                used,
+                limit,
+                remaining,
+                unit: "tokens".to_string(),
+                reset_at,
+            },
         ));
     }
     let subscription = local_subscription.or_else(|| {
@@ -175,8 +178,8 @@ fn claude_metadata_path() -> Result<PathBuf> {
 }
 
 fn parse_claude_subscription_metadata(path: &Path) -> Result<Option<SubscriptionSnapshot>> {
-    let contents =
-        std::fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let contents = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
     let value: serde_json::Value = serde_json::from_str(&contents)
         .with_context(|| format!("failed to parse {}", path.display()))?;
     Ok(subscription_from_json(
@@ -221,7 +224,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::models::{SecretStorageMode, SnapshotStatus};
+    use crate::models::{SecretStorageMode, SnapshotStatus, SubscriptionPlan};
 
     fn account() -> AccountConfig {
         AccountConfig {

@@ -114,11 +114,10 @@ impl AppState {
             }
         }
         snapshots.sort_by_key(|(index, _)| *index);
-        let snapshots = snapshots
+        snapshots
             .into_iter()
             .map(|(_, snapshot)| snapshot)
-            .collect();
-        snapshots
+            .collect()
     }
 
     pub(crate) async fn dashboard(&self) -> Result<DashboardState> {

@@ -3,7 +3,7 @@ use chrono::Utc;
 use reqwest::Client;
 
 use crate::models::{
-    AccountConfig, BurnRateSnapshot, SnapshotStatus, UsageSnapshot,
+    AccountConfig, BurnRateSnapshot, QuotaSnapshot, SnapshotStatus, UsageSnapshot,
 };
 
 use super::{bucket_from_parts, endpoint, number, primary_quota, require_token};
@@ -66,11 +66,13 @@ pub(crate) fn parse_openrouter(
         "credits",
         "Credits",
         None,
-        used,
-        total,
-        remaining,
-        "credits",
-        None,
+        QuotaSnapshot {
+            used,
+            limit: total,
+            remaining,
+            unit: "credits".to_string(),
+            reset_at: None,
+        },
     );
     let quota = primary_quota(std::slice::from_ref(&bucket));
 

@@ -19,7 +19,8 @@ import type {
 } from "./types";
 
 export function App() {
-  const isTrayView = new URLSearchParams(window.location.search).get("view") === "tray";
+  const isTrayView =
+    new URLSearchParams(window.location.search).get("view") === "tray";
   const [state, setState] = useState<DashboardState | null>(null);
   const [snapshots, setSnapshots] = useState<UsageSnapshot[]>([]);
   const [form, setForm] = useState<AccountInput>(emptyForm);
@@ -134,7 +135,12 @@ export function App() {
       setState((previous) =>
         previous
           ? { ...previous, settings: nextSettings }
-          : { accounts: [], snapshots, traySummary: summary, settings: nextSettings },
+          : {
+              accounts: [],
+              snapshots,
+              traySummary: summary,
+              settings: nextSettings,
+            },
       );
     } catch (err) {
       setError(String(err));
@@ -143,7 +149,11 @@ export function App() {
     }
   }
 
-  function updateAccounts(accounts: AccountView[], settings: AppSettings, summary: ReturnType<typeof summarize>) {
+  function updateAccounts(
+    accounts: AccountView[],
+    settings: AppSettings,
+    summary: ReturnType<typeof summarize>,
+  ) {
     setState((previous) =>
       previous
         ? { ...previous, accounts }
@@ -189,7 +199,9 @@ function summarize(snapshots: UsageSnapshot[]) {
   const criticalCount = snapshots.filter((snapshot) =>
     ["exhausted", "error"].includes(snapshot.status),
   ).length;
-  const warningCount = snapshots.filter((snapshot) => snapshot.status === "warning").length;
+  const warningCount = snapshots.filter(
+    (snapshot) => snapshot.status === "warning",
+  ).length;
   const label =
     criticalCount > 0
       ? `Burnrate: ${criticalCount} critical`
@@ -201,8 +213,14 @@ function summarize(snapshots: UsageSnapshot[]) {
 
   return {
     label,
-    shortLabel: criticalCount > 0 ? "Critical" : warningCount > 0 ? "Warning" : "Healthy",
-    status: criticalCount > 0 ? "exhausted" : warningCount > 0 ? "warning" : "healthy",
+    shortLabel:
+      criticalCount > 0 ? "Critical" : warningCount > 0 ? "Warning" : "Healthy",
+    status:
+      criticalCount > 0
+        ? "exhausted"
+        : warningCount > 0
+          ? "warning"
+          : "healthy",
     criticalCount,
     warningCount,
     updatedAt: new Date().toISOString(),

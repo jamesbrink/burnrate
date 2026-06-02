@@ -51,11 +51,15 @@ test("edits and resets an existing account", async () => {
   expect(accountButton).toBeTruthy();
 
   await user.click(accountButton!);
-  expect(screen.getByRole("heading", { name: "Edit Account" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Edit Account" }),
+  ).toBeInTheDocument();
   expect(screen.getByLabelText("Label")).toHaveValue("Claude Code");
 
   await user.click(screen.getByTitle("Reset form"));
-  expect(screen.getByRole("heading", { name: "Add Account" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Add Account" }),
+  ).toBeInTheDocument();
 });
 
 test("updates provider, storage, endpoint, enabled state, and removes an account", async () => {

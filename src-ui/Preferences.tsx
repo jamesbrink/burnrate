@@ -9,7 +9,12 @@ import {
   Wifi,
 } from "lucide-react";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
-import { bucketPercent, formatLimit, formatReset, primaryBucket } from "./format";
+import {
+  bucketPercent,
+  formatLimit,
+  formatReset,
+  primaryBucket,
+} from "./format";
 import type {
   AccountInput,
   AccountView,
@@ -97,19 +102,34 @@ export function Preferences({
           <p>{summary.label}</p>
         </div>
         <div className="toolbar">
-          <label className="dock-toggle" title="Hide Burnrate from the macOS Dock">
+          <label
+            className="dock-toggle"
+            title="Hide Burnrate from the macOS Dock"
+          >
             <input
               type="checkbox"
               checked={settings.hideFromDock}
               disabled={busy}
-              onChange={(event) => onSettingsChange({ hideFromDock: event.target.checked })}
+              onChange={(event) =>
+                onSettingsChange({ hideFromDock: event.target.checked })
+              }
             />
             Hide Dock Icon
           </label>
-          <button className="icon-button" onClick={onDetect} disabled={busy} title="Detect accounts">
+          <button
+            className="icon-button"
+            onClick={onDetect}
+            disabled={busy}
+            title="Detect accounts"
+          >
             <Wifi size={17} />
           </button>
-          <button className="icon-button" onClick={onRefresh} disabled={busy} title="Refresh">
+          <button
+            className="icon-button"
+            onClick={onRefresh}
+            disabled={busy}
+            title="Refresh"
+          >
             <RefreshCw size={17} className={busy ? "spin" : ""} />
           </button>
         </div>
@@ -134,18 +154,25 @@ export function Preferences({
               onRemove={onRemoveAccount}
             />
           ))}
-          {accounts.length === 0 ? <p className="muted">No accounts configured.</p> : null}
+          {accounts.length === 0 ? (
+            <p className="muted">No accounts configured.</p>
+          ) : null}
         </aside>
 
         <section className="prefs-main" aria-label="Usage and account settings">
           <section className="prefs-usage">
-            <SectionTitle title="Usage" detail={snapshots.length > 0 ? summary.shortLabel : "Idle"} />
+            <SectionTitle
+              title="Usage"
+              detail={snapshots.length > 0 ? summary.shortLabel : "Idle"}
+            />
             <div className="usage-list">
               {snapshots.map((snapshot) => (
                 <UsageRow key={snapshot.accountId} snapshot={snapshot} />
               ))}
               {!busy && snapshots.length === 0 ? (
-                <div className="empty-state">Add or detect an account to start monitoring quota.</div>
+                <div className="empty-state">
+                  Add or detect an account to start monitoring quota.
+                </div>
               ) : null}
             </div>
           </section>
@@ -191,23 +218,35 @@ export function Preferences({
                 Label
                 <input
                   value={form.label}
-                  onChange={(event) => setForm((current) => ({ ...current, label: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      label: event.target.value,
+                    }))
+                  }
                   required
                 />
               </label>
             </div>
 
             <div className="segmented" role="group" aria-label="Secret storage">
-              {(["keyring", "plaintext"] satisfies SecretStorageMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={form.secretStorage === mode ? "active" : ""}
-                  onClick={() => setForm((current) => ({ ...current, secretStorage: mode }))}
-                >
-                  {mode === "keyring" ? "Keyring" : "Plaintext"}
-                </button>
-              ))}
+              {(["keyring", "plaintext"] satisfies SecretStorageMode[]).map(
+                (mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={form.secretStorage === mode ? "active" : ""}
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        secretStorage: mode,
+                      }))
+                    }
+                  >
+                    {mode === "keyring" ? "Keyring" : "Plaintext"}
+                  </button>
+                ),
+              )}
             </div>
 
             <div className="form-grid">
@@ -217,7 +256,12 @@ export function Preferences({
                   type="password"
                   value={form.secret ?? ""}
                   placeholder={activeId ? "Leave blank to keep existing" : ""}
-                  onChange={(event) => setForm((current) => ({ ...current, secret: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      secret: event.target.value,
+                    }))
+                  }
                 />
               </label>
 
@@ -226,7 +270,10 @@ export function Preferences({
                 <input
                   value={form.endpointOverride ?? ""}
                   onChange={(event) =>
-                    setForm((current) => ({ ...current, endpointOverride: event.target.value }))
+                    setForm((current) => ({
+                      ...current,
+                      endpointOverride: event.target.value,
+                    }))
                   }
                 />
               </label>
@@ -236,7 +283,12 @@ export function Preferences({
               <input
                 type="checkbox"
                 checked={form.enabled}
-                onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    enabled: event.target.checked,
+                  }))
+                }
               />
               Enabled
             </label>
@@ -326,9 +378,13 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
           <BucketLine bucket={primary} />
         </div>
       ) : (
-        <p className="snapshot-message">{snapshot.message ?? "Usage unavailable."}</p>
+        <p className="snapshot-message">
+          {snapshot.message ?? "Usage unavailable."}
+        </p>
       )}
-      {snapshot.message ? <p className="snapshot-message">{snapshot.message}</p> : null}
+      {snapshot.message ? (
+        <p className="snapshot-message">{snapshot.message}</p>
+      ) : null}
     </article>
   );
 }
@@ -361,5 +417,10 @@ function StatusBadge({ status }: { status: SnapshotStatus }) {
 }
 
 function StatusDot({ enabled }: { enabled: boolean }) {
-  return <span className={`dot ${enabled ? "enabled" : ""}`} aria-label={enabled ? "Enabled" : "Disabled"} />;
+  return (
+    <span
+      className={`dot ${enabled ? "enabled" : ""}`}
+      aria-label={enabled ? "Enabled" : "Disabled"}
+    />
+  );
 }

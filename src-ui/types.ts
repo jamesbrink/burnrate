@@ -7,7 +7,13 @@ export type SnapshotStatus =
   | "error"
   | "stale"
   | "not-configured";
-export type SubscriptionPlan = "free" | "pro" | "max" | "team" | "enterprise" | "unknown";
+export type SubscriptionPlan =
+  | "free"
+  | "pro"
+  | "max"
+  | "team"
+  | "enterprise"
+  | "unknown";
 
 export interface AccountView {
   id: string;

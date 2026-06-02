@@ -63,13 +63,8 @@ pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
 }
 
 pub(crate) fn rebuild(app: &AppHandle<Wry>, settings: AppSettings) -> tauri::Result<()> {
-    let preferences = MenuItem::with_id(
-        app,
-        "preferences",
-        "Open Preferences",
-        true,
-        None::<&str>,
-    )?;
+    let preferences =
+        MenuItem::with_id(app, "preferences", "Open Preferences", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
     let hide_dock = CheckMenuItem::with_id(
         app,

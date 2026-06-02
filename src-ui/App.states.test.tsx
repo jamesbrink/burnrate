@@ -42,7 +42,9 @@ test("shows a loading refresh control while dashboard data is pending", async ()
 
   expect(screen.getByTitle("Refresh")).toBeDisabled();
   resolveDashboard(dashboardState());
-  expect(await screen.findByText("Burnrate: no enabled accounts")).toBeInTheDocument();
+  expect(
+    await screen.findByText("Burnrate: no enabled accounts"),
+  ).toBeInTheDocument();
 });
 
 test("renders dashboard load errors", async () => {
@@ -62,7 +64,13 @@ test("renders stale snapshot state", async () => {
           provider: "codex",
           label: "Codex",
           status: "stale",
-          subscription: { plan: "pro", planLabel: "Pro", rateLimitTier: null, extraUsageEnabled: null, source: "test" },
+          subscription: {
+            plan: "pro",
+            planLabel: "Pro",
+            rateLimitTier: null,
+            extraUsageEnabled: null,
+            source: "test",
+          },
           usageBuckets: [
             {
               id: "5-hour",
@@ -76,7 +84,13 @@ test("renders stale snapshot state", async () => {
               status: "stale",
             },
           ],
-          quota: { used: 90, limit: 100, remaining: 10, unit: "requests", resetAt: null },
+          quota: {
+            used: 90,
+            limit: 100,
+            remaining: 10,
+            unit: "requests",
+            resetAt: null,
+          },
           burnRate: { perHour: 3.75, projectedDepletionAt: null },
           message: "Last refresh is older than the quota window.",
           fetchedAt: new Date().toISOString(),
@@ -88,7 +102,9 @@ test("renders stale snapshot state", async () => {
   render(<App />);
 
   expect(await screen.findByText("Stale")).toBeInTheDocument();
-  expect(screen.getByText("Last refresh is older than the quota window.")).toBeInTheDocument();
+  expect(
+    screen.getByText("Last refresh is older than the quota window."),
+  ).toBeInTheDocument();
 });
 
 test("renders compact tray view from the tray window route", async () => {
@@ -116,7 +132,13 @@ test("renders compact tray view from the tray window route", async () => {
           provider: "codex",
           label: "Codex",
           status: "warning",
-          subscription: { plan: "pro", planLabel: "Pro", rateLimitTier: null, extraUsageEnabled: null, source: "test" },
+          subscription: {
+            plan: "pro",
+            planLabel: "Pro",
+            rateLimitTier: null,
+            extraUsageEnabled: null,
+            source: "test",
+          },
           usageBuckets: [
             {
               id: "5-hour",
@@ -130,7 +152,13 @@ test("renders compact tray view from the tray window route", async () => {
               status: "warning",
             },
           ],
-          quota: { used: 90, limit: 100, remaining: 10, unit: "requests", resetAt: null },
+          quota: {
+            used: 90,
+            limit: 100,
+            remaining: 10,
+            unit: "requests",
+            resetAt: null,
+          },
           burnRate: { perHour: 3.75, projectedDepletionAt: null },
           message: null,
           fetchedAt: new Date().toISOString(),
@@ -141,12 +169,16 @@ test("renders compact tray view from the tray window route", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("region", { name: "Usage" })).toBeInTheDocument();
+  expect(
+    await screen.findByRole("region", { name: "Usage" }),
+  ).toBeInTheDocument();
   expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
   expect(screen.getByText("10 / 100 requests")).toBeInTheDocument();
 });
 
-function dashboardState(overrides: Partial<DashboardState> = {}): DashboardState {
+function dashboardState(
+  overrides: Partial<DashboardState> = {},
+): DashboardState {
   const accounts: AccountView[] = overrides.accounts ?? [];
   const snapshots: UsageSnapshot[] = overrides.snapshots ?? [];
 
@@ -154,7 +186,10 @@ function dashboardState(overrides: Partial<DashboardState> = {}): DashboardState
     accounts,
     snapshots,
     traySummary: {
-      label: snapshots.length > 0 ? "Burnrate: all quotas healthy" : "Burnrate: no enabled accounts",
+      label:
+        snapshots.length > 0
+          ? "Burnrate: all quotas healthy"
+          : "Burnrate: no enabled accounts",
       status: snapshots.length > 0 ? "healthy" : "not-configured",
       criticalCount: 0,
       warningCount: 0,

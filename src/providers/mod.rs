@@ -169,10 +169,12 @@ fn primary_quota(buckets: &[UsageBucketSnapshot]) -> Option<QuotaSnapshot> {
 }
 
 fn overall_status(buckets: &[UsageBucketSnapshot]) -> SnapshotStatus {
-    if buckets
-        .iter()
-        .any(|bucket| matches!(bucket.status, SnapshotStatus::Exhausted | SnapshotStatus::Error))
-    {
+    if buckets.iter().any(|bucket| {
+        matches!(
+            bucket.status,
+            SnapshotStatus::Exhausted | SnapshotStatus::Error
+        )
+    }) {
         SnapshotStatus::Exhausted
     } else if buckets
         .iter()
@@ -188,22 +190,19 @@ fn bucket_from_parts(
     id: impl Into<String>,
     label: impl Into<String>,
     window: Option<String>,
-    used: f64,
-    limit: Option<f64>,
-    remaining: Option<f64>,
-    unit: impl Into<String>,
-    reset_at: Option<DateTime<Utc>>,
+    quota: QuotaSnapshot,
 ) -> UsageBucketSnapshot {
+    let status = status_from_remaining(quota.limit, quota.remaining);
     UsageBucketSnapshot {
         id: id.into(),
         label: label.into(),
         window,
-        used,
-        limit,
-        remaining,
-        unit: unit.into(),
-        reset_at,
-        status: status_from_remaining(limit, remaining),
+        used: quota.used,
+        limit: quota.limit,
+        remaining: quota.remaining,
+        unit: quota.unit,
+        reset_at: quota.reset_at,
+        status,
     }
 }
 
@@ -279,7 +278,11 @@ fn parse_usage_bucket(
             "/used_tokens",
         ],
     )
-    .or_else(|| limit.zip(remaining).map(|(limit, remaining)| limit - remaining))
+    .or_else(|| {
+        limit
+            .zip(remaining)
+            .map(|(limit, remaining)| limit - remaining)
+    })
     .unwrap_or(0.0);
 
     if limit.is_none() && remaining.is_none() && used == 0.0 {
@@ -326,11 +329,13 @@ fn parse_usage_bucket(
         slug(&raw_id),
         label,
         window,
-        used.max(0.0),
-        limit,
-        remaining,
-        unit,
-        reset_at,
+        QuotaSnapshot {
+            used: used.max(0.0),
+            limit,
+            remaining,
+            unit,
+            reset_at,
+        },
     ))
 }
 
@@ -411,7 +416,9 @@ fn plan_from_text(value: Option<&str>) -> SubscriptionPlan {
         SubscriptionPlan::Team
     } else if value.contains("enterprise") {
         SubscriptionPlan::Enterprise
-    } else if value.contains("pro") || value.contains("plus") || value.contains("stripe_subscription")
+    } else if value.contains("pro")
+        || value.contains("plus")
+        || value.contains("stripe_subscription")
     {
         SubscriptionPlan::Pro
     } else if value.contains("free") {

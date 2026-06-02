@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { AccountInput, AccountView, AppSettings, DashboardState, UsageSnapshot } from "./types";
+import type {
+  AccountInput,
+  AccountView,
+  AppSettings,
+  DashboardState,
+  UsageSnapshot,
+} from "./types";
 
 const isTauri = "__TAURI_INTERNALS__" in window;
 
@@ -87,7 +93,13 @@ const mockSnapshots: UsageSnapshot[] = [
         status: "healthy",
       },
     ],
-    quota: { used: 528000, limit: 1000000, remaining: 472000, unit: "tokens", resetAt: null },
+    quota: {
+      used: 528000,
+      limit: 1000000,
+      remaining: 472000,
+      unit: "tokens",
+      resetAt: null,
+    },
     burnRate: { perHour: 22000, projectedDepletionAt: null },
     message: null,
     fetchedAt: new Date().toISOString(),
@@ -128,7 +140,13 @@ const mockSnapshots: UsageSnapshot[] = [
         status: "healthy",
       },
     ],
-    quota: { used: 81, limit: 100, remaining: 19, unit: "requests", resetAt: null },
+    quota: {
+      used: 81,
+      limit: 100,
+      remaining: 19,
+      unit: "requests",
+      resetAt: null,
+    },
     burnRate: { perHour: 3.4, projectedDepletionAt: null },
     message: null,
     fetchedAt: new Date().toISOString(),
@@ -152,7 +170,13 @@ const mockSnapshots: UsageSnapshot[] = [
         status: "healthy",
       },
     ],
-    quota: { used: 7.25, limit: 25, remaining: 17.75, unit: "credits", resetAt: null },
+    quota: {
+      used: 7.25,
+      limit: 25,
+      remaining: 17.75,
+      unit: "credits",
+      resetAt: null,
+    },
     burnRate: { perHour: 0.3, projectedDepletionAt: null },
     message: null,
     fetchedAt: new Date().toISOString(),
@@ -212,7 +236,9 @@ export async function removeAccount(id: string): Promise<AccountView[]> {
   return mockAccounts;
 }
 
-export async function saveSettings(settings: AppSettings): Promise<AppSettings> {
+export async function saveSettings(
+  settings: AppSettings,
+): Promise<AppSettings> {
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
     return invoke<AppSettings>("save_settings", { settings });
@@ -235,7 +261,10 @@ export async function refreshSnapshots(): Promise<UsageSnapshot[]> {
   if (isTauri) {
     return invoke<UsageSnapshot[]>("refresh_snapshots");
   }
-  return mockSnapshots.map((snapshot) => ({ ...snapshot, fetchedAt: new Date().toISOString() }));
+  return mockSnapshots.map((snapshot) => ({
+    ...snapshot,
+    fetchedAt: new Date().toISOString(),
+  }));
 }
 
 export async function onRefreshRequested(handler: () => void | Promise<void>) {
@@ -248,5 +277,6 @@ export async function onRefreshRequested(handler: () => void | Promise<void>) {
     void handler();
   }
   window.addEventListener("burnrate-refresh-requested", listener);
-  return () => window.removeEventListener("burnrate-refresh-requested", listener);
+  return () =>
+    window.removeEventListener("burnrate-refresh-requested", listener);
 }

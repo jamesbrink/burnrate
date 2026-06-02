@@ -1,5 +1,10 @@
 import { AlertCircle, Clock3, RefreshCw, ShieldCheck } from "lucide-react";
-import { bucketPercent, formatLimit, formatReset, primaryBucket } from "./format";
+import {
+  bucketPercent,
+  formatLimit,
+  formatReset,
+  primaryBucket,
+} from "./format";
 import type {
   AccountView,
   DashboardState,
@@ -46,7 +51,12 @@ export function TrayPanel({
           <h1>Burnrate</h1>
           <p>{summary}</p>
         </div>
-        <button className="icon-button tray-refresh" onClick={onRefresh} disabled={busy} title="Refresh">
+        <button
+          className="icon-button tray-refresh"
+          onClick={onRefresh}
+          disabled={busy}
+          title="Refresh"
+        >
           <RefreshCw size={16} className={busy ? "spin" : ""} />
         </button>
       </header>
@@ -60,7 +70,9 @@ export function TrayPanel({
 
       <section className="tray-section" aria-label="Usage">
         {snapshots.length > 0 ? (
-          snapshots.map((snapshot) => <TraySnapshot key={snapshot.accountId} snapshot={snapshot} />)
+          snapshots.map((snapshot) => (
+            <TraySnapshot key={snapshot.accountId} snapshot={snapshot} />
+          ))
         ) : (
           <div className="tray-empty">No enabled accounts.</div>
         )}
@@ -79,26 +91,37 @@ export function TrayPanel({
 
 function TraySnapshot({ snapshot }: { snapshot: UsageSnapshot }) {
   const bucket = primaryBucket(snapshot);
-  const buckets = snapshot.usageBuckets.length > 0 ? snapshot.usageBuckets : bucket ? [bucket] : [];
+  const buckets =
+    snapshot.usageBuckets.length > 0
+      ? snapshot.usageBuckets
+      : bucket
+        ? [bucket]
+        : [];
   const plan = snapshot.subscription?.planLabel ?? "Unknown plan";
 
   return (
     <article className={`tray-card ${snapshot.status}`}>
       <div className="tray-card-head">
         <div className="tray-provider">
-          <span className="provider-mark">{providerLabels[snapshot.provider][0]}</span>
+          <span className="provider-mark">
+            {providerLabels[snapshot.provider][0]}
+          </span>
           <div>
             <strong>{snapshot.label}</strong>
             <span>{providerLabels[snapshot.provider]}</span>
           </div>
         </div>
-        <span className={`tray-status ${snapshot.status}`}>{statusLabels[snapshot.status]}</span>
+        <span className={`tray-status ${snapshot.status}`}>
+          {statusLabels[snapshot.status]}
+        </span>
       </div>
 
       <div className="tray-plan">
         <ShieldCheck size={14} />
         <span>{plan}</span>
-        {snapshot.subscription?.extraUsageEnabled ? <small>extra usage</small> : null}
+        {snapshot.subscription?.extraUsageEnabled ? (
+          <small>extra usage</small>
+        ) : null}
       </div>
 
       <div className="bucket-list">
@@ -107,7 +130,9 @@ function TraySnapshot({ snapshot }: { snapshot: UsageSnapshot }) {
         ))}
       </div>
 
-      {snapshot.message ? <p className="tray-message">{snapshot.message}</p> : null}
+      {snapshot.message ? (
+        <p className="tray-message">{snapshot.message}</p>
+      ) : null}
     </article>
   );
 }
@@ -144,7 +169,11 @@ function TrayAccount({ account }: { account: AccountView }) {
 }
 
 function summarize(snapshots: UsageSnapshot[]) {
-  if (snapshots.some((snapshot) => ["exhausted", "error"].includes(snapshot.status))) {
+  if (
+    snapshots.some((snapshot) =>
+      ["exhausted", "error"].includes(snapshot.status),
+    )
+  ) {
     return "Critical usage";
   }
   if (snapshots.some((snapshot) => snapshot.status === "warning")) {

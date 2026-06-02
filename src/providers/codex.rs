@@ -6,9 +6,7 @@ use reqwest::Client;
 
 use crate::{
     config::default_auto_account,
-    models::{
-        AccountConfig, BurnRateSnapshot, ProviderKind, SubscriptionPlan, UsageSnapshot,
-    },
+    models::{AccountConfig, BurnRateSnapshot, ProviderKind, QuotaSnapshot, UsageSnapshot},
 };
 
 use super::{
@@ -90,11 +88,13 @@ pub(crate) fn parse_codex_rate_limits(
             "requests",
             "Requests",
             None,
-            used,
-            limit,
-            remaining,
-            "requests",
-            reset_at,
+            QuotaSnapshot {
+                used,
+                limit,
+                remaining,
+                unit: "requests".to_string(),
+                reset_at,
+            },
         ));
     }
 
@@ -143,7 +143,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::models::{SecretStorageMode, SnapshotStatus};
+    use crate::models::{SecretStorageMode, SnapshotStatus, SubscriptionPlan};
 
     fn account() -> AccountConfig {
         AccountConfig {
