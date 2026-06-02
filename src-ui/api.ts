@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { AccountInput, AccountView, DashboardState, UsageSnapshot } from "./types";
 
 const isTauri = "__TAURI_INTERNALS__" in window;
@@ -139,4 +140,16 @@ export async function refreshSnapshots(): Promise<UsageSnapshot[]> {
     return invoke<UsageSnapshot[]>("refresh_snapshots");
   }
   return mockSnapshots.map((snapshot) => ({ ...snapshot, fetchedAt: new Date().toISOString() }));
+}
+
+export async function onRefreshRequested(handler: () => void | Promise<void>) {
+  if (isTauri) {
+    return listen("burnrate-refresh-requested", handler);
+  }
+
+  function listener() {
+    void handler();
+  }
+  window.addEventListener("burnrate-refresh-requested", listener);
+  return () => window.removeEventListener("burnrate-refresh-requested", listener);
 }

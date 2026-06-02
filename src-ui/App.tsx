@@ -12,6 +12,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   detectAccounts,
   loadDashboard,
+  onRefreshRequested,
   refreshSnapshots,
   removeAccount,
   saveAccount,
@@ -89,11 +90,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    function onRefresh() {
-      void refreshOnly();
-    }
-    window.addEventListener("burnrate-refresh-requested", onRefresh);
-    return () => window.removeEventListener("burnrate-refresh-requested", onRefresh);
+    let cleanup: (() => void) | undefined;
+    void onRefreshRequested(refreshOnly).then((unlisten) => {
+      cleanup = unlisten;
+    });
+    return () => cleanup?.();
   }, []);
 
   const accounts = state?.accounts ?? [];
