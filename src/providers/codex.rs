@@ -52,6 +52,10 @@ struct CodexCreditsSnapshot {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CodexRateLimitSnapshot {
+    #[serde(default, alias = "limit_id")]
+    limit_id: Option<String>,
+    #[serde(default, alias = "limit_name")]
+    limit_name: Option<String>,
     #[serde(default, alias = "plan_type")]
     plan_type: Option<String>,
     #[serde(default)]
@@ -255,38 +259,69 @@ pub(crate) fn parse_codex_rate_limits(
     account: &AccountConfig,
     value: &serde_json::Value,
 ) -> UsageSnapshot {
-    if let Some(snapshot) = extract_app_server_snapshot(value) {
-        return parse_codex_app_server_snapshot(account, snapshot);
+    let snapshots = extract_app_server_snapshots(value);
+    if !snapshots.is_empty() {
+        return parse_codex_app_server_snapshots(account, snapshots);
     }
 
     parse_codex_legacy_rate_limits(account, value)
 }
 
-fn parse_codex_app_server_snapshot(
+fn parse_codex_app_server_snapshots(
     account: &AccountConfig,
-    snapshot: CodexRateLimitSnapshot,
+    snapshots: Vec<CodexRateLimitSnapshot>,
 ) -> UsageSnapshot {
     let mut buckets = Vec::new();
-    if let Some(primary) = snapshot.primary.as_ref() {
-        buckets.push(bucket_from_window("codex-primary", "Session", primary));
-    }
-    if let Some(secondary) = snapshot.secondary.as_ref() {
-        buckets.push(bucket_from_window("codex-secondary", "Weekly", secondary));
-    }
-    if let Some(credits) = snapshot.credits.as_ref()
-        && let Some(bucket) = bucket_from_credits(credits)
-    {
-        buckets.push(bucket);
+    let mut subscription = None;
+    let mut reached_type = None;
+    for (index, snapshot) in snapshots.iter().enumerate() {
+        if subscription.is_none() {
+            subscription = subscription_from_app_server(snapshot.plan_type.as_deref());
+        }
+        if reached_type.is_none() {
+            reached_type = snapshot
+                .rate_limit_reached_type
+                .as_ref()
+                .filter(|reason| !reason.is_empty())
+                .cloned();
+        }
+
+        let prefix = if index == 0 {
+            None
+        } else {
+            Some(limit_group_label(snapshot, index))
+        };
+        let id_prefix = snapshot.limit_id.as_deref().unwrap_or(if index == 0 {
+            "codex"
+        } else {
+            "codex-extra"
+        });
+        if let Some(primary) = snapshot.primary.as_ref() {
+            buckets.push(bucket_from_window(
+                format!("{id_prefix}-primary"),
+                prefix.as_deref(),
+                "Session",
+                primary,
+            ));
+        }
+        if let Some(secondary) = snapshot.secondary.as_ref() {
+            buckets.push(bucket_from_window(
+                format!("{id_prefix}-secondary"),
+                prefix.as_deref(),
+                "Weekly",
+                secondary,
+            ));
+        }
+        if let Some(credits) = snapshot.credits.as_ref()
+            && let Some(bucket) = bucket_from_credits(credits)
+        {
+            buckets.push(bucket);
+        }
     }
 
-    let subscription = subscription_from_app_server(snapshot.plan_type.as_deref());
     let quota = primary_quota(&buckets);
     let mut status = overall_status(&buckets);
-    if snapshot
-        .rate_limit_reached_type
-        .as_deref()
-        .is_some_and(|reason| !reason.is_empty())
-    {
+    if reached_type.is_some() {
         status = crate::models::SnapshotStatus::Exhausted;
     }
 
@@ -298,62 +333,112 @@ fn parse_codex_app_server_snapshot(
         subscription,
         usage_buckets: buckets,
         quota,
-        message: snapshot
-            .rate_limit_reached_type
-            .filter(|reason| !reason.is_empty())
-            .map(|reason| format!("Rate limit reached: {reason}")),
+        message: reached_type.map(|reason| format!("Rate limit reached: {reason}")),
         fetched_at: Utc::now(),
     }
 }
 
-fn extract_app_server_snapshot(value: &Value) -> Option<CodexRateLimitSnapshot> {
+fn extract_app_server_snapshots(value: &Value) -> Vec<CodexRateLimitSnapshot> {
     let result = value.get("result").unwrap_or(value);
-    let result = result
+    if let Some(limits) = result
         .get("rateLimitsByLimitId")
         .or_else(|| result.get("rate_limits_by_limit_id"))
         .and_then(Value::as_object)
-        .and_then(|limits| {
-            limits.get("codex").cloned().or_else(|| {
-                if limits.len() == 1 {
-                    limits.values().next().cloned()
-                } else {
-                    None
-                }
-            })
-        })
-        .or_else(|| result.get("rateLimits").cloned())
+    {
+        let mut values = Vec::new();
+        if let Some(codex) = limits.get("codex") {
+            values.push(codex.clone());
+            let mut extras = limits
+                .iter()
+                .filter(|(key, _)| key.as_str() != "codex")
+                .map(|(_, value)| value.clone())
+                .collect::<Vec<_>>();
+            extras.sort_by_key(|value| {
+                value
+                    .get("limitName")
+                    .or_else(|| value.get("limit_name"))
+                    .or_else(|| value.get("limitId"))
+                    .or_else(|| value.get("limit_id"))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            });
+            values.extend(extras);
+        } else if limits.len() == 1 {
+            values.extend(limits.values().cloned());
+        }
+
+        return values
+            .into_iter()
+            .filter_map(app_server_snapshot_from_value)
+            .collect();
+    }
+
+    let result = result
+        .get("rateLimits")
+        .cloned()
         .or_else(|| result.get("rate_limits").cloned())
         .unwrap_or_else(|| result.clone());
 
-    if result.get("primary").is_none()
-        && result.get("secondary").is_none()
-        && result.get("planType").is_none()
-        && result.get("plan_type").is_none()
+    app_server_snapshot_from_value(result).into_iter().collect()
+}
+
+fn app_server_snapshot_from_value(value: Value) -> Option<CodexRateLimitSnapshot> {
+    if value.get("primary").is_none()
+        && value.get("secondary").is_none()
+        && value.get("planType").is_none()
+        && value.get("plan_type").is_none()
     {
         return None;
     }
 
-    serde_json::from_value(result).ok()
+    serde_json::from_value(value).ok()
 }
 
 fn bucket_from_window(
     id: impl Into<String>,
+    prefix: Option<&str>,
     fallback_label: &str,
     window: &CodexRateLimitWindow,
 ) -> UsageBucketSnapshot {
     let used = f64::from(window.used_percent.clamp(0, 100));
+    let label = label_for_window(fallback_label, window.window_duration_mins);
     bucket_from_parts(
         id,
-        label_for_window(fallback_label, window.window_duration_mins),
+        prefix
+            .map(|prefix| format!("{prefix} {label}"))
+            .unwrap_or(label),
         window.window_duration_mins.map(window_duration_label),
         QuotaSnapshot {
             used,
             limit: Some(100.0),
             remaining: Some((100.0 - used).max(0.0)),
             unit: "%".to_string(),
-            reset_at: window.resets_at.and_then(timestamp_millis),
+            reset_at: window.resets_at.and_then(timestamp_codex),
         },
     )
+}
+
+fn limit_group_label(snapshot: &CodexRateLimitSnapshot, index: usize) -> String {
+    snapshot
+        .limit_name
+        .as_deref()
+        .and_then(compact_limit_name)
+        .or_else(|| snapshot.limit_id.as_deref().and_then(compact_limit_name))
+        .unwrap_or_else(|| format!("Limit {}", index + 1))
+}
+
+fn compact_limit_name(value: &str) -> Option<String> {
+    let normalized = value.replace(['_', '-'], " ");
+    if normalized.to_ascii_lowercase().contains("spark") {
+        return Some("Spark".to_string());
+    }
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn bucket_from_credits(credits: &CodexCreditsSnapshot) -> Option<UsageBucketSnapshot> {
@@ -398,8 +483,12 @@ fn window_duration_label(duration_mins: i64) -> String {
     }
 }
 
-fn timestamp_millis(millis: i64) -> Option<chrono::DateTime<Utc>> {
-    Utc.timestamp_millis_opt(millis).single()
+fn timestamp_codex(value: i64) -> Option<chrono::DateTime<Utc>> {
+    if value.abs() < 10_000_000_000 {
+        Utc.timestamp_opt(value, 0).single()
+    } else {
+        Utc.timestamp_millis_opt(value).single()
+    }
 }
 
 fn subscription_from_app_server(plan_type: Option<&str>) -> Option<SubscriptionSnapshot> {
@@ -492,8 +581,12 @@ mod tests {
     use crate::models::{SecretStorageMode, SnapshotStatus, SubscriptionPlan};
 
     fn account() -> AccountConfig {
+        account_with_id("codex-local")
+    }
+
+    fn account_with_id(id: &str) -> AccountConfig {
         AccountConfig {
-            id: "codex-local".to_string(),
+            id: id.to_string(),
             provider: ProviderKind::Codex,
             label: "Codex".to_string(),
             enabled: true,
@@ -567,6 +660,73 @@ mod tests {
         assert_eq!(snapshot.usage_buckets[0].label, "5-hour");
         assert_eq!(snapshot.usage_buckets[1].label, "Weekly");
         assert_eq!(snapshot.usage_buckets[2].label, "Credits");
+    }
+
+    #[test]
+    fn maps_codex_app_server_extra_spark_buckets() {
+        let snapshot = parse_codex_rate_limits(
+            &account(),
+            &json!({
+                "id": 2,
+                "result": {
+                    "rateLimits": {
+                        "limitId": "codex",
+                        "planType": "pro",
+                        "primary": {
+                            "usedPercent": 51,
+                            "resetsAt": 1780416091_i64,
+                            "windowDurationMins": 300
+                        },
+                        "secondary": {
+                            "usedPercent": 38,
+                            "resetsAt": 1780925866_i64,
+                            "windowDurationMins": 10080
+                        }
+                    },
+                    "rateLimitsByLimitId": {
+                        "codex": {
+                            "limitId": "codex",
+                            "planType": "pro",
+                            "primary": {
+                                "usedPercent": 51,
+                                "resetsAt": 1780416091_i64,
+                                "windowDurationMins": 300
+                            },
+                            "secondary": {
+                                "usedPercent": 38,
+                                "resetsAt": 1780925866_i64,
+                                "windowDurationMins": 10080
+                            }
+                        },
+                        "codex_bengalfox": {
+                            "limitId": "codex_bengalfox",
+                            "limitName": "GPT-5.3-Codex-Spark",
+                            "planType": "pro",
+                            "primary": {
+                                "usedPercent": 0,
+                                "resetsAt": 1780424416_i64,
+                                "windowDurationMins": 300
+                            },
+                            "secondary": {
+                                "usedPercent": 0,
+                                "resetsAt": 1781011216_i64,
+                                "windowDurationMins": 10080
+                            }
+                        }
+                    }
+                }
+            }),
+        );
+
+        assert_eq!(snapshot.usage_buckets.len(), 4);
+        assert_eq!(snapshot.usage_buckets[0].label, "5-hour");
+        assert_eq!(snapshot.usage_buckets[1].label, "Weekly");
+        assert_eq!(snapshot.usage_buckets[2].label, "Spark 5-hour");
+        assert_eq!(snapshot.usage_buckets[3].label, "Spark Weekly");
+        assert_eq!(
+            snapshot.usage_buckets[0].reset_at.unwrap().timestamp(),
+            1_780_416_091
+        );
     }
 
     #[test]

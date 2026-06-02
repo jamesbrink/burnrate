@@ -11,7 +11,7 @@ It is built with Tauri 2, Rust, React, and TypeScript. The primary distribution 
 - Native Preferences window for account management, provider state, and manual OpenRouter setup.
 - Claude Code account detection from local Claude configuration and macOS Keychain, with stale-auth checks through `claude auth status --json`.
 - Claude Code subscription buckets including 5-hour, weekly, weekly OAuth app, model-specific weekly buckets, and extra usage when available.
-- Codex account detection from `CODEX_HOME` or `~/.codex`, including Pro/Max plan and 5-hour/weekly rate-limit buckets when exposed by the Codex app server.
+- Codex account detection from `CODEX_HOME` or `~/.codex`, including Pro/Max plan, 5-hour/weekly rate-limit buckets, and additional model-family buckets such as Spark when exposed by the Codex app server.
 - OpenRouter API key accounts using the `/api/v1/credits` endpoint.
 - OS keyring storage for secrets by default, with an explicit plaintext fallback mode.
 - macOS Hide Dock setting for menu-bar style use. New installs hide the Dock icon by default.
@@ -69,7 +69,17 @@ Claude Code usage requires a first-party `claude.ai` OAuth login with a detected
 claude auth login
 ```
 
-Burnrate deliberately stores only non-secret account configuration in its app data. Manual account secrets are stored in the OS keyring unless plaintext storage is explicitly selected for that account. Plaintext fallback is opt-in and should be treated as local-cleartext storage, especially on non-Unix platforms where Burnrate cannot apply Unix-style `0600` file permissions.
+Burnrate refreshes provider usage in the background every five minutes. Manual refreshes, opening the tray popover, and opening Preferences can request fresh data too, but successful provider snapshots are cached for five minutes by default so Claude Code, Codex, and OpenRouter avoid tight polling loops.
+
+Codex rate limits are read from the Codex app server. Burnrate displays the primary Codex 5-hour and weekly buckets plus any additional limit groups returned by `rateLimitsByLimitId`; for example, Spark subscriptions can expose `Spark 5-hour` and `Spark Weekly` buckets. Codex reset timestamps may be returned as either Unix seconds or milliseconds, and Burnrate normalizes both forms before rendering reset times.
+
+Burnrate deliberately stores only non-secret account configuration in its app data. On macOS, the default path is:
+
+```text
+~/Library/Application Support/burnrate/accounts.json
+```
+
+Set `BURNRATE_CONFIG_DIR` to override the directory; Burnrate will then use `$BURNRATE_CONFIG_DIR/accounts.json`. Manual account secrets are stored in the OS keyring unless plaintext storage is explicitly selected for that account. Plaintext fallback is opt-in and should be treated as local-cleartext storage, especially on non-Unix platforms where Burnrate cannot apply Unix-style `0600` file permissions.
 
 ## Verification
 
