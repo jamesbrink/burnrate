@@ -8,3 +8,8 @@ name = "burnrate"
 changelog_update = true
 publish = true
 semver_check = false
+# Tauri's build.rs (tauri-build) regenerates files under gen/ during the build,
+# which `cargo publish --verify` rejects ("source directory was modified by
+# build.rs"). Skip the publish-time verify build; buildability is already
+# covered by ci.yml (cargo build --release) and the Nix package build.
+publish_no_verify = true
