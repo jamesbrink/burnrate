@@ -1,30 +1,41 @@
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     process::Command,
+    sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, TimeZone, Utc};
 use reqwest::Client;
+use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::{
     config::default_auto_account,
     models::{
-        AccountConfig, BurnRateSnapshot, ProviderKind, QuotaSnapshot, SubscriptionSnapshot,
-        UsageBucketSnapshot, UsageSnapshot,
+        AccountConfig, BurnRateSnapshot, ProviderKind, QuotaSnapshot, SnapshotStatus,
+        SubscriptionSnapshot, UsageBucketSnapshot, UsageSnapshot,
     },
 };
 
 use super::{bucket_from_parts, endpoint, overall_status, primary_quota, subscription_from_json};
 
 const DEFAULT_USAGE_ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
-const DEFAULT_TOKEN_ENDPOINT: &str = "https://platform.claude.com/v1/oauth/token";
-const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-const OAUTH_SCOPES: &str = "user:inference user:profile user:sessions:claude_code";
 const ANTHROPIC_BETA: &str = "oauth-2025-04-20";
+const INFERENCE_SCOPE: &str = "user:inference";
+const PROFILE_SCOPE: &str = "user:profile";
+const USAGE_CACHE_TTL_MS: u64 = 5 * 60 * 1000;
+const USAGE_ERROR_BACKOFF_MS: u64 = 2 * 60 * 1000;
+
+#[derive(Debug, Clone)]
+struct ClaudeUsageCacheEntry {
+    snapshot: Option<UsageSnapshot>,
+    last_attempt_at: u64,
+    last_error: Option<String>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,19 +47,13 @@ struct CredentialFile {
 #[serde(rename_all = "camelCase")]
 struct OAuthCredentials {
     access_token: String,
-    refresh_token: String,
+    #[serde(rename = "refreshToken")]
+    _refresh_token: String,
     expires_at: u64,
+    #[serde(default)]
+    scopes: Vec<String>,
     subscription_type: Option<String>,
     rate_limit_tier: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TokenRefreshResponse {
-    access_token: String,
-    #[serde(default)]
-    refresh_token: Option<String>,
-    #[serde(default)]
-    expires_in: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -130,53 +135,75 @@ pub(crate) fn detect() -> Option<AccountConfig> {
 }
 
 pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<UsageSnapshot> {
-    let usage = fetch_oauth_usage(http, account).await?;
-    Ok(parse_claude_oauth_usage(account, usage))
+    let now = now_millis();
+    if let Some(cached) = cached_before_fetch(account, now)? {
+        return Ok(cached);
+    }
+
+    match fetch_oauth_usage(http, account).await {
+        Ok(usage) => {
+            let snapshot = parse_claude_oauth_usage(account, usage);
+            remember_success(account, snapshot.clone(), now);
+            Ok(snapshot)
+        }
+        Err(error) => {
+            let message = error.to_string();
+            if let Some(snapshot) = remember_failure_and_stale(account, now, &message) {
+                return Ok(snapshot);
+            }
+            Err(anyhow!(message))
+        }
+    }
 }
 
 async fn fetch_oauth_usage(http: &Client, account: &AccountConfig) -> Result<ClaudeOAuthUsage> {
     let credentials = read_credentials(account).await?;
     let oauth = credentials.claude_ai_oauth;
     let now = now_millis();
-    let (access_token, refresh_token, expires_at) = if oauth.expires_at <= now + 60_000 {
-        let refreshed = refresh_token(http, &oauth.refresh_token).await?;
-        (
-            refreshed.access_token,
-            refreshed.refresh_token.unwrap_or(oauth.refresh_token),
-            now + refreshed.expires_in.unwrap_or(3600) * 1000,
-        )
-    } else {
-        (
-            oauth.access_token.clone(),
-            oauth.refresh_token.clone(),
-            oauth.expires_at,
-        )
-    };
+    if !is_claude_ai_subscriber(&oauth) || !has_profile_scope(&oauth) {
+        return Ok(ClaudeOAuthUsage {
+            subscription_type: oauth.subscription_type,
+            rate_limit_tier: oauth.rate_limit_tier,
+            usage: ClaudeUsageData::default(),
+        });
+    }
+    if oauth.expires_at <= now {
+        return Err(anyhow!(
+            "Claude Code OAuth token is expired; run `claude auth login` or start Claude Code to refresh it."
+        ));
+    }
 
-    let value: serde_json::Value = http
+    let resp = http
         .get(endpoint(
             account,
             "BURNRATE_CLAUDE_USAGE_URL",
             DEFAULT_USAGE_ENDPOINT,
         )?)
-        .bearer_auth(&access_token)
-        .header("x-api-key", CLIENT_ID)
-        .header("anthropic-version", "2023-06-01")
+        .bearer_auth(&oauth.access_token)
         .header("anthropic-beta", ANTHROPIC_BETA)
+        .header("Accept", "application/json, text/plain, */*")
+        .header("Content-Type", "application/json")
         .header("User-Agent", claude_code_user_agent())
         .send()
         .await
-        .context("failed to fetch Claude Code usage")?
-        .error_for_status()
-        .context("Claude Code usage request failed")?
+        .context("failed to fetch Claude Code usage")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(anyhow!(format_http_error(
+            "Claude Code usage API error",
+            status,
+            &body
+        )));
+    }
+
+    let value: serde_json::Value = resp
         .json()
         .await
         .context("failed to decode Claude Code usage")?;
 
     let usage = parse_usage_data(&value)?;
-
-    let _ = refresh_token;
-    let _ = expires_at;
 
     Ok(ClaudeOAuthUsage {
         subscription_type: oauth.subscription_type,
@@ -185,59 +212,99 @@ async fn fetch_oauth_usage(http: &Client, account: &AccountConfig) -> Result<Cla
     })
 }
 
-async fn refresh_token(http: &Client, refresh_token: &str) -> Result<TokenRefreshResponse> {
-    let resp = http
-        .post(endpoint_from_env(
-            "BURNRATE_CLAUDE_TOKEN_URL",
-            DEFAULT_TOKEN_ENDPOINT,
-        )?)
-        .json(&json!({
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": CLIENT_ID,
-            "scope": OAUTH_SCOPES,
-        }))
-        .header("anthropic-beta", ANTHROPIC_BETA)
-        .header("User-Agent", claude_code_user_agent())
-        .send()
-        .await
-        .context("failed to refresh Claude Code token")?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        let hint = if body.contains("invalid_grant") || body.contains("not found or invalid") {
-            " Run `claude auth login` to re-authenticate."
-        } else {
-            ""
-        };
-        return Err(anyhow!(
-            "Claude Code token refresh failed ({status}): {body}{hint}"
-        ));
-    }
-
-    resp.json()
-        .await
-        .context("failed to decode Claude Code token refresh")
+fn is_claude_ai_subscriber(oauth: &OAuthCredentials) -> bool {
+    oauth.scopes.iter().any(|scope| scope == INFERENCE_SCOPE)
 }
 
-fn endpoint_from_env(env_key: &str, default: &str) -> Result<String> {
-    let value = std::env::var(env_key).unwrap_or_else(|_| default.to_string());
-    let account = AccountConfig {
-        id: "endpoint-validation".to_string(),
-        provider: ProviderKind::ClaudeCode,
-        label: "Claude Code".to_string(),
-        enabled: true,
-        auto_detected: true,
-        credential_path: None,
-        endpoint_override: Some(value),
-        secret_storage: crate::models::SecretStorageMode::Keyring,
-        keyring_account: None,
-        plaintext_secret: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+fn has_profile_scope(oauth: &OAuthCredentials) -> bool {
+    oauth.scopes.iter().any(|scope| scope == PROFILE_SCOPE)
+}
+
+fn usage_cache() -> &'static Mutex<HashMap<String, ClaudeUsageCacheEntry>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, ClaudeUsageCacheEntry>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cached_before_fetch(account: &AccountConfig, now: u64) -> Result<Option<UsageSnapshot>> {
+    let cache = usage_cache()
+        .lock()
+        .expect("Claude usage cache should not be poisoned");
+    let Some(entry) = cache.get(&account.id) else {
+        return Ok(None);
     };
-    endpoint(&account, env_key, default)
+    let age = now.saturating_sub(entry.last_attempt_at);
+    if let Some(snapshot) = entry.snapshot.as_ref()
+        && age < USAGE_CACHE_TTL_MS
+    {
+        return Ok(Some(snapshot.clone()));
+    }
+    if entry.snapshot.is_none() && age < USAGE_ERROR_BACKOFF_MS {
+        return Err(anyhow!(entry.last_error.clone().unwrap_or_else(|| {
+            "Claude Code usage data temporarily unavailable. Try again later.".to_string()
+        })));
+    }
+    Ok(None)
+}
+
+fn remember_success(account: &AccountConfig, snapshot: UsageSnapshot, now: u64) {
+    let mut cache = usage_cache()
+        .lock()
+        .expect("Claude usage cache should not be poisoned");
+    cache.insert(
+        account.id.clone(),
+        ClaudeUsageCacheEntry {
+            snapshot: Some(snapshot),
+            last_attempt_at: now,
+            last_error: None,
+        },
+    );
+}
+
+fn remember_failure_and_stale(
+    account: &AccountConfig,
+    now: u64,
+    message: &str,
+) -> Option<UsageSnapshot> {
+    let mut cache = usage_cache()
+        .lock()
+        .expect("Claude usage cache should not be poisoned");
+    if message.contains("401") {
+        cache.remove(&account.id);
+        return None;
+    }
+    let entry = cache
+        .entry(account.id.clone())
+        .or_insert_with(|| ClaudeUsageCacheEntry {
+            snapshot: None,
+            last_attempt_at: 0,
+            last_error: None,
+        });
+    entry.last_attempt_at = now;
+    entry.last_error = Some(message.to_string());
+    let mut snapshot = entry.snapshot.clone()?;
+    snapshot.status = SnapshotStatus::Stale;
+    snapshot.message = Some(format!("Using cached Claude Code usage; {message}"));
+    entry.snapshot = Some(snapshot.clone());
+    Some(snapshot)
+}
+
+fn format_http_error(prefix: &str, status: StatusCode, body: &str) -> String {
+    let detail = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .pointer("/error/message")
+                .or_else(|| value.pointer("/message"))
+                .and_then(|value| value.as_str())
+                .map(ToString::to_string)
+        })
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| body.trim().to_string());
+    if detail.is_empty() {
+        format!("{prefix} ({status})")
+    } else {
+        format!("{prefix} ({status}): {detail}")
+    }
 }
 
 async fn read_credentials(account: &AccountConfig) -> Result<CredentialFile> {
@@ -538,6 +605,13 @@ mod tests {
                     "accessToken": "sk-ant-oat01-test",
                     "refreshToken": "sk-ant-ort01-test",
                     "expiresAt": 1769163729172,
+                    "scopes": [
+                        "user:file_upload",
+                        "user:inference",
+                        "user:mcp_servers",
+                        "user:profile",
+                        "user:sessions:claude_code"
+                    ],
                     "subscriptionType": "max",
                     "rateLimitTier": "default_claude_max_20x"
                 }
@@ -546,7 +620,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(creds.claude_ai_oauth.access_token, "sk-ant-oat01-test");
-        assert_eq!(creds.claude_ai_oauth.refresh_token, "sk-ant-ort01-test");
         assert_eq!(
             creds.claude_ai_oauth.subscription_type.as_deref(),
             Some("max")
@@ -554,6 +627,13 @@ mod tests {
         assert_eq!(
             creds.claude_ai_oauth.rate_limit_tier.as_deref(),
             Some("default_claude_max_20x")
+        );
+        assert!(
+            creds
+                .claude_ai_oauth
+                .scopes
+                .iter()
+                .any(|scope| scope == PROFILE_SCOPE)
         );
     }
 
@@ -600,6 +680,10 @@ mod tests {
 
     #[tokio::test]
     async fn fetches_oauth_usage_with_local_credentials() {
+        usage_cache()
+            .lock()
+            .expect("Claude usage cache should not be poisoned")
+            .clear();
         let dir = tempfile::tempdir().unwrap();
         let credentials = dir.path().join(".credentials.json");
         std::fs::write(
@@ -609,6 +693,13 @@ mod tests {
                     "accessToken": "token",
                     "refreshToken": "refresh",
                     "expiresAt": now_millis() + 120_000,
+                    "scopes": [
+                        "user:file_upload",
+                        "user:inference",
+                        "user:mcp_servers",
+                        "user:profile",
+                        "user:sessions:claude_code"
+                    ],
                     "subscriptionType": "pro"
                 }
             }))
@@ -637,5 +728,122 @@ mod tests {
         assert_eq!(snapshot.status, SnapshotStatus::Healthy);
         assert_eq!(snapshot.subscription.unwrap().plan, SubscriptionPlan::Pro);
         assert_eq!(snapshot.quota.unwrap().used, 20.0);
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        let headers = &requests[0].headers;
+        assert_eq!(
+            headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer token")
+        );
+        assert_eq!(
+            headers
+                .get("anthropic-beta")
+                .and_then(|value| value.to_str().ok()),
+            Some(ANTHROPIC_BETA)
+        );
+        assert_eq!(
+            headers.get("accept").and_then(|value| value.to_str().ok()),
+            Some("application/json, text/plain, */*")
+        );
+        assert_eq!(
+            headers
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json")
+        );
+        assert!(
+            headers
+                .get("user-agent")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("claude-code/"))
+        );
+        assert!(headers.get("x-api-key").is_none());
+        assert!(headers.get("anthropic-version").is_none());
+    }
+
+    #[tokio::test]
+    async fn uses_cached_claude_usage_when_api_is_temporarily_limited() {
+        usage_cache()
+            .lock()
+            .expect("Claude usage cache should not be poisoned")
+            .clear();
+        let dir = tempfile::tempdir().unwrap();
+        let credentials = dir.path().join(".credentials.json");
+        std::fs::write(
+            &credentials,
+            serde_json::to_string(&json!({
+                "claudeAiOauth": {
+                    "accessToken": "token",
+                    "refreshToken": "refresh",
+                    "expiresAt": now_millis() + 120_000,
+                    "scopes": [
+                        "user:file_upload",
+                        "user:inference",
+                        "user:mcp_servers",
+                        "user:profile",
+                        "user:sessions:claude_code"
+                    ],
+                    "subscriptionType": "max",
+                    "rateLimitTier": "default_claude_max_20x"
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let ok_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "five_hour": {
+                    "utilization": 40,
+                    "resets_at": "2026-06-01T17:00:00Z"
+                }
+            })))
+            .mount(&ok_server)
+            .await;
+
+        let mut account = account();
+        account.id = "claude-code-stale".to_string();
+        account.credential_path = Some(credentials.to_string_lossy().to_string());
+        account.endpoint_override = Some(ok_server.uri());
+
+        let snapshot = fetch(&Client::new(), &account).await.unwrap();
+        assert_eq!(snapshot.status, SnapshotStatus::Healthy);
+        assert_eq!(snapshot.quota.unwrap().used, 40.0);
+
+        {
+            let mut cache = usage_cache()
+                .lock()
+                .expect("Claude usage cache should not be poisoned");
+            cache.get_mut(&account.id).unwrap().last_attempt_at =
+                now_millis().saturating_sub(USAGE_CACHE_TTL_MS + 1);
+        }
+
+        let limited_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(json!({
+                "error": {
+                    "type": "rate_limit_error",
+                    "message": "Rate limited. Please try again later."
+                }
+            })))
+            .mount(&limited_server)
+            .await;
+        account.endpoint_override = Some(limited_server.uri());
+
+        let snapshot = fetch(&Client::new(), &account).await.unwrap();
+        assert_eq!(snapshot.status, SnapshotStatus::Stale);
+        assert_eq!(snapshot.quota.unwrap().used, 40.0);
+        assert!(
+            snapshot
+                .message
+                .unwrap()
+                .contains("Rate limited. Please try again later.")
+        );
     }
 }

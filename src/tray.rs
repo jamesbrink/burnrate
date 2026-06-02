@@ -29,11 +29,17 @@ pub(crate) fn summarize(snapshots: &[UsageSnapshot]) -> TraySummary {
         .iter()
         .filter(|snapshot| snapshot.status == SnapshotStatus::Warning)
         .count();
+    let stale_count = snapshots
+        .iter()
+        .filter(|snapshot| snapshot.status == SnapshotStatus::Stale)
+        .count();
 
     let status = if critical_count > 0 {
         SnapshotStatus::Exhausted
     } else if warning_count > 0 {
         SnapshotStatus::Warning
+    } else if stale_count > 0 {
+        SnapshotStatus::Stale
     } else if snapshots.is_empty() {
         SnapshotStatus::NotConfigured
     } else {
@@ -207,6 +213,14 @@ mod tests {
         let summary = summarize(&[]);
 
         assert_eq!(summary.status, SnapshotStatus::NotConfigured);
+    }
+
+    #[test]
+    fn summary_reports_stale_when_cached_data_is_used() {
+        let summary = summarize(&[snapshot(SnapshotStatus::Stale)]);
+
+        assert_eq!(summary.status, SnapshotStatus::Stale);
+        assert_eq!(summary.label, "Burnrate: data is stale");
     }
 
     #[test]

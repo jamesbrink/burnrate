@@ -183,5 +183,8 @@ function summarize(snapshots: UsageSnapshot[]) {
   if (snapshots.some((snapshot) => snapshot.status === "warning")) {
     return "Approaching a limit";
   }
+  if (snapshots.some((snapshot) => snapshot.status === "stale")) {
+    return "Usage data is stale";
+  }
   return snapshots.length > 0 ? "All quotas healthy" : "No enabled accounts";
 }
