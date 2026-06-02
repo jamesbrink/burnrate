@@ -1,0 +1,126 @@
+use anyhow::{Context, Result};
+use chrono::Utc;
+use reqwest::Client;
+
+use crate::models::{
+    AccountConfig, BurnRateSnapshot, QuotaSnapshot, SnapshotStatus, UsageSnapshot,
+};
+
+use super::{endpoint, number, require_token};
+
+const DEFAULT_ENDPOINT: &str = "https://openrouter.ai/api/v1/credits";
+
+pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<UsageSnapshot> {
+    let token = require_token(account)?;
+    let url = endpoint(account, "BURNRATE_OPENROUTER_CREDITS_URL", DEFAULT_ENDPOINT);
+    let value: serde_json::Value = http
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .context("failed to fetch OpenRouter credits")?
+        .error_for_status()
+        .context("OpenRouter credits request failed")?
+        .json()
+        .await
+        .context("failed to decode OpenRouter credits")?;
+
+    Ok(parse_openrouter(account, &value))
+}
+
+pub(crate) fn parse_openrouter(
+    account: &AccountConfig,
+    value: &serde_json::Value,
+) -> UsageSnapshot {
+    let total = number(
+        value,
+        &["/data/total_credits", "/total_credits", "/credits/total"],
+    );
+    let used = number(
+        value,
+        &["/data/total_usage", "/total_usage", "/credits/used"],
+    )
+    .unwrap_or(0.0);
+    let remaining = total.map(|total| (total - used).max(0.0)).or_else(|| {
+        number(
+            value,
+            &[
+                "/data/remaining_credits",
+                "/remaining_credits",
+                "/credits/remaining",
+            ],
+        )
+    });
+
+    let status = match (total, remaining) {
+        (Some(total), Some(remaining)) if total > 0.0 && remaining / total <= 0.05 => {
+            SnapshotStatus::Exhausted
+        }
+        (Some(total), Some(remaining)) if total > 0.0 && remaining / total <= 0.2 => {
+            SnapshotStatus::Warning
+        }
+        _ => SnapshotStatus::Healthy,
+    };
+
+    UsageSnapshot {
+        account_id: account.id.clone(),
+        provider: account.provider,
+        label: account.label.clone(),
+        status,
+        quota: Some(QuotaSnapshot {
+            used,
+            limit: total,
+            remaining,
+            unit: "credits".to_string(),
+            reset_at: None,
+        }),
+        burn_rate: Some(BurnRateSnapshot {
+            per_hour: used / 24.0,
+            projected_depletion_at: None,
+        }),
+        message: None,
+        fetched_at: Utc::now(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use serde_json::json;
+
+    use super::*;
+    use crate::models::{ProviderKind, SecretStorageMode};
+
+    fn account() -> AccountConfig {
+        AccountConfig {
+            id: "openrouter-main".to_string(),
+            provider: ProviderKind::OpenRouter,
+            label: "OpenRouter".to_string(),
+            enabled: true,
+            auto_detected: false,
+            credential_path: None,
+            endpoint_override: None,
+            secret_storage: SecretStorageMode::Plaintext,
+            keyring_account: None,
+            plaintext_secret: Some("sk-test".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn maps_openrouter_credit_response() {
+        let snapshot = parse_openrouter(
+            &account(),
+            &json!({
+                "data": {
+                    "total_credits": 100.0,
+                    "total_usage": 85.0
+                }
+            }),
+        );
+
+        assert_eq!(snapshot.status, SnapshotStatus::Warning);
+        assert_eq!(snapshot.quota.unwrap().remaining, Some(15.0));
+    }
+}

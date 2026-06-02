@@ -1,0 +1,197 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use anyhow::{Context, Result};
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::models::{AccountConfig, AccountInput, AccountView, ProviderKind, SecretStorageMode};
+
+const CONFIG_FILE: &str = "accounts.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AppConfig {
+    pub accounts: Vec<AccountConfig>,
+}
+
+impl AppConfig {
+    pub(crate) fn views(&self) -> Vec<AccountView> {
+        self.accounts
+            .iter()
+            .map(|account| AccountView {
+                id: account.id.clone(),
+                provider: account.provider,
+                label: account.label.clone(),
+                enabled: account.enabled,
+                auto_detected: account.auto_detected,
+                credential_path: account.credential_path.clone(),
+                endpoint_override: account.endpoint_override.clone(),
+                secret_storage: account.secret_storage,
+                has_secret: account.plaintext_secret.is_some() || account.keyring_account.is_some(),
+                created_at: account.created_at,
+                updated_at: account.updated_at,
+            })
+            .collect()
+    }
+
+    pub(crate) fn upsert_manual(&mut self, input: AccountInput) -> AccountConfig {
+        let now = Utc::now();
+        let id = input
+            .id
+            .unwrap_or_else(|| format!("{}-{}", input.provider.as_str(), Uuid::new_v4().simple()));
+
+        let existing = self.accounts.iter_mut().find(|account| account.id == id);
+        if let Some(account) = existing {
+            account.provider = input.provider;
+            account.label = input.label;
+            account.enabled = input.enabled;
+            account.endpoint_override = input.endpoint_override;
+            account.secret_storage = input.secret_storage;
+            account.auto_detected = false;
+            account.updated_at = now;
+            return account.clone();
+        }
+
+        let account = AccountConfig {
+            id,
+            provider: input.provider,
+            label: input.label,
+            enabled: input.enabled,
+            auto_detected: false,
+            credential_path: None,
+            endpoint_override: input.endpoint_override,
+            secret_storage: input.secret_storage,
+            keyring_account: None,
+            plaintext_secret: None,
+            created_at: now,
+            updated_at: now,
+        };
+        self.accounts.push(account.clone());
+        account
+    }
+
+    pub(crate) fn remove(&mut self, id: &str) -> Option<AccountConfig> {
+        let index = self.accounts.iter().position(|account| account.id == id)?;
+        Some(self.accounts.remove(index))
+    }
+
+    pub(crate) fn merge_detected(&mut self, detected: Vec<AccountConfig>) {
+        for account in detected {
+            if let Some(existing) = self.accounts.iter_mut().find(|item| item.id == account.id) {
+                existing.auto_detected = true;
+                existing.credential_path = account.credential_path.clone();
+                existing.updated_at = Utc::now();
+            } else {
+                self.accounts.push(account);
+            }
+        }
+    }
+}
+
+pub(crate) fn config_dir() -> Result<PathBuf> {
+    if let Ok(path) = std::env::var("BURNRATE_CONFIG_DIR") {
+        return Ok(PathBuf::from(path));
+    }
+
+    let base = dirs::data_local_dir()
+        .or_else(dirs::config_local_dir)
+        .context("could not find a local data directory")?;
+    Ok(base.join("burnrate"))
+}
+
+pub(crate) fn config_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join(CONFIG_FILE))
+}
+
+pub(crate) fn load_from_path(path: &Path) -> Result<AppConfig> {
+    if !path.exists() {
+        return Ok(AppConfig::default());
+    }
+
+    let contents =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    serde_json::from_str(&contents).with_context(|| format!("failed to parse {}", path.display()))
+}
+
+pub(crate) fn save_to_path(path: &Path, config: &AppConfig) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+
+    let contents = serde_json::to_string_pretty(config)?;
+    fs::write(path, contents).with_context(|| format!("failed to write {}", path.display()))
+}
+
+pub(crate) fn default_auto_account(
+    id: &str,
+    provider: ProviderKind,
+    label: &str,
+    credential_path: PathBuf,
+) -> AccountConfig {
+    let now = Utc::now();
+    AccountConfig {
+        id: id.to_string(),
+        provider,
+        label: label.to_string(),
+        enabled: true,
+        auto_detected: true,
+        credential_path: Some(credential_path.display().to_string()),
+        endpoint_override: None,
+        secret_storage: SecretStorageMode::Keyring,
+        keyring_account: None,
+        plaintext_secret: None,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn saves_and_loads_config() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mut config = AppConfig::default();
+        config.upsert_manual(AccountInput {
+            id: Some("openrouter-main".to_string()),
+            provider: ProviderKind::OpenRouter,
+            label: "OpenRouter".to_string(),
+            enabled: true,
+            endpoint_override: None,
+            secret_storage: SecretStorageMode::Plaintext,
+            secret: Some("secret".to_string()),
+        });
+
+        save_to_path(&path, &config).unwrap();
+        let loaded = load_from_path(&path).unwrap();
+
+        assert_eq!(loaded.accounts.len(), 1);
+        assert_eq!(loaded.accounts[0].provider, ProviderKind::OpenRouter);
+    }
+
+    #[test]
+    fn merges_detected_accounts_without_duplicates() {
+        let mut config = AppConfig::default();
+        let detected = default_auto_account(
+            "codex-local",
+            ProviderKind::Codex,
+            "Codex",
+            PathBuf::from("/tmp/codex"),
+        );
+
+        config.merge_detected(vec![detected.clone()]);
+        config.merge_detected(vec![detected]);
+
+        assert_eq!(config.accounts.len(), 1);
+        assert!(config.accounts[0].auto_detected);
+    }
+}

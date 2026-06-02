@@ -1,0 +1,65 @@
+name: Native Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target universal-apple-darwin
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: ${{ matrix.args }}
+      - name: Generate checksums
+        if: matrix.platform != 'windows-latest'
+        run: |
+          find target -path "*/bundle/*" -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -print0 \
+            | xargs -0 shasum -a 256 > "burnrate-${{ matrix.platform }}.sha256"
+      - name: Generate Windows checksums
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path target -Recurse -File | Where-Object { $_.FullName -match '\\bundle\\' -and ($_.Extension -in '.msi','.exe') } | ForEach-Object {
+            $hash = Get-FileHash -Algorithm SHA256 $_.FullName
+            "$($hash.Hash.ToLower())  $($_.FullName)"
+          } | Set-Content "burnrate-${{ matrix.platform }}.sha256"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: burnrate-${{ matrix.platform }}.sha256

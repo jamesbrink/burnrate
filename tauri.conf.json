@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Burnrate",
+  "version": "0.1.0",
+  "identifier": "com.jamesbrink.burnrate",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Burnrate",
+        "width": 980,
+        "height": 720,
+        "minWidth": 760,
+        "minHeight": 540,
+        "visible": false,
+        "resizable": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": false,
+    "category": "DeveloperTool",
+    "shortDescription": "Tray-first quota and burn-rate monitor",
+    "longDescription": "Burnrate monitors usage and remaining quota across Claude Code, Codex, and OpenRouter accounts."
+  }
+}
