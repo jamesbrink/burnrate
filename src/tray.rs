@@ -58,7 +58,8 @@ pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&show, &refresh, &quit])?;
 
     TrayIconBuilder::with_id("main")
-        .icon(tray_icon())
+        .icon(tray_icon()?)
+        .icon_as_template(true)
         .tooltip("Burnrate")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -93,23 +94,8 @@ fn show_main_window(app: &AppHandle<Wry>) {
     }
 }
 
-fn tray_icon() -> Image<'static> {
-    let mut rgba = Vec::with_capacity(32 * 32 * 4);
-    for y in 0..32 {
-        for x in 0..32 {
-            let dx = x as f32 - 15.5;
-            let dy = y as f32 - 15.5;
-            let distance = (dx * dx + dy * dy).sqrt();
-            let alpha = if distance <= 14.0 { 255 } else { 0 };
-            let (r, g, b) = if y < 17 {
-                (35, 108, 166)
-            } else {
-                (235, 139, 52)
-            };
-            rgba.extend_from_slice(&[r, g, b, alpha]);
-        }
-    }
-    Image::new_owned(rgba, 32, 32)
+fn tray_icon() -> tauri::Result<Image<'static>> {
+    Image::from_bytes(include_bytes!("../icons/tray.png"))
 }
 
 #[cfg(test)]
@@ -148,5 +134,13 @@ mod tests {
         let summary = summarize(&[]);
 
         assert_eq!(summary.status, SnapshotStatus::NotConfigured);
+    }
+
+    #[test]
+    fn tray_icon_loads_packaged_asset() {
+        let icon = tray_icon().expect("tray icon should decode");
+
+        assert_eq!(icon.width(), 32);
+        assert_eq!(icon.height(), 32);
     }
 }
