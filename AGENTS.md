@@ -16,8 +16,9 @@ burnrate`).
 ### Backend (`src/`, Rust, edition 2024)
 
 - `main.rs` — Tauri entrypoint. Declares the `#[tauri::command]` IPC handlers
-  (`dashboard`, `list/save/remove/detect_accounts`, `save_settings`,
-  `refresh_snapshots`, `resize_preferences_to_content`, `close_preferences`),
+  (`dashboard`, `list_accounts`, `save_account`, `remove_account`,
+  `detect_accounts`, `save_settings`, `refresh_snapshots`,
+  `resize_preferences_to_content`, `close_preferences`),
   builds the two windows and macOS menu, installs the tray, and spawns the
   5-minute background refresh loop. Closing the Preferences window is
   intercepted to _hide_ (tray-only), not quit.
@@ -72,8 +73,9 @@ burnrate`).
 
 ### Cross-cutting invariants
 
-- **`dist/` (built frontend) is committed.** The crate `include`s `dist/**` so
-  `cargo install burnrate` ships prebuilt assets, and both `ci.yml` and
+- **`dist/` (built frontend) is committed.** The crate's `include` list bundles
+  `dist/**`, so `cargo install burnrate` ships prebuilt assets, and both
+  `ci.yml` and
   `release-plz.yml` enforce `git diff --exit-code -- dist`. After any frontend
   change: `npm run build` and commit the updated `dist/`.
 - **CSP allowlist.** `tauri.conf.json` restricts `connect-src` to the Anthropic,

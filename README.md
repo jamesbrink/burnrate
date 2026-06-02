@@ -3,7 +3,7 @@
 [![CI](https://github.com/jamesbrink/burnrate/actions/workflows/ci.yml/badge.svg)](https://github.com/jamesbrink/burnrate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Desktop usage monitor for Claude Code, Codex, and OpenRouter quotas, credits, and subscription limits. Built with Tauri 2 (Rust + React/TypeScript) and lives in the macOS menu bar.
+Desktop usage monitor for Claude Code, Codex, and OpenRouter quotas, credits, and subscription limits. Built with Tauri 2 (Rust + React/TypeScript) and lives in the system tray (the menu bar on macOS).
 
 ## Features
 
