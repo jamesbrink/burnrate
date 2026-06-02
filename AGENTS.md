@@ -20,6 +20,8 @@
   - large React UI pieces should become focused components instead of accumulating in `App.tsx`.
 - Prefer existing project patterns over new abstractions. Add an abstraction only when it removes real duplication or clarifies ownership.
 - Keep secrets out of tracked files. Store only non-secret account configuration in app data; use keyring storage by default and plaintext only when explicitly selected.
+- Keep docs and metadata in sync when behavior changes: `README.md`, `Cargo.toml`, `package.json`, `tauri.conf.json`, `flake.nix`, release workflows, and committed `dist/` assets should describe the same app surface.
+- Keep `AGENTS.md` the source of truth for agent guidance; `CLAUDE.md` should remain a symlink to it.
 
 ## Verification
 

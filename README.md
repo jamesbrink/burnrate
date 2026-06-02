@@ -6,13 +6,15 @@ It is built with Tauri 2, Rust, React, and TypeScript. The primary distribution 
 
 ## Features
 
-- Tray-first usage summary with a compact left-click account view.
-- Right-click tray actions for opening the full dashboard, refreshing usage, and quitting.
-- Claude Code account detection from local Claude configuration.
-- Codex account detection from `CODEX_HOME` or `~/.codex`.
+- Tray-first usage summary with a compact left-click account and usage popover.
+- Right-click tray actions for opening Preferences, refreshing usage, toggling the Dock icon, and quitting.
+- Native Preferences window for account management, provider state, and manual OpenRouter setup.
+- Claude Code account detection from local Claude configuration and macOS Keychain, with stale-auth checks through `claude auth status --json`.
+- Claude Code subscription buckets including 5-hour, weekly, weekly OAuth app, model-specific weekly buckets, and extra usage when available.
+- Codex account detection from `CODEX_HOME` or `~/.codex`, including Pro/Max plan and 5-hour/weekly rate-limit buckets when exposed by the Codex app server.
 - OpenRouter API key accounts using the `/api/v1/credits` endpoint.
 - OS keyring storage for secrets by default, with an explicit plaintext fallback mode.
-- macOS Hide Dock setting for menu-bar style use.
+- macOS Hide Dock setting for menu-bar style use. New installs hide the Dock icon by default.
 
 ## Install
 
@@ -59,6 +61,16 @@ nix build .#burnrate
 
 The flake package metadata is derived from `Cargo.toml`, including the app version, description, homepage, repository release URL, main program, and MIT license mapping.
 
+## Provider Notes
+
+Claude Code usage requires a first-party `claude.ai` OAuth login with a detected subscription. If Burnrate reports a stale, inference-only, third-party, or missing-subscription Claude auth state, refresh Claude Code with:
+
+```sh
+claude auth login
+```
+
+Burnrate deliberately stores only non-secret account configuration in its app data. Manual account secrets are stored in the OS keyring unless plaintext storage is explicitly selected for that account.
+
 ## Verification
 
 Run the standard local gates:
@@ -71,6 +83,8 @@ cargo package --allow-dirty
 ```
 
 Coverage is expected to stay at or above 80% for the configured UI and Rust coverage gates.
+
+CI runs formatting, clippy, Rust tests, frontend tests, release build smoke checks, Nix checks, crate packaging, and Codecov uploads for Rust and UI coverage.
 
 ## Release
 
