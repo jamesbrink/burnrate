@@ -598,20 +598,35 @@ p {
    these light-dark() values style the Preferences window only. */
 .provider-logo-claude-code {
   color: light-dark(#c15f3c, #f0a07c);
-  background: light-dark(#fbefe9, color-mix(in srgb, #d2724c 22%, var(--surface)));
-  border-color: light-dark(#efcfc0, color-mix(in srgb, #d2724c 32%, var(--surface)));
+  background: light-dark(
+    #fbefe9,
+    color-mix(in srgb, #d2724c 22%, var(--surface))
+  );
+  border-color: light-dark(
+    #efcfc0,
+    color-mix(in srgb, #d2724c 32%, var(--surface))
+  );
 }
 
 .provider-logo-codex {
   color: light-dark(#111820, var(--fg));
-  background: light-dark(#eef1f2, color-mix(in srgb, var(--fg) 10%, var(--surface)));
+  background: light-dark(
+    #eef1f2,
+    color-mix(in srgb, var(--fg) 10%, var(--surface))
+  );
   border-color: light-dark(#d8dee3, var(--hairline));
 }
 
 .provider-logo-openrouter {
   color: light-dark(#385fd6, #8aa6ff);
-  background: light-dark(#eef3ff, color-mix(in srgb, #4b6fe0 20%, var(--surface)));
-  border-color: light-dark(#d5ddfb, color-mix(in srgb, #4b6fe0 32%, var(--surface)));
+  background: light-dark(
+    #eef3ff,
+    color-mix(in srgb, #4b6fe0 20%, var(--surface))
+  );
+  border-color: light-dark(
+    #d5ddfb,
+    color-mix(in srgb, #4b6fe0 32%, var(--surface))
+  );
 }
 
 /* ─── Tray popover: native macOS menu-bar look ──────────────────────────────
@@ -700,7 +715,9 @@ html[data-view="tray"] .icon-button.tray-refresh {
   border-radius: 7px;
   background: transparent;
   color: var(--tray-fg-soft);
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 html[data-view="tray"] .icon-button.tray-refresh:hover {
