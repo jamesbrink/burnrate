@@ -5,6 +5,10 @@ import type {
   AccountView,
   AppSettings,
   DashboardState,
+  LoginComplete,
+  LoginFailed,
+  LoginProgress,
+  ProviderKind,
   UsageSnapshot,
 } from "./types";
 
@@ -30,6 +34,8 @@ let mockAccounts: AccountView[] = [
     endpointOverride: null,
     secretStorage: "keyring",
     hasSecret: false,
+    email: "dev@example.com",
+    configDir: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -43,6 +49,8 @@ let mockAccounts: AccountView[] = [
     endpointOverride: null,
     secretStorage: "keyring",
     hasSecret: false,
+    email: "codex@example.com",
+    configDir: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -56,6 +64,8 @@ let mockAccounts: AccountView[] = [
     endpointOverride: null,
     secretStorage: "keyring",
     hasSecret: true,
+    email: null,
+    configDir: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -69,6 +79,8 @@ let mockAccounts: AccountView[] = [
     endpointOverride: null,
     secretStorage: "keyring",
     hasSecret: true,
+    email: null,
+    configDir: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -84,6 +96,7 @@ const mockSnapshots: UsageSnapshot[] = [
     provider: "claude-code",
     label: "Claude Code",
     status: "healthy",
+    email: "dev@example.com",
     subscription: {
       plan: "max",
       planLabel: "Max 20x",
@@ -130,6 +143,7 @@ const mockSnapshots: UsageSnapshot[] = [
     provider: "codex",
     label: "Codex",
     status: "warning",
+    email: "codex@example.com",
     subscription: {
       plan: "pro",
       planLabel: "Pro",
@@ -290,6 +304,8 @@ export async function saveAccount(input: AccountInput): Promise<AccountView[]> {
     endpointOverride: input.endpointOverride ?? null,
     secretStorage: input.secretStorage,
     hasSecret: Boolean(input.secret),
+    email: null,
+    configDir: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -323,6 +339,78 @@ export async function detectAccounts(): Promise<AccountView[]> {
   if (isTauri) {
     return invoke<AccountView[]>("detect_accounts");
   }
+  return mockAccounts;
+}
+
+/**
+ * Persist a new global account order. `ids` is the full ordered list; the
+ * backend re-normalizes and returns the updated views. Outside Tauri, reorders
+ * the mock array (unknown ids dropped, unnamed accounts appended).
+ */
+export async function reorderAccounts(ids: string[]): Promise<AccountView[]> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    return invoke<AccountView[]>("reorder_accounts", { ids });
+  }
+  const byId = new Map(mockAccounts.map((account) => [account.id, account]));
+  const ordered = ids
+    .map((id) => byId.get(id))
+    .filter((account): account is AccountView => Boolean(account));
+  const rest = mockAccounts.filter((account) => !ids.includes(account.id));
+  mockAccounts = [...ordered, ...rest];
+  return mockAccounts;
+}
+
+/**
+ * Start an interactive browser sign-in for a Claude Code / Codex account. The
+ * backend returns a disabled placeholder account immediately and then emits
+ * `burnrate-login-progress` / `-complete` / `-failed`. Outside Tauri this drives
+ * a simulated login via window CustomEvents so dev:web and tests work.
+ */
+export async function startAccountLogin(
+  provider: ProviderKind,
+  label: string,
+): Promise<AccountView> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    return invoke<AccountView>("start_account_login", { provider, label });
+  }
+  const now = new Date().toISOString();
+  const id = `${provider}-${crypto.randomUUID()}`;
+  queueMockLogin(id, provider, label);
+  return {
+    id,
+    provider,
+    label,
+    enabled: false,
+    autoDetected: false,
+    credentialPath: null,
+    endpointOverride: null,
+    secretStorage: "keyring",
+    hasSecret: false,
+    email: null,
+    configDir: `mock/cli/${provider}/${id}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export async function cancelAccountLogin(id: string): Promise<AccountView[]> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    return invoke<AccountView[]>("cancel_account_login", { id });
+  }
+  clearMockLogin(id);
+  mockAccounts = mockAccounts.filter((account) => account.id !== id);
+  return mockAccounts;
+}
+
+export async function logoutAccount(id: string): Promise<AccountView[]> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    return invoke<AccountView[]>("logout_account", { id });
+  }
+  mockAccounts = mockAccounts.filter((account) => account.id !== id);
   return mockAccounts;
 }
 
@@ -506,6 +594,98 @@ export async function onSettingsUpdated(
   }
 
   return () => {};
+}
+
+/** Subscribe to a login event, bridging Tauri events and mock CustomEvents. */
+function onLoginEvent<T>(
+  name: string,
+  handler: (payload: T) => void | Promise<void>,
+) {
+  /* v8 ignore next 3: native Tauri event path */
+  if (isTauri) {
+    return listen<T>(name, (event) => handler(event.payload));
+  }
+  function listener(event: Event) {
+    void handler((event as CustomEvent<T>).detail);
+  }
+  window.addEventListener(name, listener);
+  return () => window.removeEventListener(name, listener);
+}
+
+export async function onLoginProgress(
+  handler: (progress: LoginProgress) => void | Promise<void>,
+) {
+  return onLoginEvent<LoginProgress>("burnrate-login-progress", handler);
+}
+
+export async function onLoginComplete(
+  handler: (complete: LoginComplete) => void | Promise<void>,
+) {
+  return onLoginEvent<LoginComplete>("burnrate-login-complete", handler);
+}
+
+export async function onLoginFailed(
+  handler: (failed: LoginFailed) => void | Promise<void>,
+) {
+  return onLoginEvent<LoginFailed>("burnrate-login-failed", handler);
+}
+
+// Mock login driver: outside Tauri, simulate the backend's event sequence so
+// dev:web shows a real-feeling sign-in and tests can drive it with fake timers.
+const mockLoginTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
+
+function queueMockLogin(id: string, provider: ProviderKind, label: string) {
+  const progress = setTimeout(() => {
+    window.dispatchEvent(
+      new CustomEvent<LoginProgress>("burnrate-login-progress", {
+        detail: {
+          id,
+          line: "Opening your browser to finish signing in…",
+          url: "https://example.com/oauth/authorize?code=MOCK",
+        },
+      }),
+    );
+  }, 50);
+  const complete = setTimeout(() => {
+    const now = new Date().toISOString();
+    const account: AccountView = {
+      id,
+      provider,
+      label,
+      enabled: true,
+      autoDetected: false,
+      credentialPath: `mock/cli/${provider}/${id}`,
+      endpointOverride: null,
+      secretStorage: "keyring",
+      hasSecret: false,
+      email: `${provider}@example.com`,
+      configDir: `mock/cli/${provider}/${id}`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    mockAccounts = [...mockAccounts.filter((item) => item.id !== id), account];
+    mockLoginTimers.delete(id);
+    window.dispatchEvent(
+      new CustomEvent<LoginComplete>("burnrate-login-complete", {
+        detail: { id, account },
+      }),
+    );
+  }, 120);
+  mockLoginTimers.set(id, [progress, complete]);
+}
+
+function clearMockLogin(id: string) {
+  for (const timer of mockLoginTimers.get(id) ?? []) {
+    clearTimeout(timer);
+  }
+  mockLoginTimers.delete(id);
+}
+
+/** Cancel any pending mock logins. Exposed for deterministic tests. */
+export function __resetMockLogins(): void {
+  for (const id of [...mockLoginTimers.keys()]) {
+    clearMockLogin(id);
+  }
 }
 
 export function summarizeMockSnapshots(snapshots: UsageSnapshot[]) {

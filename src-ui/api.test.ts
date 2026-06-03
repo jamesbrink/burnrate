@@ -1,20 +1,35 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   __resetFetchGuard,
+  __resetMockLogins,
+  cancelAccountLogin,
+  detectAccounts,
   guardedFetch,
   isStale,
+  logoutAccount,
   markFetched,
+  onLoginComplete,
+  onLoginProgress,
   onRefreshRequested,
   readCachedDashboard,
   refreshSnapshots,
+  reorderAccounts,
   resizeTrayToContent,
+  startAccountLogin,
   summarizeMockSnapshots,
   writeCachedDashboard,
 } from "./api";
-import type { DashboardState, SnapshotStatus, UsageSnapshot } from "./types";
+import type {
+  DashboardState,
+  LoginComplete,
+  LoginProgress,
+  SnapshotStatus,
+  UsageSnapshot,
+} from "./types";
 
 beforeEach(() => {
   __resetFetchGuard();
+  __resetMockLogins();
   sessionStorage.clear();
 });
 
@@ -149,6 +164,85 @@ test("markFetched records the dashboard and resets the throttle window", async (
 test("resizeTrayToContent resolves to a no-op outside Tauri", async () => {
   await expect(resizeTrayToContent(480)).resolves.toBeUndefined();
 });
+
+test("reorderAccounts reorders the mock array and drops unknown ids", async () => {
+  const before = await detectAccounts();
+  const reversed = before.map((account) => account.id).reverse();
+
+  const reordered = await reorderAccounts([...reversed, "ghost-id"]);
+
+  expect(reordered.map((account) => account.id)).toEqual(reversed);
+});
+
+test("startAccountLogin drives mock progress and completion events", async () => {
+  vi.useFakeTimers();
+  const progress: LoginProgress[] = [];
+  const completed: LoginComplete[] = [];
+  const offProgress = await onLoginProgress((event) => {
+    progress.push(event);
+  });
+  const offComplete = await onLoginComplete((event) => {
+    completed.push(event);
+  });
+
+  const pending = await startAccountLogin("claude-code", "Work");
+  expect(pending.enabled).toBe(false);
+  expect(pending.id).toMatch(/^claude-code-/);
+
+  await vi.advanceTimersByTimeAsync(60);
+  expect(last(progress)?.url).toContain("https://");
+
+  await vi.advanceTimersByTimeAsync(120);
+  expect(last(completed)?.account.id).toBe(pending.id);
+  expect(last(completed)?.account.email).toContain("@");
+  expect(last(completed)?.account.enabled).toBe(true);
+
+  offProgress();
+  offComplete();
+});
+
+test("cancelAccountLogin stops a pending mock login before completion", async () => {
+  vi.useFakeTimers();
+  const completed: LoginComplete[] = [];
+  const offComplete = await onLoginComplete((event) => {
+    completed.push(event);
+  });
+
+  const pending = await startAccountLogin("codex", "Second");
+  await cancelAccountLogin(pending.id);
+  await vi.advanceTimersByTimeAsync(300);
+
+  expect(completed).toHaveLength(0);
+  offComplete();
+});
+
+test("__resetMockLogins cancels any in-flight mock login timers", async () => {
+  vi.useFakeTimers();
+  const completed: LoginComplete[] = [];
+  const offComplete = await onLoginComplete((event) => {
+    completed.push(event);
+  });
+
+  await startAccountLogin("claude-code", "X");
+  __resetMockLogins();
+  await vi.advanceTimersByTimeAsync(300);
+
+  expect(completed).toHaveLength(0);
+  offComplete();
+});
+
+test("logoutAccount removes the account from the mock list", async () => {
+  const before = await detectAccounts();
+  const target = before[0].id;
+
+  const after = await logoutAccount(target);
+
+  expect(after.find((account) => account.id === target)).toBeUndefined();
+});
+
+function last<T>(items: T[]): T | undefined {
+  return items[items.length - 1];
+}
 
 function dashboardState(): DashboardState {
   return {

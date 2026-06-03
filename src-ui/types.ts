@@ -25,6 +25,8 @@ export interface AccountView {
   endpointOverride: string | null;
   secretStorage: SecretStorageMode;
   hasSecret: boolean;
+  email: string | null;
+  configDir: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -72,6 +74,7 @@ export interface UsageSnapshot {
   provider: ProviderKind;
   label: string;
   status: SnapshotStatus;
+  email?: string | null;
   subscription?: SubscriptionSnapshot | null;
   usageBuckets: UsageBucketSnapshot[];
   quota: QuotaSnapshot | null;
@@ -96,4 +99,23 @@ export interface DashboardState {
   snapshots: UsageSnapshot[];
   traySummary: TraySummary;
   settings: AppSettings;
+}
+
+/** Streamed sign-in progress (`burnrate-login-progress`). */
+export interface LoginProgress {
+  id: string;
+  line: string;
+  url?: string | null;
+}
+
+/** Successful sign-in (`burnrate-login-complete`). */
+export interface LoginComplete {
+  id: string;
+  account: AccountView;
+}
+
+/** Failed or cancelled sign-in (`burnrate-login-failed`). */
+export interface LoginFailed {
+  id: string;
+  error: string;
 }
