@@ -1,6 +1,53 @@
 :root {
-  color: #1f252b;
-  background: #eef0f2;
+  /* Follow the system appearance. lightningcss turns the light-dark() values
+     below into prefers-color-scheme flip-vars that inherit from here, and this
+     also makes native select popups / checkboxes / scrollbars render dark. */
+  color-scheme: light dark;
+
+  /* ── Shared design tokens (both the tray popover and Preferences) ──
+     Light values reproduce the previous Preferences palette; the semantic
+     ok/warn/crit are the tray's exact hues so the two windows match. The tray
+     block keeps its own *translucent* surfaces; everything here is opaque. */
+  --fg: light-dark(#1f252b, #e8eaed);
+  --fg-soft: light-dark(#5d6873, #a0a7b0);
+  --fg-faint: light-dark(#8a939d, #767e88);
+
+  --hairline: light-dark(#d5dbe2, #3a3d42);
+  --root-bg: light-dark(#eef0f2, #161719);
+  --window-bg: light-dark(#f4f5f6, #1e1f22);
+  --surface: light-dark(#ffffff, #26282c);
+  --surface-soft: light-dark(#fbfcfd, #2c2e33);
+  --field-bg: light-dark(#ffffff, #1c1d20);
+  --field-border: light-dark(#cbd2d9, #45484e);
+  --track: light-dark(#e2e7eb, #34373c);
+
+  --accent: light-dark(#2e6f88, #4aa3c4);
+  --accent-fg: light-dark(#ffffff, #0d1417);
+  --accent-strong: light-dark(#2f5b73, #3f7f9c);
+  --accent-strong-fg: light-dark(#ffffff, #f2f8fb);
+  --focus-ring: light-dark(#79a8c2, #5fb0d4);
+  --active-border: light-dark(#7ba3bd, #4a7c95);
+  --active-bg: light-dark(#f2f8fb, #243440);
+  --enabled-dot: light-dark(#3f9961, #41d196);
+  --dot-off: light-dark(#b8c0c9, #5a5f66);
+
+  --ok: light-dark(#1c8a51, #41d196);
+  --warn: light-dark(#9a6400, #f5b53d);
+  --crit: light-dark(#c4362f, #ff6b66);
+  --ok-bg: color-mix(in srgb, var(--ok) 15%, var(--surface));
+  --warn-bg: color-mix(in srgb, var(--warn) 18%, var(--surface));
+  --crit-bg: color-mix(in srgb, var(--crit) 15%, var(--surface));
+
+  --meter-ok: light-dark(#34816a, #41d196);
+  --meter-warn: light-dark(#d08a24, #f5b53d);
+  --meter-crit: light-dark(#c94f47, #ff6b66);
+
+  --notice-border: color-mix(in srgb, var(--crit) 45%, var(--hairline));
+  --notice-bg: color-mix(in srgb, var(--crit) 10%, var(--surface));
+  --notice-fg: var(--crit);
+
+  color: var(--fg);
+  background: var(--root-bg);
   font-family:
     ui-sans-serif,
     system-ui,
@@ -21,7 +68,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #eef0f2;
+  background: var(--root-bg);
 }
 
 html,
@@ -55,7 +102,8 @@ p {
   height: 100vh;
   min-height: 360px;
   padding: 18px;
-  background: #f4f5f6;
+  background: var(--window-bg);
+  color: var(--fg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -76,7 +124,7 @@ p {
 }
 
 .prefs-header p {
-  color: #66717c;
+  color: var(--fg-soft);
   margin-top: 2px;
 }
 
@@ -102,16 +150,16 @@ p {
 .icon-button {
   width: 34px;
   height: 34px;
-  border: 1px solid #c9d0d8;
+  border: 1px solid var(--field-border);
   border-radius: 8px;
-  background: #ffffff;
-  color: #29323a;
+  background: var(--surface);
+  color: var(--fg);
   display: inline-grid;
   place-items: center;
 }
 
 .icon-button:hover {
-  border-color: #929daa;
+  border-color: color-mix(in srgb, var(--fg) 38%, var(--hairline));
 }
 
 .icon-button.subtle {
@@ -120,7 +168,7 @@ p {
 }
 
 .icon-button.danger {
-  color: #a43a3a;
+  color: var(--crit);
 }
 
 .notice,
@@ -128,10 +176,10 @@ p {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid #d7a19b;
+  border: 1px solid var(--notice-border);
   border-radius: 8px;
-  background: #fff7f4;
-  color: #87302a;
+  background: var(--notice-bg);
+  color: var(--notice-fg);
 }
 
 .notice {
@@ -155,9 +203,9 @@ p {
 .prefs-main,
 .prefs-usage,
 .prefs-form {
-  border: 1px solid #d5dbe2;
+  border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface);
 }
 
 .prefs-list {
@@ -196,15 +244,15 @@ p {
 
 .section-heading span,
 .muted {
-  color: #68727d;
+  color: var(--fg-soft);
 }
 
 .account-row {
   min-height: 58px;
   width: 100%;
-  border: 1px solid #dde3e9;
+  border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: #fbfcfd;
+  background: var(--surface-soft);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -213,8 +261,8 @@ p {
 }
 
 .account-row.active {
-  border-color: #7ba3bd;
-  background: #f2f8fb;
+  border-color: var(--active-border);
+  background: var(--active-bg);
 }
 
 .account-main {
@@ -242,7 +290,7 @@ p {
 .tray-account small,
 .bucket-line small,
 .bucket-row small {
-  color: #68727d;
+  color: var(--fg-soft);
 }
 
 .account-flags {
@@ -253,11 +301,11 @@ p {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #b8c0c9;
+  background: var(--dot-off);
 }
 
 .dot.enabled {
-  background: #3f9961;
+  background: var(--enabled-dot);
 }
 
 .usage-list {
@@ -266,21 +314,21 @@ p {
 }
 
 .usage-row {
-  border: 1px solid #dbe1e7;
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   padding: 10px;
-  background: #fbfcfd;
+  background: var(--surface-soft);
   display: grid;
   gap: 9px;
 }
 
 .usage-row.warning {
-  border-color: #d3ad61;
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--hairline));
 }
 
 .usage-row.exhausted,
 .usage-row.error {
-  border-color: #cf817b;
+  border-color: color-mix(in srgb, var(--crit) 48%, var(--hairline));
 }
 
 .usage-head {
@@ -314,19 +362,19 @@ p {
   padding: 2px 7px;
   border-radius: 999px;
   font-size: 12px;
-  color: #27506a;
-  background: #e8f2f7;
+  color: var(--ok);
+  background: var(--ok-bg);
 }
 
 .status.warning {
-  color: #6f4a00;
-  background: #fff2d2;
+  color: var(--warn);
+  background: var(--warn-bg);
 }
 
 .status.exhausted,
 .status.error {
-  color: #842c2c;
-  background: #ffe5df;
+  color: var(--crit);
+  background: var(--crit-bg);
 }
 
 .usage-buckets {
@@ -363,7 +411,7 @@ p {
   height: 6px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e2e7eb;
+  background: var(--track);
 }
 
 .meter span,
@@ -372,36 +420,36 @@ p {
   height: 100%;
   min-width: 3px;
   border-radius: inherit;
-  background: #34816a;
+  background: var(--meter-ok);
 }
 
 .bucket-line.warning .meter span,
 .bucket-row.warning .mini-meter span {
-  background: #d08a24;
+  background: var(--meter-warn);
 }
 
 .bucket-line.exhausted .meter span,
 .bucket-line.error .meter span,
 .bucket-row.exhausted .mini-meter span,
 .bucket-row.error .mini-meter span {
-  background: #c94f47;
+  background: var(--meter-crit);
 }
 
 .snapshot-message,
 .tray-message {
-  color: #87302a;
+  color: var(--crit);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .empty-state {
   min-height: 58px;
-  border: 1px dashed #bcc6cf;
+  border: 1px dashed var(--hairline);
   border-radius: 8px;
   display: grid;
   place-items: center;
-  color: #68727d;
-  background: #fbfcfd;
+  color: var(--fg-soft);
+  background: var(--surface-soft);
   padding: 12px;
 }
 
@@ -433,7 +481,7 @@ p {
 .account-form label {
   display: grid;
   gap: 5px;
-  color: #58636e;
+  color: var(--fg-soft);
   font-size: 12px;
 }
 
@@ -441,11 +489,15 @@ p {
 .account-form select {
   width: 100%;
   min-height: 36px;
-  border: 1px solid #cbd2d9;
+  border: 1px solid var(--field-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--field-bg);
   padding: 7px 9px;
-  color: #1f252b;
+  color: var(--fg);
+}
+
+.account-form input::placeholder {
+  color: var(--fg-faint);
 }
 
 .account-form input:focus,
@@ -453,14 +505,14 @@ p {
 .segmented button:focus,
 .icon-button:focus,
 .primary:focus {
-  outline: 2px solid #79a8c2;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 .segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border: 1px solid #cbd2d9;
+  border: 1px solid var(--field-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -468,17 +520,17 @@ p {
 .segmented button {
   min-height: 34px;
   border: 0;
-  background: #f5f7f8;
-  color: #43505c;
+  background: var(--surface-soft);
+  color: var(--fg-soft);
 }
 
 .segmented button + button {
-  border-left: 1px solid #cbd2d9;
+  border-left: 1px solid var(--field-border);
 }
 
 .segmented button.active {
-  background: #2f5b73;
-  color: #ffffff;
+  background: var(--accent-strong);
+  color: var(--accent-strong-fg);
 }
 
 .toggle {
@@ -494,8 +546,8 @@ p {
   min-height: 38px;
   border: 0;
   border-radius: 8px;
-  color: #ffffff;
-  background: #2e6f88;
+  color: var(--accent-fg);
+  background: var(--accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -542,22 +594,24 @@ p {
   height: 18px;
 }
 
+/* Base provider-logo tints. The tray re-tints these under its own scope, so
+   these light-dark() values style the Preferences window only. */
 .provider-logo-claude-code {
-  color: #c15f3c;
-  background: #fbefe9;
-  border-color: #efcfc0;
+  color: light-dark(#c15f3c, #f0a07c);
+  background: light-dark(#fbefe9, color-mix(in srgb, #d2724c 22%, var(--surface)));
+  border-color: light-dark(#efcfc0, color-mix(in srgb, #d2724c 32%, var(--surface)));
 }
 
 .provider-logo-codex {
-  color: #111820;
-  background: #eef1f2;
-  border-color: #d8dee3;
+  color: light-dark(#111820, var(--fg));
+  background: light-dark(#eef1f2, color-mix(in srgb, var(--fg) 10%, var(--surface)));
+  border-color: light-dark(#d8dee3, var(--hairline));
 }
 
 .provider-logo-openrouter {
-  color: #385fd6;
-  background: #eef3ff;
-  border-color: #d5ddfb;
+  color: light-dark(#385fd6, #8aa6ff);
+  background: light-dark(#eef3ff, color-mix(in srgb, #4b6fe0 20%, var(--surface)));
+  border-color: light-dark(#d5ddfb, color-mix(in srgb, #4b6fe0 32%, var(--surface)));
 }
 
 /* ─── Tray popover: native macOS menu-bar look ──────────────────────────────
@@ -580,9 +634,11 @@ html[data-view="tray"] {
   --tray-surface-hover: color-mix(in srgb, CanvasText 9%, transparent);
   --tray-track: color-mix(in srgb, CanvasText 15%, transparent);
 
-  --tray-ok: light-dark(#1c8a51, #41d196);
-  --tray-warn: light-dark(#9a6400, #f5b53d);
-  --tray-crit: light-dark(#c4362f, #ff6b66);
+  /* Share the semantic hues with Preferences (identical values; the tray keeps
+     its own translucent surfaces above for the vibrancy material). */
+  --tray-ok: var(--ok);
+  --tray-warn: var(--warn);
+  --tray-crit: var(--crit);
   --tray-ok-bg: color-mix(in srgb, var(--tray-ok) 16%, transparent);
   --tray-warn-bg: color-mix(in srgb, var(--tray-warn) 18%, transparent);
   --tray-crit-bg: color-mix(in srgb, var(--tray-crit) 15%, transparent);
