@@ -44,17 +44,14 @@ export function SortableList<T extends { id: string }>({
   );
 
   function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) {
-      return;
+    const next = computeReorder(
+      items.map((item) => item.id),
+      String(event.active.id),
+      event.over ? String(event.over.id) : null,
+    );
+    if (next) {
+      onReorder(next);
     }
-    const ids = items.map((item) => item.id);
-    const from = ids.indexOf(String(active.id));
-    const to = ids.indexOf(String(over.id));
-    if (from < 0 || to < 0) {
-      return;
-    }
-    onReorder(arrayMove(ids, from, to));
   }
 
   return (
@@ -120,6 +117,26 @@ function SortableRow({
       {children(handle)}
     </div>
   );
+}
+
+/**
+ * Compute the new id order for a drag, or null when nothing should change
+ * (no drop target, dropped on itself, or an unknown id).
+ */
+export function computeReorder(
+  ids: string[],
+  activeId: string,
+  overId: string | null,
+): string[] | null {
+  if (!overId || activeId === overId) {
+    return null;
+  }
+  const from = ids.indexOf(activeId);
+  const to = ids.indexOf(overId);
+  if (from < 0 || to < 0) {
+    return null;
+  }
+  return arrayMove(ids, from, to);
 }
 
 /**

@@ -1,8 +1,20 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { SortableList, reorderWithinSubset } from "./SortableList";
+import {
+  SortableList,
+  computeReorder,
+  reorderWithinSubset,
+} from "./SortableList";
 
 afterEach(() => cleanup());
+
+test("computeReorder moves the active id and guards no-op drags", () => {
+  expect(computeReorder(["a", "b", "c"], "a", "c")).toEqual(["b", "c", "a"]);
+  // dropped on itself / no target / unknown id → no change
+  expect(computeReorder(["a", "b"], "a", "a")).toBeNull();
+  expect(computeReorder(["a", "b"], "a", null)).toBeNull();
+  expect(computeReorder(["a", "b"], "ghost", "b")).toBeNull();
+});
 
 test("reorderWithinSubset pins non-subset ids and reorders subset slots", () => {
   // full [a, b(pinned), c]; enabled subset reordered to [c, a]

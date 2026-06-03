@@ -11,21 +11,25 @@ import {
   detectAccounts,
   guardedFetch,
   isStale,
+  logoutAccount,
   markFetched,
   onDashboardUpdated,
   onRefreshRequested,
   onSettingsUpdated,
   readCachedDashboard,
   removeAccount,
+  reorderAccounts,
   resizePreferencesToContent,
   resizeTrayToContent,
   saveAccount,
 } from "./api";
+import { LoginModal } from "./LoginModal";
 import {
   OPENROUTER_DEFAULT_ENDPOINT,
   RUNPOD_DEFAULT_ENDPOINT,
   emptyForm,
   Preferences,
+  providerLabels,
 } from "./Preferences";
 import { TrayPanel } from "./TrayPanel";
 import type {
@@ -33,8 +37,10 @@ import type {
   AccountView,
   AppSettings,
   DashboardState,
+  ProviderKind,
   UsageSnapshot,
 } from "./types";
+import { useLogin } from "./useLogin";
 
 export function App() {
   const isTrayView =
@@ -56,6 +62,20 @@ export function App() {
   // show the cold-start spinner without going stale.
   const stateRef = useRef<DashboardState | null>(state);
   stateRef.current = state;
+
+  const login = useLogin({
+    onCompleted: async (account) => {
+      setActiveId(account.id);
+      setForm(emptyForm);
+      try {
+        const dashboard = await guardedFetch({ force: true });
+        setState(dashboard);
+        setSnapshots(dashboard.snapshots);
+      } catch (err) {
+        setError(String(err));
+      }
+    },
+  });
 
   async function revalidate(options: { force?: boolean } = {}) {
     // Background refreshes (tray open, stale revalidation) shouldn't flash a
@@ -315,7 +335,9 @@ export function App() {
           ? RUNPOD_DEFAULT_ENDPOINT
           : null;
     const endpointOverride =
-      defaultEndpoint !== null && endpoint === defaultEndpoint ? null : endpoint;
+      defaultEndpoint !== null && endpoint === defaultEndpoint
+        ? null
+        : endpoint;
     setBusy(true);
     setError(null);
     try {
@@ -402,6 +424,63 @@ export function App() {
     );
   }
 
+  function startLogin(provider: ProviderKind) {
+    void login.start(provider, providerLabels[provider]);
+  }
+
+  function manualAdd(provider: ProviderKind) {
+    setActiveId(null);
+    setForm({
+      provider,
+      label: providerLabels[provider],
+      enabled: true,
+      endpointOverride:
+        provider === "openrouter"
+          ? OPENROUTER_DEFAULT_ENDPOINT
+          : provider === "runpod"
+            ? RUNPOD_DEFAULT_ENDPOINT
+            : "",
+      secretStorage: "keyring",
+      secret: "",
+    });
+  }
+
+  async function onLogout(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await applyAccountChange(await logoutAccount(id));
+      setForm(emptyForm);
+      setActiveId(null);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Optimistically reorder locally, then persist the full id order. The forced
+  // re-fetch re-sorts snapshots from the backend and emits a dashboard update so
+  // the other window (tray ↔ preferences) stays in sync.
+  async function onReorderAccounts(orderedIds: string[]) {
+    setState((previous) =>
+      previous
+        ? {
+            ...previous,
+            accounts: orderByKey(previous.accounts, orderedIds, (a) => a.id),
+          }
+        : previous,
+    );
+    setSnapshots((previous) =>
+      orderByKey(previous, orderedIds, (snapshot) => snapshot.accountId),
+    );
+    try {
+      await applyAccountChange(await reorderAccounts(orderedIds));
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   if (isTrayView) {
     return (
       <TrayPanel
@@ -410,28 +489,55 @@ export function App() {
         busy={busy}
         error={error}
         onRefresh={() => void revalidate({ force: true })}
+        onReorderAccounts={(ids) => void onReorderAccounts(ids)}
       />
     );
   }
 
   return (
-    <Preferences
-      accounts={accounts}
-      snapshots={snapshots}
-      summary={summary}
-      busy={busy}
-      error={error}
-      form={form}
-      activeId={activeId}
-      setForm={setForm}
-      setActiveId={setActiveId}
-      onSubmit={(event) => void onSubmit(event)}
-      onDetect={() => void onDetect()}
-      onRefresh={() => void revalidate({ force: true })}
-      onEditAccount={editAccount}
-      onRemoveAccount={(id) => void onRemove(id)}
-    />
+    <>
+      <Preferences
+        accounts={accounts}
+        snapshots={snapshots}
+        summary={summary}
+        busy={busy}
+        error={error}
+        form={form}
+        activeId={activeId}
+        setForm={setForm}
+        setActiveId={setActiveId}
+        onSubmit={(event) => void onSubmit(event)}
+        onDetect={() => void onDetect()}
+        onRefresh={() => void revalidate({ force: true })}
+        onEditAccount={editAccount}
+        onRemoveAccount={(id) => void onRemove(id)}
+        onStartLogin={startLogin}
+        onManualAdd={manualAdd}
+        onLogout={(id) => void onLogout(id)}
+        onReorderAccounts={(ids) => void onReorderAccounts(ids)}
+      />
+      {login.session ? (
+        <LoginModal
+          session={login.session}
+          onCancel={() => void login.cancel()}
+          onRetry={login.retry}
+        />
+      ) : null}
+    </>
   );
+}
+
+function orderByKey<T>(
+  items: T[],
+  ids: string[],
+  keyOf: (item: T) => string,
+): T[] {
+  const byKey = new Map(items.map((item) => [keyOf(item), item]));
+  const ordered = ids
+    .map((id) => byKey.get(id))
+    .filter((item): item is T => item !== undefined);
+  const rest = items.filter((item) => !ids.includes(keyOf(item)));
+  return [...ordered, ...rest];
 }
 
 function summaryFromBackend(

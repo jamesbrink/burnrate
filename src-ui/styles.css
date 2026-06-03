@@ -1005,3 +1005,231 @@ html[data-view="tray"] .tray-empty {
     justify-content: flex-end;
   }
 }
+
+/* ── Multi-account: ordering, email, add menu, login ─────────────────────── */
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-soft);
+}
+
+.account-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sortable-item {
+  list-style: none;
+}
+
+.sortable-item.dragging {
+  opacity: 0.6;
+}
+
+.drag-handle {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: grab;
+  border-radius: 6px;
+  touch-action: none;
+}
+
+.drag-handle:hover {
+  color: var(--fg-soft);
+  background: var(--track);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.account-email {
+  color: var(--fg-faint) !important;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* Add-account chooser */
+.add-account-menu {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.add-account-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.add-account-option:hover {
+  background: var(--active-bg);
+}
+
+.add-account-option span {
+  display: grid;
+}
+
+.add-account-option strong {
+  font-weight: 640;
+}
+
+.add-account-option small {
+  color: var(--fg-soft);
+}
+
+.add-account-back {
+  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-soft);
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+/* Sign-in / sign-out controls on the edit form */
+.account-auth-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: inherit;
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.secondary:hover {
+  border-color: var(--active-border);
+  background: var(--active-bg);
+}
+
+.danger-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--crit);
+  cursor: pointer;
+  padding: 7px 8px;
+  font-weight: 600;
+}
+
+/* Login modal */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.login-modal {
+  width: min(420px, 100%);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.login-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.login-modal-head h2 {
+  font-size: 16px;
+  font-weight: 720;
+}
+
+.login-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--fg-soft);
+}
+
+.login-url a {
+  color: var(--accent);
+}
+
+.login-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--crit);
+}
+
+.login-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Tray variants */
+.tray-email {
+  color: var(--tray-fg-faint);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+html[data-view="tray"] .drag-handle {
+  color: var(--tray-fg-faint);
+}
+
+html[data-view="tray"] .drag-handle:hover {
+  color: var(--tray-fg-soft);
+  background: var(--tray-track);
+}
+
+.tray-account-provider > span {
+  display: grid;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sortable-item {
+    transition: none !important;
+  }
+}

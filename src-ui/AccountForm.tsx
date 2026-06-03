@@ -1,16 +1,7 @@
 import { LogIn, LogOut, Plus, RotateCcw } from "lucide-react";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
-import {
-  OPENROUTER_DEFAULT_ENDPOINT,
-  RUNPOD_DEFAULT_ENDPOINT,
-  providerLabels,
-} from "./Preferences";
+import { providerDefaultEndpoints, providerLabels } from "./constants";
 import type { AccountInput, ProviderKind, SecretStorageMode } from "./types";
-
-const providerDefaultEndpoints: Partial<Record<ProviderKind, string>> = {
-  openrouter: OPENROUTER_DEFAULT_ENDPOINT,
-  runpod: RUNPOD_DEFAULT_ENDPOINT,
-};
 
 /** Providers authenticated through the CLI rather than a pasted API key. */
 const CLI_PROVIDERS: ProviderKind[] = ["claude-code", "codex"];

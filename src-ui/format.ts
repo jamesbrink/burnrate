@@ -14,7 +14,9 @@ export function displayBuckets(snapshot: UsageSnapshot): UsageBucketSnapshot[] {
 }
 
 export function hasBucketValue(bucket: UsageBucketSnapshot): boolean {
-  return bucket.limit !== null || bucket.remaining !== null || bucket.used !== 0;
+  return (
+    bucket.limit !== null || bucket.remaining !== null || bucket.used !== 0
+  );
 }
 
 export function bucketFromQuota(

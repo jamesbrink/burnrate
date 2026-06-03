@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ArrowLeft, KeyRound, LogIn } from "lucide-react";
 import { ProviderLogo } from "./ProviderLogo";
-import { providerLabels } from "./Preferences";
+import { providerLabels } from "./constants";
 import type { ProviderKind } from "./types";
 
 const PROVIDERS: ProviderKind[] = [

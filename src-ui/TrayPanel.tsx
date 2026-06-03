@@ -1,4 +1,5 @@
 import { AlertCircle, Clock3, RefreshCw, ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
 import {
   bucketMeterLabel,
   bucketPercent,
@@ -7,6 +8,7 @@ import {
   formatReset,
 } from "./format";
 import { ProviderLogo } from "./ProviderLogo";
+import { SortableList, reorderWithinSubset } from "./SortableList";
 import type {
   AccountView,
   DashboardState,
@@ -37,15 +39,21 @@ export function TrayPanel({
   busy,
   error,
   onRefresh,
+  onReorderAccounts,
 }: {
   state: DashboardState | null;
   snapshots: UsageSnapshot[];
   busy: boolean;
   error: string | null;
   onRefresh: () => void;
+  onReorderAccounts: (orderedIds: string[]) => void;
 }) {
   const accounts = state?.accounts ?? [];
   const summary = summarize(snapshots);
+  const cardItems = snapshots.map((snapshot) => ({
+    id: snapshot.accountId,
+    snapshot,
+  }));
 
   return (
     <main className="tray-panel">
@@ -72,10 +80,22 @@ export function TrayPanel({
       ) : null}
 
       <section className="tray-section" aria-label="Usage">
-        {snapshots.length > 0 ? (
-          snapshots.map((snapshot) => (
-            <TraySnapshot key={snapshot.accountId} snapshot={snapshot} />
-          ))
+        {cardItems.length > 0 ? (
+          <SortableList
+            items={cardItems}
+            ariaLabel="Usage order"
+            onReorder={(subsetIds) =>
+              onReorderAccounts(
+                reorderWithinSubset(
+                  accounts.map((account) => account.id),
+                  subsetIds,
+                ),
+              )
+            }
+            renderItem={(item, handle) => (
+              <TraySnapshot snapshot={item.snapshot} handle={handle} />
+            )}
+          />
         ) : (
           <div className="tray-empty">No enabled accounts.</div>
         )}
@@ -92,7 +112,13 @@ export function TrayPanel({
   );
 }
 
-function TraySnapshot({ snapshot }: { snapshot: UsageSnapshot }) {
+function TraySnapshot({
+  snapshot,
+  handle,
+}: {
+  snapshot: UsageSnapshot;
+  handle: ReactNode;
+}) {
   const buckets = displayBuckets(snapshot);
   const plan = snapshot.subscription?.planLabel;
 
@@ -100,10 +126,14 @@ function TraySnapshot({ snapshot }: { snapshot: UsageSnapshot }) {
     <article className={`tray-card ${snapshot.status}`}>
       <div className="tray-card-head">
         <div className="tray-provider">
+          {handle}
           <ProviderLogo provider={snapshot.provider} size="sm" />
           <div>
             <strong>{snapshot.label}</strong>
             <span>{providerLabels[snapshot.provider]}</span>
+            {snapshot.email ? (
+              <span className="tray-email">{snapshot.email}</span>
+            ) : null}
           </div>
         </div>
         <span className={`tray-status ${snapshot.status}`}>
@@ -161,7 +191,12 @@ function TrayAccount({ account }: { account: AccountView }) {
     <div className="tray-account">
       <span className="tray-account-provider">
         <ProviderLogo provider={account.provider} size="sm" />
-        <span>{account.label}</span>
+        <span>
+          <span>{account.label}</span>
+          {account.email ? (
+            <small className="tray-email">{account.email}</small>
+          ) : null}
+        </span>
       </span>
       <small>{account.enabled ? "Enabled" : "Disabled"}</small>
     </div>

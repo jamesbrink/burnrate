@@ -4,11 +4,18 @@ import {
   KeyRound,
   Plus,
   RefreshCw,
-  RotateCcw,
   Trash2,
   Wifi,
 } from "lucide-react";
-import type { Dispatch, FormEvent, SetStateAction } from "react";
+import {
+  type Dispatch,
+  type FormEvent,
+  type ReactNode,
+  type SetStateAction,
+  useState,
+} from "react";
+import { AccountForm } from "./AccountForm";
+import { AddAccountMenu } from "./AddAccountMenu";
 import {
   bucketMeterLabel,
   bucketPercent,
@@ -17,30 +24,28 @@ import {
   formatReset,
 } from "./format";
 import { ProviderLogo } from "./ProviderLogo";
+import { SortableList } from "./SortableList";
+import {
+  OPENROUTER_DEFAULT_ENDPOINT,
+  RUNPOD_DEFAULT_ENDPOINT,
+  emptyForm,
+  providerLabels,
+} from "./constants";
 import type {
   AccountInput,
   AccountView,
   ProviderKind,
-  SecretStorageMode,
   SnapshotStatus,
   UsageBucketSnapshot,
   UsageSnapshot,
 } from "./types";
 
-export const OPENROUTER_DEFAULT_ENDPOINT =
-  "https://openrouter.ai/api/v1/credits";
-export const RUNPOD_DEFAULT_ENDPOINT = "https://rest.runpod.io/v1";
-
-export const providerLabels: Record<ProviderKind, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  openrouter: "OpenRouter",
-  runpod: "Runpod",
-};
-
-const providerDefaultEndpoints: Partial<Record<ProviderKind, string>> = {
-  openrouter: OPENROUTER_DEFAULT_ENDPOINT,
-  runpod: RUNPOD_DEFAULT_ENDPOINT,
+// Re-exported for existing importers (App.tsx). Source of truth: ./constants.
+export {
+  OPENROUTER_DEFAULT_ENDPOINT,
+  RUNPOD_DEFAULT_ENDPOINT,
+  emptyForm,
+  providerLabels,
 };
 
 const statusLabels: Record<SnapshotStatus, string> = {
@@ -50,15 +55,6 @@ const statusLabels: Record<SnapshotStatus, string> = {
   error: "Error",
   stale: "Stale",
   "not-configured": "No accounts",
-};
-
-export const emptyForm: AccountInput = {
-  provider: "openrouter",
-  label: "OpenRouter",
-  enabled: true,
-  endpointOverride: OPENROUTER_DEFAULT_ENDPOINT,
-  secretStorage: "keyring",
-  secret: "",
 };
 
 type Summary = {
@@ -85,6 +81,10 @@ export function Preferences({
   onRefresh,
   onEditAccount,
   onRemoveAccount,
+  onStartLogin,
+  onManualAdd,
+  onLogout,
+  onReorderAccounts,
 }: {
   accounts: AccountView[];
   snapshots: UsageSnapshot[];
@@ -100,7 +100,13 @@ export function Preferences({
   onRefresh: () => void;
   onEditAccount: (account: AccountView) => void;
   onRemoveAccount: (id: string) => void;
+  onStartLogin: (provider: ProviderKind) => void;
+  onManualAdd: (provider: ProviderKind) => void;
+  onLogout: (id: string) => void;
+  onReorderAccounts: (orderedIds: string[]) => void;
 }) {
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+
   return (
     <main className="prefs-shell">
       <header className="prefs-header">
@@ -137,16 +143,44 @@ export function Preferences({
 
       <section className="prefs-layout">
         <aside className="prefs-list" aria-label="Accounts">
-          <SectionTitle title="Accounts" detail={`${accounts.length}`} />
-          {accounts.map((account) => (
-            <AccountButton
-              key={account.id}
-              account={account}
-              active={account.id === activeId}
-              onEdit={onEditAccount}
-              onRemove={onRemoveAccount}
+          <div className="section-heading">
+            <h2>Accounts</h2>
+            <div className="section-actions">
+              <span>{accounts.length}</span>
+              <button
+                className="icon-button subtle"
+                title="Add account"
+                aria-expanded={addMenuOpen}
+                onClick={() => setAddMenuOpen((open) => !open)}
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+          </div>
+
+          {addMenuOpen ? (
+            <AddAccountMenu
+              onStartLogin={onStartLogin}
+              onManual={onManualAdd}
+              onClose={() => setAddMenuOpen(false)}
             />
-          ))}
+          ) : null}
+
+          <SortableList
+            items={accounts}
+            onReorder={onReorderAccounts}
+            ariaLabel="Account order"
+            className="account-list"
+            renderItem={(account, handle) => (
+              <AccountButton
+                account={account}
+                handle={handle}
+                active={account.id === activeId}
+                onEdit={onEditAccount}
+                onRemove={onRemoveAccount}
+              />
+            )}
+          />
           {accounts.length === 0 ? (
             <p className="muted">No accounts configured.</p>
           ) : null}
@@ -170,132 +204,19 @@ export function Preferences({
             </div>
           </section>
 
-          <form className="account-form prefs-form" onSubmit={onSubmit}>
-            <div className="form-heading">
-              <h2>{activeId ? "Edit Account" : "Add Account"}</h2>
-              {activeId ? (
-                <button
-                  type="button"
-                  className="icon-button subtle"
-                  title="Reset form"
-                  onClick={() => {
-                    setForm(emptyForm);
-                    setActiveId(null);
-                  }}
-                >
-                  <RotateCcw size={16} />
-                </button>
-              ) : null}
-            </div>
-
-            <div className="form-grid">
-              <label>
-                Provider
-                <select
-                  value={form.provider}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      provider: event.target.value as ProviderKind,
-                      label: providerLabels[event.target.value as ProviderKind],
-                      endpointOverride:
-                        providerDefaultEndpoints[
-                          event.target.value as ProviderKind
-                        ] ?? "",
-                    }))
-                  }
-                >
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="runpod">Runpod</option>
-                  <option value="claude-code">Claude Code</option>
-                  <option value="codex">Codex</option>
-                </select>
-              </label>
-
-              <label>
-                Label
-                <input
-                  value={form.label}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      label: event.target.value,
-                    }))
-                  }
-                  required
-                />
-              </label>
-            </div>
-
-            <div className="segmented" role="group" aria-label="Secret storage">
-              {(["keyring", "plaintext"] satisfies SecretStorageMode[]).map(
-                (mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={form.secretStorage === mode ? "active" : ""}
-                    onClick={() =>
-                      setForm((current) => ({
-                        ...current,
-                        secretStorage: mode,
-                      }))
-                    }
-                  >
-                    {mode === "keyring" ? "Keyring" : "Plaintext"}
-                  </button>
-                ),
-              )}
-            </div>
-
-            <div className="form-grid">
-              <label>
-                API Key
-                <input
-                  type="password"
-                  value={form.secret ?? ""}
-                  placeholder={activeId ? "Leave blank to keep existing" : ""}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      secret: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-
-              <label>
-                Endpoint
-                <input
-                  value={form.endpointOverride ?? ""}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      endpointOverride: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            </div>
-
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    enabled: event.target.checked,
-                  }))
-                }
-              />
-              Enabled
-            </label>
-
-            <button className="primary" type="submit" disabled={busy}>
-              <Plus size={17} />
-              {activeId ? "Save" : "Add"}
-            </button>
-          </form>
+          <AccountForm
+            form={form}
+            setForm={setForm}
+            activeId={activeId}
+            busy={busy}
+            onSubmit={onSubmit}
+            onReset={() => {
+              setForm(emptyForm);
+              setActiveId(null);
+            }}
+            onStartLogin={onStartLogin}
+            onLogout={onLogout}
+          />
         </section>
       </section>
     </main>
@@ -313,17 +234,20 @@ function SectionTitle({ title, detail }: { title: string; detail: string }) {
 
 function AccountButton({
   account,
+  handle,
   active,
   onEdit,
   onRemove,
 }: {
   account: AccountView;
+  handle: ReactNode;
   active: boolean;
   onEdit: (account: AccountView) => void;
   onRemove: (id: string) => void;
 }) {
   return (
     <div className={`account-row ${active ? "active" : ""}`}>
+      {handle}
       <button className="account-main" onClick={() => onEdit(account)}>
         <ProviderLogo provider={account.provider} size="sm" />
         <span>
@@ -332,6 +256,9 @@ function AccountButton({
             {providerLabels[account.provider]}
             {account.autoDetected ? " · Auto" : ""}
           </small>
+          {account.email ? (
+            <small className="account-email">{account.email}</small>
+          ) : null}
         </span>
       </button>
       <span className="account-flags">
@@ -367,6 +294,9 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
               {providerLabels[snapshot.provider]}
               {plan ? ` · ${plan}` : ""}
             </small>
+            {snapshot.email ? (
+              <small className="account-email">{snapshot.email}</small>
+            ) : null}
           </span>
         </div>
         <StatusBadge status={snapshot.status} />
