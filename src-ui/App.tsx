@@ -50,7 +50,7 @@ export function App() {
   const [busy, setBusy] = useState(() => readCachedDashboard() === null);
   const [error, setError] = useState<string | null>(null);
   const lastPreferenceSize = useRef({ width: 0, height: 0 });
-  const lastTraySize = useRef({ width: 0, height: 0 });
+  const lastTrayHeight = useRef(0);
   // Mirror of `state` so the mount-captured `revalidate` can decide whether to
   // show the cold-start spinner without going stale.
   const stateRef = useRef<DashboardState | null>(state);
@@ -272,35 +272,25 @@ export function App() {
     const measure = () => {
       const px = (value: string) => Number.parseFloat(value) || 0;
       const style = window.getComputedStyle(panel);
-      const paddingX = px(style.paddingLeft) + px(style.paddingRight);
       const paddingY = px(style.paddingTop) + px(style.paddingBottom);
       const rowGap = px(style.rowGap || style.gap);
-      // Sum the intrinsic height of each child rather than reading
-      // panel.scrollHeight: the panel is pinned by `min-height: 100vh`, so its
-      // own box can never report a height smaller than the window and would
+      // Only height is reported: the tray width is pinned to the design width by
+      // the backend. Sum the intrinsic height of each child rather than reading
+      // panel.scrollHeight, which is pinned by `min-height: 100vh` and would
       // never let the window shrink.
       const children = Array.from(panel.children) as HTMLElement[];
       const contentHeight =
         children.reduce((sum, child) => sum + child.offsetHeight, 0) +
         rowGap * Math.max(0, children.length - 1);
-      const contentWidth = children.reduce(
-        (max, child) => Math.max(max, child.scrollWidth),
-        0,
-      );
-      const width = Math.ceil(contentWidth + paddingX);
       const height = Math.ceil(contentHeight + paddingY);
-      if (width <= 0 || height <= 0) {
+      if (height <= 0) {
         return;
       }
-      const last = lastTraySize.current;
-      if (
-        Math.abs(width - last.width) <= 1 &&
-        Math.abs(height - last.height) <= 1
-      ) {
+      if (Math.abs(height - lastTrayHeight.current) <= 1) {
         return;
       }
-      lastTraySize.current = { width, height };
-      void resizeTrayToContent(width, height);
+      lastTrayHeight.current = height;
+      void resizeTrayToContent(height);
     };
     const scheduleMeasure = () => {
       cancelAnimationFrame(frame);

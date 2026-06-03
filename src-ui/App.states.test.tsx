@@ -518,18 +518,11 @@ test("auto-sizes the tray window to its measured content", async () => {
     configurable: true,
     get: () => 36,
   });
-  Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
-    configurable: true,
-    get: () => 320,
-  });
 
   try {
     render(<App />);
     await waitFor(() =>
-      expect(api.resizeTrayToContent).toHaveBeenCalledWith(
-        expect.any(Number),
-        expect.any(Number),
-      ),
+      expect(api.resizeTrayToContent).toHaveBeenCalledWith(expect.any(Number)),
     );
   } finally {
     styleSpy.mockRestore();
@@ -540,7 +533,6 @@ test("auto-sizes the tray window to its measured content", async () => {
         offsetHeight,
       );
     }
-    Reflect.deleteProperty(HTMLElement.prototype, "scrollWidth");
   }
 });
 

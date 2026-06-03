@@ -150,7 +150,7 @@ test("markFetched records the dashboard and resets the throttle window", async (
 });
 
 test("resizeTrayToContent resolves to a no-op outside Tauri", async () => {
-  await expect(resizeTrayToContent(360, 480)).resolves.toBeUndefined();
+  await expect(resizeTrayToContent(480)).resolves.toBeUndefined();
 });
 
 function dashboardState(): DashboardState {

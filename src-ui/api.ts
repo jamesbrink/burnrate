@@ -390,13 +390,10 @@ export async function resizePreferencesToContent(
   }
 }
 
-export async function resizeTrayToContent(
-  width: number,
-  height: number,
-): Promise<void> {
+export async function resizeTrayToContent(height: number): Promise<void> {
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
-    await invoke("resize_tray_to_content", { width, height });
+    await invoke("resize_tray_to_content", { height });
   }
 }
 
