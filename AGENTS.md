@@ -17,20 +17,32 @@ burnrate`).
 
 - `main.rs` — Tauri entrypoint. Declares the `#[tauri::command]` IPC handlers
   (`dashboard`, `list_accounts`, `save_account`, `remove_account`,
-  `detect_accounts`, `save_settings`, `refresh_snapshots`,
-  `resize_preferences_to_content`, `close_preferences`),
+  `detect_accounts`, `reorder_accounts`, `start_account_login`,
+  `cancel_account_login`, `logout_account`, `save_settings`,
+  `refresh_snapshots`, `resize_preferences_to_content`,
+  `resize_tray_to_content`, `close_preferences`),
   builds the two windows and macOS menu, installs the tray, and spawns the
   5-minute background refresh loop. Closing the Preferences window is
   intercepted to _hide_ (tray-only), not quit.
-- `app_state.rs` — `AppState` is the managed Tauri state: a `Mutex<AppConfig>`
-  plus the `ProviderClient`. `dashboard()` fans out one snapshot fetch per
-  enabled account concurrently (`tokio::spawn`), preserves order, and rolls the
-  results into a `TraySummary`. All persistence flows through here.
+- `app_state.rs` — `AppState` is the managed Tauri state: a `Mutex<AppConfig>`,
+  the `ProviderClient`, and a `LoginManager`. `dashboard()` fans out one snapshot
+  fetch per enabled account concurrently (`tokio::spawn`) in display order, rolls
+  the results into a `TraySummary`, and persists any newly discovered account
+  emails. Hosts the login orchestration: `start_account_login` creates an
+  isolated, disabled placeholder account + per-account CLI dir and spawns the
+  sign-in; on completion it reuses/refreshes an existing account when the email
+  already matches, else enables the new one, emitting `burnrate-login-complete` /
+  `-failed`. `logout_account` runs the CLI sign-out for managed dirs only (never
+  the system default). All persistence flows through here.
 - `config.rs` — `AppConfig` (settings + accounts) persisted to `accounts.json`.
   Writes are atomic (temp file + rename) with `0600` file / `0700` dir perms on
   unix; a malformed file is moved aside (`.json.invalid-<nonce>`) and replaced
-  with defaults. `views()` strips secrets and exposes only `hasSecret`;
-  `merge_detected` reconciles auto-detected accounts. `config_dir()` honors
+  with defaults. `views()` strips secrets and exposes only `hasSecret`, returning
+  accounts in `order_index` order; `reorder()` persists a user-defined global
+  order (without bumping `updated_at`, which keys the provider cache);
+  `merge_detected` reconciles auto-detected accounts. `account_cli_dir()` /
+  `is_managed_cli_dir()` / `create_private_dir()` manage the isolated per-account
+  CLI homes (`<config_dir>/cli/<provider>/<id>`). `config_dir()` honors
   `BURNRATE_CONFIG_DIR`.
 - `key_store.rs` — secret storage: OS **keyring by default**, **plaintext only
   when explicitly selected**, with migration between modes and an in-process
@@ -55,11 +67,24 @@ burnrate`).
   `BURNRATE_CLAUDE_BIN`/`CLAUDE_BIN`.
 - `providers/{claude,codex,openrouter}.rs` — each implements `fetch()`, and
   claude/codex also implement `detect()`. claude reads `~/.claude` creds +
-  macOS Keychain, validates with `claude auth status --json`, and queries the
+  macOS Keychain (service name derived per account via
+  `keychain_service_name_for(account.cli_config_dir(), …)`), validates with
+  `claude auth status --json` (also yields the account **email**), and queries the
   Anthropic OAuth usage endpoint (with its own usage cache + error backoff);
   codex detects `CODEX_HOME`/`~/.codex` and talks to the Codex app server over
-  stdio JSON (reset timestamps may be seconds or millis — both normalized);
-  openrouter hits `/api/v1/credits`.
+  stdio JSON (reset timestamps may be seconds or millis — both normalized), and
+  reads the account email by decoding the `tokens.id_token` JWT in `auth.json`
+  (`base64`, payload claims only — no signature check on local trusted data).
+  Each provider threads the account's per-account config dir
+  (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`) into its CLI calls so multiple accounts
+  stay isolated; openrouter hits `/api/v1/credits`.
+- `providers/login.rs` — interactive sign-in. Shells out to `claude auth login`
+  / `codex login` under the account's config dir, streams an **allowlist-redacted**
+  view of CLI output (surfacing the auth URL, masking token-shaped lines) via the
+  `burnrate-login-progress` event, opens the URL with the OS opener, then verifies
+  the result and reads the email. `LoginManager` enforces a single concurrent
+  sign-in and supports cancel (task abort + `kill_on_drop`). `run_logout` performs
+  the CLI sign-out. No PTY: piped stdio + opening the URL ourselves.
 - `tray.rs` — tray icon/menu (Preferences / Refresh / Quit), left-click toggles
   the cursor-anchored `tray` popover window, `summarize()` reduces snapshots to
   a single status/label, and the macOS activation policy switch (Accessory =
@@ -76,11 +101,18 @@ burnrate`).
 - `api.ts` is the IPC bridge and the only file that touches Tauri. Every call
   checks `isTauri`; **outside Tauri** (vitest, or `dev:web` in a plain browser)
   it returns mock dashboard/account data so the UI and its tests run without the
-  Rust backend. It wraps `invoke()` commands and `listen()` for the
-  `burnrate-refresh-requested` / `burnrate-dashboard-updated` /
-  `burnrate-settings-updated` events.
-- `types.ts` mirrors the Rust wire models; `Preferences.tsx`, `TrayPanel.tsx`,
-  `ProviderLogo.tsx`, and `format.ts` are the focused UI pieces.
+  Rust backend — including a **mock login driver** that simulates the sign-in
+  event sequence via window `CustomEvent`s. It wraps `invoke()` commands and
+  `listen()` for the `burnrate-refresh-requested` / `burnrate-dashboard-updated` /
+  `burnrate-settings-updated` and `burnrate-login-progress` / `-complete` /
+  `-failed` events.
+- `types.ts` mirrors the Rust wire models; `constants.ts` holds shared provider
+  labels/endpoints (kept cycle-free). `Preferences.tsx`, `TrayPanel.tsx`,
+  `ProviderLogo.tsx`, and `format.ts` are the focused UI pieces, plus
+  `AccountForm.tsx`, `AddAccountMenu.tsx`, `LoginModal.tsx`, the `useLogin.ts`
+  hook, and `SortableList.tsx` (reusable `@dnd-kit` drag-to-reorder used by both
+  surfaces). Multi-account: each account shows its email; the Add-account menu
+  offers browser sign-in vs. manual token entry for Claude Code / Codex.
 
 ### Cross-cutting invariants
 

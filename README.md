@@ -11,6 +11,8 @@ Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, cre
 - Native translucent (vibrancy) popover on macOS that follows the system light/dark appearance, sizes itself to its content, and dismisses when it loses focus.
 - Native Preferences window for account management and manual OpenRouter/Runpod setup.
 - Auto-detects Claude Code and Codex accounts from local config; OpenRouter and Runpod are added via API key.
+- **Multiple Claude Code and Codex accounts**, each signed in from the app via browser OAuth and shown with its email address and usage.
+- **Drag to reorder** accounts — reorder the tray usage cards or the Preferences list; the order persists across both windows.
 - Claude Code subscription buckets (5-hour, weekly, model-specific) with stale-auth checks via `claude auth status`.
 - Codex Pro/Max plan and rate-limit buckets read from the Codex app server.
 - Runpod prepaid balance, current spend, burn-rate runway, active resources, and recent Pods/Serverless/storage costs.
@@ -41,6 +43,8 @@ Claude Code usage requires a first-party `claude.ai` OAuth login with an active 
 ```sh
 claude auth login
 ```
+
+**Adding accounts from the app.** In Preferences, use **Add account → Sign in with browser** to authenticate a Claude Code or Codex account directly — Burnrate shells out to the official `claude` / `codex` CLI, opens your browser, and reads the resulting email and usage. Additional accounts are isolated in their own CLI config dir under `BURNRATE_CONFIG_DIR/cli/<provider>/<id>`, so the first auto-detected account keeps using your shared terminal session (`~/.claude`, `~/.codex`) while extra accounts stay separate. Signing the same email in twice refreshes the existing account instead of creating a duplicate. **Sign out** (in the account's edit panel) clears only that managed account — never your system session. OpenRouter and Runpod are still added with an API key.
 
 Burnrate refreshes in the background every five minutes and caches successful snapshots for five minutes to avoid tight polling. Runpod uses `https://rest.runpod.io/v1` for resources/billing and `https://api.runpod.io/graphql` for balance/burn state by default; `BURNRATE_RUNPOD_REST_URL` and `BURNRATE_RUNPOD_GRAPHQL_URL` can override those endpoints for development or proxies.
 
