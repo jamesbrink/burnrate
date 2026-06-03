@@ -5,6 +5,16 @@
 
 Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, credits, spend, and subscription limits. Built with Tauri 2 (Rust + React/TypeScript) and lives in the system tray (the menu bar on macOS).
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/preferences.png" alt="Burnrate Preferences window showing per-account usage across Claude Code, Codex, Runpod, and OpenRouter" width="62%" />
+  &nbsp;
+  <img src="docs/screenshots/tray.png" alt="Burnrate menu-bar popover with live quota meters for each account" width="30%" />
+</p>
+
+<p align="center"><em>The full Preferences window (left) and the menu-bar popover (right).</em></p>
+
 ## Features
 
 - Menu-bar tray summary with a left-click usage popover and right-click actions (Preferences, Refresh, Quit).
