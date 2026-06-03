@@ -8,6 +8,12 @@ vi.mock("./api");
 
 afterEach(() => vi.restoreAllMocks());
 
+function stubLoginListeners() {
+  vi.mocked(api.onLoginProgress).mockResolvedValue(() => {});
+  vi.mocked(api.onLoginFailed).mockResolvedValue(() => {});
+  vi.mocked(api.onLoginComplete).mockResolvedValue(() => {});
+}
+
 function account(id: string): AccountView {
   return {
     id,
@@ -55,4 +61,28 @@ test("buffers a completion that arrives before the session id, then replays it",
 
   expect(onCompleted).toHaveBeenCalledWith(completed);
   expect(result.current.session).toBeNull();
+});
+
+test("forwards submitted auth codes only when a login session is active", async () => {
+  stubLoginListeners();
+  vi.mocked(api.startAccountLogin).mockResolvedValue(account("codex-submit"));
+  vi.mocked(api.submitLoginCode).mockResolvedValue(undefined);
+  const { result } = renderHook(() => useLogin({ onCompleted: vi.fn() }));
+
+  await act(async () => {
+    await result.current.submitCode("ignored-code#state");
+  });
+  expect(api.submitLoginCode).not.toHaveBeenCalled();
+
+  await act(async () => {
+    await result.current.start("codex", "Codex");
+  });
+  await act(async () => {
+    await result.current.submitCode("real-code#state");
+  });
+
+  expect(api.submitLoginCode).toHaveBeenCalledWith(
+    "codex-submit",
+    "real-code#state",
+  );
 });

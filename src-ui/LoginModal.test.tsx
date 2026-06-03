@@ -94,3 +94,35 @@ test("submits a pasted Claude authentication code", async () => {
 
   expect(onSubmitCode).toHaveBeenCalledWith("auth-code#state");
 });
+
+test("validates and reports authentication code submission errors", async () => {
+  const user = userEvent.setup();
+  const onSubmitCode = vi.fn().mockRejectedValue(new Error("Code expired."));
+  render(
+    <LoginModal
+      session={session({
+        provider: "claude-code",
+        needsCode: true,
+        lines: ["Paste the code"],
+      })}
+      onCancel={vi.fn()}
+      onRetry={vi.fn()}
+      onSubmitCode={onSubmitCode}
+    />,
+  );
+
+  await user.click(screen.getByRole("button", { name: "Submit code" }));
+  expect(
+    screen.getByText("Paste the authentication code first."),
+  ).toBeInTheDocument();
+  expect(onSubmitCode).not.toHaveBeenCalled();
+
+  await user.type(
+    screen.getByLabelText("Paste the full authentication code"),
+    " expired-code#state ",
+  );
+  await user.click(screen.getByRole("button", { name: "Submit code" }));
+
+  expect(onSubmitCode).toHaveBeenCalledWith("expired-code#state");
+  expect(screen.getByText("Error: Code expired.")).toBeInTheDocument();
+});
