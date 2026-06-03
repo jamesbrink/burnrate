@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use anyhow::{Context, Result, anyhow};
-use chrono::{Duration, Utc};
+use chrono::{Duration as ChronoDuration, Utc};
 use reqwest::{Client, Url};
 use serde_json::json;
 
@@ -11,6 +13,7 @@ const DEFAULT_REST_ENDPOINT: &str = "https://rest.runpod.io/v1";
 const DEFAULT_GRAPHQL_ENDPOINT: &str = "https://api.runpod.io/graphql";
 const RUNPOD_STOP_PROTECTION_SECONDS: f64 = 10.0;
 const WARNING_RUNWAY_SECONDS: f64 = 60.0 * 60.0;
+const ENRICHMENT_TIMEOUT: Duration = Duration::from_secs(3);
 
 const MYSELF_QUERY: &str = r#"
 query BurnrateMyself {
@@ -55,6 +58,9 @@ pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<Usag
 
     let account_json = fetch_graphql_myself(http, &token, graphql_url).await?;
     let account_state = parse_account_state(&account_json);
+    if account_state.balance.is_none() {
+        return Err(anyhow!("Runpod account state missing clientBalance"));
+    }
 
     // Billing/resource calls enrich the snapshot, but the GraphQL account state
     // is the source of truth for health. Keep a balance snapshot available even
@@ -66,22 +72,47 @@ pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<Usag
     let rest_base_ref = rest_base.as_str();
     let (pods_24h, serverless_24h, storage_24h, pods, endpoints) = tokio::join!(
         async {
-            fetch_billing_sum(http, token_ref, rest_base_ref, "billing/pods")
-                .await
-                .ok()
+            tokio::time::timeout(
+                ENRICHMENT_TIMEOUT,
+                fetch_billing_sum(http, token_ref, rest_base_ref, "billing/pods"),
+            )
+            .await
+            .ok()
+            .and_then(|result| result.ok())
         },
         async {
-            fetch_billing_sum(http, token_ref, rest_base_ref, "billing/endpoints")
-                .await
-                .ok()
+            tokio::time::timeout(
+                ENRICHMENT_TIMEOUT,
+                fetch_billing_sum(http, token_ref, rest_base_ref, "billing/endpoints"),
+            )
+            .await
+            .ok()
+            .and_then(|result| result.ok())
         },
         async {
-            fetch_billing_sum(http, token_ref, rest_base_ref, "billing/networkvolumes")
+            tokio::time::timeout(
+                ENRICHMENT_TIMEOUT,
+                fetch_billing_sum(http, token_ref, rest_base_ref, "billing/networkvolumes"),
+            )
+            .await
+            .ok()
+            .and_then(|result| result.ok())
+        },
+        async move {
+            tokio::time::timeout(ENRICHMENT_TIMEOUT, fetch_json(http, token_ref, pods_url))
                 .await
                 .ok()
+                .and_then(|result| result.ok())
         },
-        async move { fetch_json(http, token_ref, pods_url).await.ok() },
-        async move { fetch_json(http, token_ref, endpoints_url).await.ok() },
+        async move {
+            tokio::time::timeout(
+                ENRICHMENT_TIMEOUT,
+                fetch_json(http, token_ref, endpoints_url),
+            )
+            .await
+            .ok()
+            .and_then(|result| result.ok())
+        },
     );
 
     Ok(build_snapshot(
@@ -140,7 +171,7 @@ async fn fetch_graphql_myself(
 async fn fetch_billing_sum(http: &Client, token: &str, rest_base: &str, path: &str) -> Result<f64> {
     let mut url = rest_url(rest_base, path)?;
     let end = Utc::now();
-    let start = end - Duration::hours(24);
+    let start = end - ChronoDuration::hours(24);
     url.query_pairs_mut()
         .append_pair("startTime", &start.to_rfc3339())
         .append_pair("endTime", &end.to_rfc3339());
@@ -216,7 +247,8 @@ fn parse_account_state(value: &serde_json::Value) -> RunpodAccountState {
                 "/myself/spendLimit",
                 "/spendLimit",
             ],
-        ),
+        )
+        .filter(|limit| *limit > 0.0),
         min_balance: number(
             value,
             &[
@@ -566,6 +598,17 @@ mod tests {
         assert_eq!(snapshot.usage_buckets[1].id, "current-burn");
         assert_eq!(snapshot.usage_buckets[2].used, 3.25);
         assert!(snapshot.message.unwrap().contains("runway 5.0h"));
+
+        let zero_limit_state = parse_account_state(&json!({
+            "data": {
+                "myself": {
+                    "clientBalance": 12.5,
+                    "currentSpendPerHr": 2.5,
+                    "spendLimit": 0.0
+                }
+            }
+        }));
+        assert_eq!(zero_limit_state.spend_limit, None);
     }
 
     #[test]
@@ -694,6 +737,32 @@ mod tests {
                 .iter()
                 .any(|bucket| bucket.id == "pods-24h")
         );
+    }
+
+    #[tokio::test]
+    async fn fetch_requires_graphql_balance() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "myself": {
+                        "currentSpendPerHr": 5.0,
+                        "spendLimit": 20.0
+                    }
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut account = account();
+        account.endpoint_override = Some(server.uri());
+        let error = fetch(&Client::new(), &account)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("missing clientBalance"));
     }
 
     #[tokio::test]

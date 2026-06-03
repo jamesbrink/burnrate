@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import {
+  bucketMeterLabel,
   bucketPercent,
   displayBuckets,
   formatLimit,
@@ -397,7 +398,7 @@ function BucketLine({ bucket }: { bucket: UsageBucketSnapshot }) {
           {formatLimit(bucket)} {bucket.unit}
         </strong>
       </div>
-      <div className="meter" aria-label={`${bucket.label} remaining`}>
+      <div className="meter" aria-label={bucketMeterLabel(bucket)}>
         <span style={{ width: `${bucketPercent(bucket)}%` }} />
       </div>
       <small>{formatReset(bucket.resetAt)}</small>

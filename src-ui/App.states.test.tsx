@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
 import {
   bucketFromQuota,
+  bucketMeterLabel,
   bucketPercent,
   displayBuckets,
   formatLimit,
@@ -627,6 +628,19 @@ test("formats quota fallback and reset edge cases", () => {
   ).toEqual(["current-burn"]);
   expect(
     formatLimit({
+      id: "burn",
+      label: "Burn",
+      window: null,
+      used: 1.25,
+      limit: 80,
+      remaining: null,
+      unit: "USD/hr",
+      resetAt: null,
+      status: "healthy",
+    }),
+  ).toBe("$1.25 / $80");
+  expect(
+    formatLimit({
       id: "credits",
       label: "Credits",
       window: null,
@@ -638,6 +652,19 @@ test("formats quota fallback and reset edge cases", () => {
       status: "healthy",
     }),
   ).toBe("$58.6 / $125");
+  expect(
+    bucketMeterLabel({
+      id: "burn",
+      label: "Current burn",
+      window: null,
+      used: 1.25,
+      limit: 80,
+      remaining: null,
+      unit: "USD/hr",
+      resetAt: null,
+      status: "healthy",
+    }),
+  ).toBe("Current burn usage");
   expect(
     bucketPercent({
       id: "over",

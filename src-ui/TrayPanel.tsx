@@ -1,5 +1,6 @@
 import { AlertCircle, Clock3, RefreshCw, ShieldCheck } from "lucide-react";
 import {
+  bucketMeterLabel,
   bucketPercent,
   displayBuckets,
   formatLimit,
@@ -142,7 +143,7 @@ function BucketRow({ bucket }: { bucket: UsageBucketSnapshot }) {
           {formatLimit(bucket)} {bucket.unit}
         </strong>
       </div>
-      <div className="mini-meter" aria-label={`${bucket.label} remaining`}>
+      <div className="mini-meter" aria-label={bucketMeterLabel(bucket)}>
         <span style={{ width: `${bucketPercent(bucket)}%` }} />
       </div>
       {bucket.resetAt ? (

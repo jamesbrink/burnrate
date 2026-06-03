@@ -40,6 +40,12 @@ export function bucketPercent(bucket: UsageBucketSnapshot): number {
   return Math.max(0, Math.min(100, (value / bucket.limit) * 100));
 }
 
+export function bucketMeterLabel(bucket: UsageBucketSnapshot): string {
+  return bucket.remaining === null
+    ? `${bucket.label} usage`
+    : `${bucket.label} remaining`;
+}
+
 export function formatNumber(value: number): string {
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: value > 100 ? 0 : 2,
@@ -62,7 +68,7 @@ export function formatLimit(bucket: UsageBucketSnapshot): string {
 
 function formatBucketNumber(value: number, unit: string): string {
   const formatted = formatNumber(value);
-  return unit === "USD" ? `$${formatted}` : formatted;
+  return unit.startsWith("USD") ? `$${formatted}` : formatted;
 }
 
 export function formatReset(value: string | null): string {
