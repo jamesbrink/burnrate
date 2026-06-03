@@ -21,10 +21,19 @@ burnrate`).
   `detect_accounts`, `reorder_accounts`, `start_account_login`,
   `cancel_account_login`, `logout_account`, `save_settings`,
   `refresh_snapshots`, `resize_preferences_to_content`,
-  `resize_tray_to_content`, `close_preferences`),
+  `resize_tray_to_content`, `close_preferences`, `open_preferences`,
+  `updater_available`, `check_for_updates`, `install_pending_update`),
+  registers `tauri-plugin-updater`,
   builds the two windows and macOS menu, installs the tray, and spawns the
   5-minute background refresh loop. Closing the Preferences window is
   intercepted to _hide_ (tray-only), not quit.
+- `updater.rs` — auto-updater IPC over `tauri-plugin-updater`: `check_for_updates`
+  (channel-aware: `stable` hits `releases/latest`, `nightly` discovers candidate
+  tags via the GitHub Releases API with a static fallback) stashes the pending
+  `Update` in the managed `UpdaterState`; `install_pending_update` downloads +
+  installs (emitting `burnrate-update-progress`) and restarts. `updater_available`
+  gates the UI on a configured pubkey so unsigned dev builds stay quiet. Pure
+  parsing/endpoint helpers are unit-tested.
 - `app_state.rs` — `AppState` is the managed Tauri state: a `Mutex<AppConfig>`,
   the `ProviderClient`, and a `LoginManager`. `dashboard()` fans out one snapshot
   fetch per enabled account concurrently (`tokio::spawn`) in display order, rolls
@@ -92,7 +101,8 @@ burnrate`).
   the result and reads the email. `LoginManager` enforces a single concurrent
   sign-in and supports cancel (task abort + `kill_on_drop`). `run_logout` performs
   the CLI sign-out. No PTY: piped stdio + opening the URL ourselves.
-- `tray.rs` — tray icon/menu (Preferences / Refresh / Quit), left-click toggles
+- `tray.rs` — tray icon/menu (Preferences / Refresh / Check for Updates / Quit;
+  the updates entry emits `burnrate-check-update-requested`), left-click toggles
   the cursor-anchored `tray` popover window, `summarize()` reduces snapshots to
   a single status/label, and the macOS activation policy switch (Accessory =
   hidden from Dock, Regular = shown while Preferences is open).
@@ -111,15 +121,21 @@ burnrate`).
   Rust backend — including a **mock login driver** that simulates the sign-in
   event sequence via window `CustomEvent`s. It wraps `invoke()` commands and
   `listen()` for the `burnrate-refresh-requested` / `burnrate-dashboard-updated` /
-  `burnrate-settings-updated` and `burnrate-login-progress` / `-complete` /
-  `-failed` events.
+  `burnrate-settings-updated`, `burnrate-login-progress` / `-complete` /
+  `-failed`, and the updater's `burnrate-update-progress` /
+  `burnrate-check-update-requested` events. The updater calls are mocked too
+  (a `VITE_MOCK_UPDATE` opt-in advertises a fake update for `dev:web`).
 - `types.ts` mirrors the Rust wire models; `constants.ts` holds shared provider
   labels/endpoints (kept cycle-free). `Preferences.tsx`, `TrayPanel.tsx`,
   `ProviderLogo.tsx`, and `format.ts` are the focused UI pieces, plus
   `AccountForm.tsx`, `AddAccountMenu.tsx`, `LoginModal.tsx`, the `useLogin.ts`
-  hook, and `SortableList.tsx` (reusable `@dnd-kit` drag-to-reorder used by both
-  surfaces). Multi-account: each account shows its email; the Add-account menu
-  offers browser sign-in vs. manual token entry for Claude Code / Codex.
+  hook, `SortableList.tsx` (reusable `@dnd-kit` drag-to-reorder used by both
+  surfaces), and the updater pair `useUpdater.ts` (channel-aware poll/check/
+  install state machine) + `UpdateBanner.tsx`. The `TrayPanel` header has a
+  settings gear that calls `open_preferences`; Preferences hosts the Updates
+  section (channel selector + check button) and renders the banner. Multi-account:
+  each account shows its email; the Add-account menu offers browser sign-in vs.
+  manual token entry for Claude Code / Codex.
 
 ### Cross-cutting invariants
 
@@ -136,12 +152,31 @@ burnrate`).
   Removing the default would make every non-`tauri build` binary open blank.
 - **CSP allowlist.** `tauri.conf.json` restricts `connect-src` to the Anthropic,
   ChatGPT, OpenRouter, and localhost hosts — adding a provider endpoint requires
-  editing that CSP.
-- **Two release channels.** `release-plz` manages the crate PR → tag →
-  crates.io; `release.yml` (on tag `v*`) builds native bundles via `tauri-action`
-  and uploads checksums to the GitHub Release. macOS bundles are Developer
-  ID-signed and notarized when the `APPLE_*` repo secrets are set
-  (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+  editing that CSP. The updater's HTTP (manifest fetch, nightly discovery, asset
+  download) runs in Rust via `reqwest`, not the webview, so it is exempt.
+- **App version derives from `Cargo.toml`.** `tauri.conf.json` deliberately omits
+  `version` so the bundle/updater version tracks the crate version that
+  `release-plz` bumps — keeping the auto-updater's version comparison correct. Do
+  not re-add a hardcoded `version` there; the nightly workflow stamps `Cargo.toml`.
+- **Updater signing.** `bundle.createUpdaterArtifacts` is on, so every release leg
+  signs its updater bundle and the build needs `TAURI_SIGNING_PRIVATE_KEY` +
+  `_PASSWORD` on all runners (not just macOS). The public key lives in
+  `tauri.conf.json` `plugins.updater.pubkey`; `src/updater.rs` refuses to promise
+  updates if it's blank.
+- **Update-update sync.** Adding a `#[tauri::command]` requires touching three
+  places in lockstep: register it in `main.rs`, wrap it in `src-ui/api.ts`, and
+  add it to the `vi.hoisted` mock in `App.states.test.tsx` (an unmocked export
+  throws at render).
+- **Two release channels + auto-update.** `release-plz` manages the crate PR →
+  tag → crates.io; `release.yml` (on tag `v*`) builds native bundles via
+  `tauri-action`, uploads checksums, and the `publish-manifest` job attaches a
+  signed `latest.json` (the **Stable** updater manifest). `nightly.yml` runs after
+  green `CI` on `main`, builds a signed macOS pre-release into `nightly-staging`,
+  and promotes it to the rolling `nightly` release/manifest (the **Nightly**
+  channel). The updater manifest is macOS-only; `scripts/build-updater-manifest.sh`
+  maps the one universal `.app.tar.gz` signature to both `darwin-*` keys. macOS
+  bundles are Developer ID-signed and notarized when the `APPLE_*` repo secrets are
+  set (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
   `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`); without them the build still
   succeeds unsigned.
 

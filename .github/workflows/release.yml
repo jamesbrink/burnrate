@@ -55,8 +55,17 @@ jobs:
           APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          # Tauri updater signing. `createUpdaterArtifacts: true` makes every
+          # leg sign its updater bundle, so the key must be present on all
+          # runners or the build fails. Only the macOS manifest is published
+          # (see the publish-manifest job); other legs' artifacts go unused.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: ${{ matrix.args }}
+          # The signed latest.json is built centrally by publish-manifest to
+          # avoid a parallel-upload race across the matrix legs.
+          includeUpdaterJson: false
       - name: Generate checksums
         if: matrix.platform != 'windows-latest'
         run: |
@@ -77,8 +86,68 @@ jobs:
             burnrate-${{ matrix.platform }}.sha256
             target/**/bundle/**/*.dmg
             target/**/bundle/**/*.app.tar.gz
+            target/**/bundle/**/*.app.tar.gz.sig
             target/**/bundle/**/*.deb
             target/**/bundle/**/*.rpm
             target/**/bundle/**/*.AppImage
             target/**/bundle/**/*.msi
             target/**/bundle/**/*.exe
+
+  # Build the signed updater manifest once, from the macOS universal bundle's
+  # signature, and attach it to the release. The in-app updater fetches it at
+  # releases/latest/download/latest.json. Tag pushes only — workflow_dispatch
+  # has no tag to key the asset URLs on.
+  publish-manifest:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and upload latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-sigs
+          # The release was just populated by the build legs; retry briefly in
+          # case asset propagation lags the job hand-off.
+          for attempt in 1 2 3; do
+            rm -f release-sigs/*.sig
+            if gh release download "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "*.app.tar.gz.sig" \
+              --dir release-sigs \
+              --clobber; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::no macOS *.app.tar.gz.sig on release $TAG after 3 attempts"
+              exit 1
+            fi
+            echo ".sig fetch attempt $attempt failed; retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+
+          scripts/build-updater-manifest.sh \
+            release-sigs \
+            "${TAG#v}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" \
+            > latest.json
+          cat latest.json
+
+          gh release upload "$TAG" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+
+          # Smoke test the contract the in-app updater relies on.
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/latest.json"
+          for attempt in 1 2 3 4 5; do
+            http=$(curl -sIL -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            [ "$http" = "200" ] && { echo "latest.json reachable (HTTP 200)"; break; }
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::latest.json at $URL returned HTTP $http"
+              exit 1
+            fi
+            echo "latest.json HTTP $http (attempt $attempt); retrying in 10s"
+            sleep 10
+          done

@@ -18,6 +18,7 @@ Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, cre
 - Runpod prepaid balance, current spend, burn-rate runway, active resources, and recent Pods/Serverless/storage costs.
 - Secrets in the OS keyring by default, with an explicit plaintext fallback.
 - Hides from the Dock by default; appears only while Preferences is open.
+- **Automatic updates (macOS)** with selectable **Stable** and **Nightly** channels: a dismissible banner and tray "Check for Updates…" entry offer a signature-verified one-click "Install & Restart." Choose the channel under Preferences → Updates.
 
 ## Install
 
@@ -58,7 +59,9 @@ Only non-secret account configuration is stored on disk. On macOS the default pa
 ## Releases
 
 - `release-plz` manages crate release PRs, version tags, and crates.io publishing.
-- Tagging `v*` builds native Tauri bundles (macOS, Linux, Windows) and uploads them with checksums to the GitHub Release.
+- Tagging `v*` builds native Tauri bundles (macOS, Linux, Windows) and uploads them with checksums to the GitHub Release, then publishes a signed `latest.json` (the **Stable** auto-update manifest).
+- A `nightly` workflow runs after green `CI` on `main`, building a signed macOS pre-release and promoting it to the rolling `nightly` release/manifest (the **Nightly** channel).
+- Auto-update signing uses a Tauri minisign keypair: the public key lives in `tauri.conf.json`; the private key + passphrase are the `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repo secrets.
 
 ## License
 
