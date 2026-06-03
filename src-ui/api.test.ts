@@ -313,7 +313,7 @@ function dashboardState(): DashboardState {
     settings: {
       hideFromDock: true,
       updateChannel: "stable",
-      trayScaleToFit: true,
+      trayScale: 1,
     },
   };
 }

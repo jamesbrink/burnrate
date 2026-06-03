@@ -90,7 +90,7 @@ beforeEach(() => {
   api.saveSettings.mockResolvedValue({
     hideFromDock: false,
     updateChannel: "stable",
-    trayScaleToFit: true,
+    trayScale: 1,
   });
 });
 
@@ -399,7 +399,7 @@ test("persists the chosen update channel", async () => {
   api.saveSettings.mockResolvedValue({
     hideFromDock: true,
     updateChannel: "nightly",
-    trayScaleToFit: true,
+    trayScale: 1,
   });
 
   render(<App />);
@@ -416,22 +416,24 @@ test("persists the chosen update channel", async () => {
   );
 });
 
-test("persists the tray scale-to-fit preference", async () => {
+test("persists the tray content scale preference", async () => {
   api.guardedFetch.mockResolvedValue(dashboardState());
   api.saveSettings.mockResolvedValue({
     hideFromDock: false,
     updateChannel: "stable",
-    trayScaleToFit: false,
+    trayScale: 0.75,
   });
 
   render(<App />);
   await screen.findByRole("heading", { name: "Preferences" });
 
-  fireEvent.click(screen.getByLabelText(/Scale dense popovers to fit/));
+  fireEvent.change(screen.getByLabelText(/Tray content scale/), {
+    target: { value: "0.75" },
+  });
 
   await waitFor(() =>
     expect(api.saveSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ trayScaleToFit: false }),
+      expect.objectContaining({ trayScale: 0.75 }),
     ),
   );
 });
@@ -979,7 +981,7 @@ function dashboardState(
     settings: overrides.settings ?? {
       hideFromDock: false,
       updateChannel: "stable",
-      trayScaleToFit: true,
+      trayScale: 1,
     },
   };
 }

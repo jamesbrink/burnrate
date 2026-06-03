@@ -27,7 +27,7 @@ const PREFERENCES_SCREEN_MARGIN: f64 = 18.0;
 const TRAY_CONTENT_WIDTH: f64 = 360.0;
 const TRAY_MAX_CONTENT_WIDTH: f64 = 360.0;
 const TRAY_MIN_HEIGHT: f64 = 200.0;
-const TRAY_MAX_HEIGHT: f64 = 760.0;
+const TRAY_MAX_HEIGHT_WORK_RATIO: f64 = 2.0 / 3.0;
 const TRAY_SCREEN_MARGIN: f64 = 8.0;
 const TRAY_OFFSET_Y: f64 = 12.0;
 
@@ -282,6 +282,8 @@ fn resize_tray_to_content(
     };
 
     let available_height = (work_size.height - (TRAY_SCREEN_MARGIN * 2.0)).max(1.0);
+    let max_tray_height =
+        (available_height * TRAY_MAX_HEIGHT_WORK_RATIO).max(TRAY_MIN_HEIGHT.min(available_height));
     let (target_width, target_height) = tray::clamp_tray_size(
         width,
         height,
@@ -292,7 +294,7 @@ fn resize_tray_to_content(
         TRAY_SCREEN_MARGIN,
         TRAY_CONTENT_WIDTH,
         TRAY_MIN_HEIGHT,
-        TRAY_MAX_HEIGHT,
+        max_tray_height,
         TRAY_MAX_CONTENT_WIDTH,
     );
 
@@ -303,7 +305,7 @@ fn resize_tray_to_content(
                 TRAY_MIN_HEIGHT.min(target_height),
             ))),
             max_width: Some(PixelUnit::Logical(LogicalUnit::new(target_width))),
-            max_height: Some(PixelUnit::Logical(LogicalUnit::new(available_height))),
+            max_height: Some(PixelUnit::Logical(LogicalUnit::new(max_tray_height))),
         })
         .map_err(|error| error.to_string())?;
     window

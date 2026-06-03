@@ -1,4 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
+if [ "$(uname -s)" = "Darwin" ]; then
+  ./scripts/dev-codesign-setup.sh --quiet
+fi
+
 npm run dev

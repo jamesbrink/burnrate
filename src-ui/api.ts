@@ -111,7 +111,7 @@ let mockAccounts: AccountView[] = [
 let mockSettings: AppSettings = {
   hideFromDock: true,
   updateChannel: "stable",
-  trayScaleToFit: true,
+  trayScale: 1,
 };
 
 const mockSnapshots: UsageSnapshot[] = [

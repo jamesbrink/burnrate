@@ -49,10 +49,10 @@ pub(crate) struct AppSettings {
     /// config files without this field deserialize to the default.
     #[serde(default)]
     pub update_channel: UpdateChannel,
-    /// Scale dense tray popovers down before falling back to an internal
-    /// scrollbar. Defaults on for new and existing configs.
-    #[serde(default = "default_true")]
-    pub tray_scale_to_fit: bool,
+    /// Manual tray content scale. `1.0` is native size (disabled); users can
+    /// lower it to `0.5` to fit dense popovers before scrolling.
+    #[serde(default = "default_tray_scale")]
+    pub tray_scale: f64,
 }
 
 impl Default for AppSettings {
@@ -60,7 +60,7 @@ impl Default for AppSettings {
         Self {
             hide_from_dock: true,
             update_channel: UpdateChannel::default(),
-            tray_scale_to_fit: true,
+            tray_scale: default_tray_scale(),
         }
     }
 }
@@ -199,6 +199,10 @@ pub(crate) enum AwsGroupByKind {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_tray_scale() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -346,8 +350,8 @@ mod tests {
     }
 
     #[test]
-    fn default_tray_scale_to_fit_is_enabled() {
-        assert!(AppSettings::default().tray_scale_to_fit);
+    fn default_tray_scale_is_native_size() {
+        assert_eq!(AppSettings::default().tray_scale, 1.0);
     }
 
     #[test]
@@ -357,7 +361,7 @@ mod tests {
         let settings: AppSettings = serde_json::from_str(r#"{"hideFromDock":false}"#).unwrap();
         assert!(!settings.hide_from_dock);
         assert_eq!(settings.update_channel, UpdateChannel::Stable);
-        assert!(settings.tray_scale_to_fit);
+        assert_eq!(settings.tray_scale, 1.0);
     }
 
     #[test]

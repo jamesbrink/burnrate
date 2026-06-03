@@ -57,8 +57,8 @@ export interface UpdatesPanelProps {
 }
 
 export interface TraySettingsPanelProps {
-  trayScaleToFit: boolean;
-  onTrayScaleToFitChange: (enabled: boolean) => void;
+  trayScale: number;
+  onTrayScaleChange: (scale: number) => void;
 }
 
 // Re-exported for existing importers (App.tsx). Source of truth: ./constants.
@@ -262,24 +262,29 @@ export function Preferences({
 }
 
 function TraySettings({
-  trayScaleToFit,
-  onTrayScaleToFitChange,
+  trayScale,
+  onTrayScaleChange,
 }: TraySettingsPanelProps) {
+  const percent = Math.round(trayScale * 100);
   return (
     <section className="prefs-tray-settings" aria-label="Tray popover">
       <SectionTitle title="Tray popover" detail="Sizing" />
-      <label className="settings-toggle">
+      <label className="settings-slider">
         <span>
-          <strong>Scale dense popovers to fit</strong>
+          <strong>Tray content scale</strong>
           <small>
-            Shrinks tray content by up to 50% before showing an internal
-            scrollbar.
+            {percent === 100
+              ? "Native size — scaling disabled"
+              : `${percent}% — scales down before showing an internal scrollbar`}
           </small>
         </span>
         <input
-          type="checkbox"
-          checked={trayScaleToFit}
-          onChange={(event) => onTrayScaleToFitChange(event.target.checked)}
+          type="range"
+          min="0.5"
+          max="1"
+          step="0.05"
+          value={trayScale}
+          onChange={(event) => onTrayScaleChange(Number(event.target.value))}
         />
       </label>
     </section>

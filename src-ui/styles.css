@@ -666,31 +666,27 @@ p {
   gap: 10px;
 }
 
-.settings-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.settings-slider {
+  display: grid;
+  gap: 8px;
 }
 
-.settings-toggle > span {
+.settings-slider > span {
   display: grid;
   gap: 3px;
 }
 
-.settings-toggle strong {
+.settings-slider strong {
   font-size: 13px;
 }
 
-.settings-toggle small {
+.settings-slider small {
   color: var(--fg-soft);
   line-height: 1.35;
 }
 
-.settings-toggle input {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
+.settings-slider input {
+  width: 100%;
 }
 
 .updates-body {

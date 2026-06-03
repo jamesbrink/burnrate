@@ -49,8 +49,8 @@ import type {
 import { useLogin } from "./useLogin";
 
 const TRAY_BASE_WIDTH = 360;
-const TRAY_COMFORT_MAX_HEIGHT = 760;
 const TRAY_MIN_SCALE = 0.5;
+const TRAY_MAX_SCALE = 1;
 
 export function App() {
   const isTrayView =
@@ -172,7 +172,7 @@ export function App() {
   const settings: AppSettings = state?.settings ?? {
     hideFromDock: true,
     updateChannel: "stable",
-    trayScaleToFit: true,
+    trayScale: TRAY_MAX_SCALE,
   };
 
   async function updateSettings(next: AppSettings) {
@@ -201,11 +201,15 @@ export function App() {
     await updateSettings({ ...previousSettings, updateChannel: channel });
   }
 
-  async function onTrayScaleToFitChange(trayScaleToFit: boolean) {
-    if (trayScaleToFit === settings.trayScaleToFit) {
+  async function onTrayScaleChange(trayScale: number) {
+    const nextScale = Math.max(
+      TRAY_MIN_SCALE,
+      Math.min(TRAY_MAX_SCALE, trayScale),
+    );
+    if (Math.abs(nextScale - settings.trayScale) < 0.001) {
       return;
     }
-    await updateSettings({ ...settings, trayScaleToFit });
+    await updateSettings({ ...settings, trayScale: nextScale });
   }
 
   useEffect(() => {
@@ -373,12 +377,10 @@ export function App() {
           scrollContentHeight +
           rowGap * Math.max(0, visibleRows - 1),
       );
-      const scale = settings.trayScaleToFit
-        ? Math.max(
-            TRAY_MIN_SCALE,
-            Math.min(1, TRAY_COMFORT_MAX_HEIGHT / Math.max(height, 1)),
-          )
-        : 1;
+      const scale = Math.max(
+        TRAY_MIN_SCALE,
+        Math.min(TRAY_MAX_SCALE, settings.trayScale),
+      );
       panel.style.setProperty("--tray-scale", scale.toFixed(3));
       const scaledHeight = Math.ceil(height * scale);
       // Keep the tray at the native menu-sized width. Height is adaptive and the
@@ -431,7 +433,7 @@ export function App() {
     busy,
     accounts,
     summary.label,
-    settings.trayScaleToFit,
+    settings.trayScale,
   ]);
 
   async function onSubmit(event: FormEvent) {
@@ -642,9 +644,8 @@ export function App() {
         onLogout={(id) => void onLogout(id)}
         onReorderAccounts={(ids) => void onReorderAccounts(ids)}
         settings={{
-          trayScaleToFit: settings.trayScaleToFit,
-          onTrayScaleToFitChange: (enabled) =>
-            void onTrayScaleToFitChange(enabled),
+          trayScale: settings.trayScale,
+          onTrayScaleChange: (scale) => void onTrayScaleChange(scale),
         }}
         updates={{
           channel: settings.updateChannel,

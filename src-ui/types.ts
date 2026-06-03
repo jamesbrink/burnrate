@@ -128,7 +128,7 @@ export type UpdateChannel = "stable" | "nightly";
 export interface AppSettings {
   hideFromDock: boolean;
   updateChannel: UpdateChannel;
-  trayScaleToFit: boolean;
+  trayScale: number;
 }
 
 /** Available update returned by the `check_for_updates` command. */
