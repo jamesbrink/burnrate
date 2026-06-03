@@ -395,6 +395,19 @@ async fn read_credentials(account: &AccountConfig) -> Result<CredentialFile> {
     }
 }
 
+/// Best-effort deletion of the macOS Keychain credential for an account. Used as
+/// a fallback during sign-out/removal: Claude stores its OAuth token in the
+/// Keychain (keyed by the per-account config dir), which a failed
+/// `claude auth logout` would otherwise leave orphaned after the dir is deleted.
+#[cfg(target_os = "macos")]
+pub(crate) fn delete_keychain_credentials(account: &AccountConfig) {
+    let user = keychain_username();
+    let service_name = keychain_service_name_for(account.cli_config_dir(), oauth_file_suffix());
+    let _ = Command::new("security")
+        .args(["delete-generic-password", "-s", &service_name, "-a", &user])
+        .output();
+}
+
 #[cfg(target_os = "macos")]
 fn read_macos_keychain_credentials(account: &AccountConfig) -> Result<CredentialFile> {
     let user = keychain_username();

@@ -62,8 +62,14 @@ fn save_settings(
 }
 
 #[tauri::command]
-fn remove_account(state: State<'_, AppState>, id: String) -> Result<Vec<AccountView>, String> {
-    state.remove_account(&id).map_err(|error| error.to_string())
+async fn remove_account(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<AccountView>, String> {
+    state
+        .remove_account(&id)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -87,9 +93,10 @@ async fn start_account_login(
     state: State<'_, AppState>,
     provider: ProviderKind,
     label: String,
+    account_id: Option<String>,
 ) -> Result<AccountView, String> {
     state
-        .start_account_login(app.clone(), provider, label)
+        .start_account_login(app.clone(), provider, label, account_id)
         .map_err(|error| error.to_string())
 }
 

@@ -857,6 +857,7 @@ test("completing a sign-in closes the modal and force-refreshes", async () => {
   expect(api.startAccountLogin).toHaveBeenCalledWith(
     "claude-code",
     "Claude Code",
+    undefined,
   );
   expect(
     await screen.findByRole("dialog", { name: /Sign in to Claude Code/ }),
@@ -895,6 +896,27 @@ test("a failed sign-in shows the error and retries", async () => {
   expect(await screen.findByText("Sign-in timed out.")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Try again" }));
   expect(api.startAccountLogin).toHaveBeenCalledTimes(2);
+});
+
+test("sign in again re-authenticates the existing account in place", async () => {
+  const user = userEvent.setup();
+  api.guardedFetch.mockResolvedValue(
+    dashboardState({
+      accounts: [accountView({ id: "claude-local", label: "Default Claude" })],
+      snapshots: [],
+    }),
+  );
+
+  render(<App />);
+  await user.click(await screen.findByText("Default Claude"));
+  await user.click(screen.getByRole("button", { name: /Sign in again/ }));
+
+  // The existing account id is threaded through so the backend re-auths in place.
+  expect(api.startAccountLogin).toHaveBeenCalledWith(
+    "claude-code",
+    "Claude Code",
+    "claude-local",
+  );
 });
 
 test("signing out an account calls logoutAccount", async () => {

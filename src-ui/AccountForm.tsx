@@ -27,7 +27,7 @@ export function AccountForm({
   busy: boolean;
   onSubmit: (event: FormEvent) => void;
   onReset: () => void;
-  onStartLogin?: (provider: ProviderKind) => void;
+  onStartLogin?: (provider: ProviderKind, accountId?: string) => void;
   onLogout?: (id: string) => void;
 }) {
   const isCliProvider = CLI_PROVIDERS.includes(form.provider);
@@ -54,7 +54,7 @@ export function AccountForm({
           <button
             type="button"
             className="secondary"
-            onClick={() => onStartLogin?.(form.provider)}
+            onClick={() => onStartLogin?.(form.provider, activeId ?? undefined)}
           >
             <LogIn size={15} /> Sign in again
           </button>

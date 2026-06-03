@@ -370,10 +370,15 @@ export async function reorderAccounts(ids: string[]): Promise<AccountView[]> {
 export async function startAccountLogin(
   provider: ProviderKind,
   label: string,
+  accountId?: string | null,
 ): Promise<AccountView> {
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
-    return invoke<AccountView>("start_account_login", { provider, label });
+    return invoke<AccountView>("start_account_login", {
+      provider,
+      label,
+      accountId: accountId ?? null,
+    });
   }
   const now = new Date().toISOString();
   const id = `${provider}-${crypto.randomUUID()}`;

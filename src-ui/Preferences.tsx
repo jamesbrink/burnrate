@@ -100,7 +100,7 @@ export function Preferences({
   onRefresh: () => void;
   onEditAccount: (account: AccountView) => void;
   onRemoveAccount: (id: string) => void;
-  onStartLogin: (provider: ProviderKind) => void;
+  onStartLogin: (provider: ProviderKind, accountId?: string) => void;
   onManualAdd: (provider: ProviderKind) => void;
   onLogout: (id: string) => void;
   onReorderAccounts: (orderedIds: string[]) => void;

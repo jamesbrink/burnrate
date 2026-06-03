@@ -11,6 +11,7 @@ function session(overrides: Partial<LoginSession> = {}): LoginSession {
     id: "codex-1",
     provider: "codex",
     label: "Codex",
+    reauthId: null,
     status: "waiting",
     url: null,
     lines: [],

@@ -424,8 +424,8 @@ export function App() {
     );
   }
 
-  function startLogin(provider: ProviderKind) {
-    void login.start(provider, providerLabels[provider]);
+  function startLogin(provider: ProviderKind, accountId?: string) {
+    void login.start(provider, providerLabels[provider], accountId);
   }
 
   function manualAdd(provider: ProviderKind) {

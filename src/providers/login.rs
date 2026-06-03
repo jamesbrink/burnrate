@@ -60,6 +60,9 @@ pub(crate) struct LoginManager {
 
 struct ActiveLogin {
     account_id: String,
+    /// True when re-authenticating an existing account in place (vs. a brand-new
+    /// pending account). Cancellation must not delete a re-auth target.
+    is_reauth: bool,
     abort: Option<AbortHandle>,
 }
 
@@ -70,7 +73,7 @@ impl LoginManager {
 
     /// Reserve the single login slot for `account_id`. Fails if a sign-in is
     /// already running.
-    pub(crate) fn reserve(&self, account_id: &str) -> Result<()> {
+    pub(crate) fn reserve(&self, account_id: &str, is_reauth: bool) -> Result<()> {
         let mut guard = self.active.lock().expect("login manager lock");
         if let Some(active) = guard.as_ref() {
             return Err(anyhow!(
@@ -80,6 +83,7 @@ impl LoginManager {
         }
         *guard = Some(ActiveLogin {
             account_id: account_id.to_string(),
+            is_reauth,
             abort: None,
         });
         Ok(())
@@ -106,23 +110,22 @@ impl LoginManager {
         }
     }
 
-    /// Cancel an in-progress login. Returns true if `account_id` was the active
-    /// login (and was aborted).
-    pub(crate) fn cancel(&self, account_id: &str) -> bool {
+    /// Cancel an in-progress login. Returns `Some(is_reauth)` if `account_id` was
+    /// the active login (and was aborted), or `None` if it was not active (e.g. a
+    /// late cancel that races a completing login) — in which case the caller must
+    /// not tear down the account.
+    pub(crate) fn cancel(&self, account_id: &str) -> Option<bool> {
         let mut guard = self.active.lock().expect("login manager lock");
-        if guard
-            .as_ref()
-            .is_some_and(|active| active.account_id == account_id)
-        {
-            if let Some(active) = guard.as_ref()
-                && let Some(abort) = active.abort.as_ref()
-            {
-                abort.abort();
-            }
-            *guard = None;
-            return true;
+        let active = guard.as_ref()?;
+        if active.account_id != account_id {
+            return None;
         }
-        false
+        let is_reauth = active.is_reauth;
+        if let Some(abort) = active.abort.as_ref() {
+            abort.abort();
+        }
+        *guard = None;
+        Some(is_reauth)
     }
 }
 
@@ -132,7 +135,7 @@ pub(crate) async fn run_login(
     app: AppHandle,
     provider: ProviderKind,
     account_id: String,
-    config_dir: String,
+    config_dir: Option<String>,
     email_hint: Option<String>,
 ) -> Result<LoginOutcome> {
     let (binary, args, env_key) = login_command(provider, email_hint.as_deref())?;
@@ -147,9 +150,25 @@ pub(crate) async fn run_login(
             },
         );
     };
-    run_login_inner(&binary, &args, env_key, &config_dir, true, &mut on_progress).await?;
-    let email = verify(provider, &config_dir).await?;
+    run_login_inner(
+        &binary,
+        &args,
+        env_key,
+        config_dir.as_deref(),
+        true,
+        &mut on_progress,
+    )
+    .await?;
+    let email = verify(provider, config_dir.as_deref()).await?;
     Ok(LoginOutcome { email })
+}
+
+/// macOS fallback: drop the Claude Keychain credential for an account directly,
+/// in case `claude auth logout` failed and would otherwise orphan it. (The
+/// `claude` module is private to `providers`, so this wrapper exposes it.)
+#[cfg(target_os = "macos")]
+pub(crate) fn delete_claude_keychain(account: &crate::models::AccountConfig) {
+    claude::delete_keychain_credentials(account);
 }
 
 /// Sign the account out via the provider CLI (clears Keychain / `auth.json`).
@@ -184,7 +203,7 @@ async fn run_login_inner(
     binary: &str,
     args: &[String],
     env_key: &str,
-    config_dir: &str,
+    config_dir: Option<&str>,
     open_browser: bool,
     on_progress: &mut (dyn FnMut(&str, Option<&str>) + Send),
 ) -> Result<()> {
@@ -193,11 +212,15 @@ async fn run_login_inner(
     command
         .args(args)
         .env("PATH", super::augmented_path())
-        .env(env_key, config_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // `None` means the system-default location (e.g. re-authenticating the
+    // auto-detected account refreshes `~/.claude` / `~/.codex` directly).
+    if let Some(dir) = config_dir.filter(|dir| !dir.trim().is_empty()) {
+        command.env(env_key, dir);
+    }
     let mut child = command.spawn().map_err(|err| {
         anyhow!(
             "Failed to launch `{binary}`: {err}. Set BURNRATE_CLAUDE_BIN / BURNRATE_CODEX_BIN if the CLI lives elsewhere."
@@ -299,10 +322,10 @@ fn logout_command(provider: ProviderKind) -> Result<(String, Vec<String>, &'stat
     }
 }
 
-async fn verify(provider: ProviderKind, config_dir: &str) -> Result<Option<String>> {
+async fn verify(provider: ProviderKind, config_dir: Option<&str>) -> Result<Option<String>> {
     match provider {
-        ProviderKind::ClaudeCode => claude::login_verify(Some(config_dir)).await,
-        ProviderKind::Codex => codex::login_verify(Some(config_dir)),
+        ProviderKind::ClaudeCode => claude::login_verify(config_dir).await,
+        ProviderKind::Codex => codex::login_verify(config_dir),
         _ => Ok(None),
     }
 }
@@ -400,16 +423,18 @@ mod tests {
     #[test]
     fn login_manager_is_single_flight() {
         let manager = LoginManager::new();
-        manager.reserve("claude-code-a").unwrap();
+        manager.reserve("claude-code-a", false).unwrap();
         // A second concurrent login is rejected.
-        assert!(manager.reserve("codex-b").is_err());
+        assert!(manager.reserve("codex-b", false).is_err());
         // After finishing, the slot frees up.
         manager.finish("claude-code-a");
-        manager.reserve("codex-b").unwrap();
-        // Cancel clears the active login; a stale id is a no-op.
-        assert!(!manager.cancel("claude-code-a"));
-        assert!(manager.cancel("codex-b"));
-        manager.reserve("claude-code-c").unwrap();
+        manager.reserve("codex-b", true).unwrap();
+        // Cancel of a stale id is a no-op (returns None).
+        assert_eq!(manager.cancel("claude-code-a"), None);
+        // Cancelling the active reauth login reports is_reauth = true.
+        assert_eq!(manager.cancel("codex-b"), Some(true));
+        manager.reserve("claude-code-c", false).unwrap();
+        assert_eq!(manager.cancel("claude-code-c"), Some(false));
     }
 
     #[test]
@@ -459,7 +484,7 @@ exit 0
             &binary.to_string_lossy(),
             &["login".to_string()],
             "CODEX_HOME",
-            home.to_str().unwrap(),
+            Some(home.to_str().unwrap()),
             false,
             &mut on_progress,
         )
@@ -500,7 +525,7 @@ exit 0
             &binary.to_string_lossy(),
             &["login".to_string()],
             "CODEX_HOME",
-            dir.path().to_str().unwrap(),
+            Some(dir.path().to_str().unwrap()),
             false,
             &mut on_progress,
         )

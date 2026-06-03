@@ -86,15 +86,6 @@ impl AppState {
         Ok(config.views())
     }
 
-    pub(crate) fn remove_account(&self, id: &str) -> Result<Vec<AccountView>> {
-        let mut config = self.config.lock().expect("config lock");
-        if let Some(account) = config.remove(id) {
-            key_store::remove_secret(&account)?;
-        }
-        config::save_to_path(&self.config_path, &config)?;
-        Ok(config.views())
-    }
-
     pub(crate) fn detect_accounts(&self) -> Result<Vec<AccountView>> {
         let mut config = self.config.lock().expect("config lock");
         if config.merge_detected(providers::detect_accounts()) {
@@ -187,8 +178,11 @@ impl AppState {
         Ok(config.views())
     }
 
-    /// Begin an interactive sign-in. Creates a disabled placeholder account in an
-    /// isolated CLI config dir, then spawns the CLI login in the background.
+    /// Begin an interactive sign-in. When `reauth_id` is `Some`, re-authenticate
+    /// that existing account *in place* — refreshing its real credential location
+    /// (the system default for an auto-detected account, or its managed dir) —
+    /// rather than minting a throwaway one. Otherwise create a disabled
+    /// placeholder account in an isolated CLI config dir for a brand-new account.
     /// Progress streams via `burnrate-login-progress`; completion/failure arrive
     /// via `burnrate-login-complete` / `burnrate-login-failed`.
     pub(crate) fn start_account_login(
@@ -196,27 +190,50 @@ impl AppState {
         app: AppHandle,
         provider: ProviderKind,
         label: String,
+        reauth_id: Option<String>,
     ) -> Result<AccountView> {
-        if !matches!(provider, ProviderKind::ClaudeCode | ProviderKind::Codex) {
+        if !provider_supports_login(provider) {
             return Err(anyhow!(
                 "Interactive sign-in is only available for Claude Code and Codex."
             ));
         }
 
-        let id = format!("{}-{}", provider.as_str(), uuid::Uuid::new_v4().simple());
-        self.login_manager.reserve(&id)?;
-
-        let view = match self.create_pending_login(provider, &id, label) {
-            Ok(view) => view,
-            Err(error) => {
-                self.login_manager.finish(&id);
-                return Err(error);
+        let is_reauth = reauth_id.is_some();
+        let (id, config_dir, email_hint, view) = match reauth_id {
+            Some(reauth_id) => {
+                let account = {
+                    let config = self.config.lock().expect("config lock");
+                    config
+                        .accounts
+                        .iter()
+                        .find(|account| account.id == reauth_id)
+                        .cloned()
+                        .ok_or_else(|| anyhow!("account no longer exists"))?
+                };
+                self.login_manager.reserve(&account.id, true)?;
+                let view = match self.account_view(&account.id) {
+                    Some(view) => view,
+                    None => {
+                        self.login_manager.finish(&account.id);
+                        return Err(anyhow!("account no longer exists"));
+                    }
+                };
+                (account.id, account.config_dir, account.email, view)
+            }
+            None => {
+                let id = format!("{}-{}", provider.as_str(), uuid::Uuid::new_v4().simple());
+                self.login_manager.reserve(&id, false)?;
+                let view = match self.create_pending_login(provider, &id, label) {
+                    Ok(view) => view,
+                    Err(error) => {
+                        self.login_manager.finish(&id);
+                        return Err(error);
+                    }
+                };
+                let config_dir = view.config_dir.clone();
+                (id, config_dir, None, view)
             }
         };
-        let config_dir = view
-            .config_dir
-            .clone()
-            .expect("pending login account has a config dir");
 
         let app_task = app.clone();
         let id_task = id.clone();
@@ -226,17 +243,26 @@ impl AppState {
                 provider,
                 id_task.clone(),
                 config_dir,
-                None,
+                email_hint,
             )
             .await;
             let state = app_task.state::<AppState>();
             state
-                .finalize_login(&app_task, provider, &id_task, result)
+                .finalize_login(&app_task, provider, &id_task, is_reauth, result)
                 .await;
         });
         self.login_manager.attach(&id, handle.abort_handle());
 
         Ok(view)
+    }
+
+    fn account_view(&self, id: &str) -> Option<AccountView> {
+        self.config
+            .lock()
+            .expect("config lock")
+            .views()
+            .into_iter()
+            .find(|view| view.id == id)
     }
 
     fn create_pending_login(
@@ -281,10 +307,18 @@ impl AppState {
         app: &AppHandle,
         provider: ProviderKind,
         id: &str,
+        is_reauth: bool,
         result: Result<LoginOutcome>,
     ) {
         self.login_manager.finish(id);
-        match result.and_then(|outcome| self.finalize_pending_account(provider, id, outcome)) {
+        let promoted = result.and_then(|outcome| {
+            if is_reauth {
+                self.refresh_signed_in_account(id, outcome)
+            } else {
+                self.finalize_pending_account(provider, id, outcome)
+            }
+        });
+        match promoted {
             Ok(view) => {
                 // Emit the originating (pending) id so the UI matches even when
                 // the reuse policy resolved to a different existing account.
@@ -301,7 +335,11 @@ impl AppState {
                 }
             }
             Err(error) => {
-                self.discard_pending_login(id);
+                // A failed re-auth keeps the existing account untouched; only a
+                // failed brand-new sign-in discards its throwaway placeholder.
+                if !is_reauth {
+                    self.discard_pending_login(id);
+                }
                 let _ = app.emit(
                     "burnrate-login-failed",
                     LoginFailed {
@@ -311,6 +349,28 @@ impl AppState {
                 );
             }
         }
+    }
+
+    /// Refresh an existing account after a successful in-place re-auth: its
+    /// credentials were rewritten at its own location, so only metadata changes.
+    fn refresh_signed_in_account(&self, id: &str, outcome: LoginOutcome) -> Result<AccountView> {
+        let mut config = self.config.lock().expect("config lock");
+        let account = config
+            .accounts
+            .iter_mut()
+            .find(|account| account.id == id)
+            .ok_or_else(|| anyhow!("account no longer exists"))?;
+        if let Some(email) = outcome.email {
+            account.email = Some(email);
+        }
+        account.enabled = true;
+        account.updated_at = Utc::now();
+        config::save_to_path(&self.config_path, &config)?;
+        config
+            .views()
+            .into_iter()
+            .find(|view| view.id == id)
+            .ok_or_else(|| anyhow!("account no longer exists"))
     }
 
     /// Promote a completed login to an enabled account, or — when the email
@@ -393,12 +453,28 @@ impl AppState {
     }
 
     pub(crate) fn cancel_account_login(&self, id: &str) -> Result<Vec<AccountView>> {
-        self.login_manager.cancel(id);
-        self.discard_pending_login(id);
+        // Only tear down the placeholder when we actually canceled an *active*
+        // brand-new sign-in. A late cancel that races a completing login (`None`)
+        // or a re-auth (`Some(true)`) must leave the account in place.
+        if self.login_manager.cancel(id) == Some(false) {
+            self.discard_pending_login(id);
+        }
         Ok(self.config.lock().expect("config lock").views())
     }
 
+    /// Sign out and remove an account. Browser-login (managed) Claude/Codex
+    /// accounts also have their CLI credential store cleared; OpenRouter/Runpod
+    /// and the auto-detected system-default account only drop their Burnrate
+    /// record (never the user's `~/.claude` / `~/.codex` session).
     pub(crate) async fn logout_account(&self, id: &str) -> Result<Vec<AccountView>> {
+        self.teardown_and_remove(id).await
+    }
+
+    pub(crate) async fn remove_account(&self, id: &str) -> Result<Vec<AccountView>> {
+        self.teardown_and_remove(id).await
+    }
+
+    async fn teardown_and_remove(&self, id: &str) -> Result<Vec<AccountView>> {
         let account = self
             .config
             .lock()
@@ -409,26 +485,40 @@ impl AppState {
             .cloned();
 
         if let Some(account) = account {
-            // Only run the CLI sign-out for dirs we manage; never touch the user's
-            // system-default session (`~/.claude` / `~/.codex`).
-            let managed_dir = account
-                .config_dir
-                .as_deref()
-                .filter(|dir| config::is_managed_cli_dir(Path::new(dir)));
-            if let Some(dir) = managed_dir
-                && provider_supports_login(account.provider)
-            {
-                let _ = login::run_logout(account.provider, Some(dir)).await;
-            }
-            let _ = key_store::remove_secret(&account);
+            self.teardown_managed_credentials(&account).await;
         }
 
         let mut config = self.config.lock().expect("config lock");
-        if let Some(removed) = config.remove(id) {
-            cleanup_managed_dir(removed.config_dir.as_deref());
-        }
+        config.remove(id);
         config::save_to_path(&self.config_path, &config)?;
         Ok(config.views())
+    }
+
+    /// Clear an account's credentials. For a managed Claude/Codex dir this runs
+    /// the CLI sign-out, deletes the orphan-prone macOS Keychain entry as a
+    /// fallback, and removes the dir; for every account it drops any Burnrate
+    /// keyring secret. The user's system-default session is never touched.
+    async fn teardown_managed_credentials(&self, account: &AccountConfig) {
+        let managed_dir = account
+            .config_dir
+            .as_deref()
+            .filter(|dir| config::is_managed_cli_dir(Path::new(dir)));
+        if let Some(dir) = managed_dir
+            && provider_supports_login(account.provider)
+        {
+            if let Err(error) = login::run_logout(account.provider, Some(dir)).await {
+                eprintln!(
+                    "Burnrate: CLI sign-out for account {} did not complete: {error}",
+                    account.id
+                );
+            }
+            #[cfg(target_os = "macos")]
+            if account.provider == ProviderKind::ClaudeCode {
+                login::delete_claude_keychain(account);
+            }
+            cleanup_managed_dir(Some(dir));
+        }
+        let _ = key_store::remove_secret(account);
     }
 }
 
