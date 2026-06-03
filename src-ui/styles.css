@@ -1290,6 +1290,7 @@ html[data-view="tray"] .tray-empty {
 
 .login-modal {
   width: min(420px, 100%);
+  max-width: calc(100vw - 48px);
   border: 1px solid var(--hairline);
   border-radius: 12px;
   background: var(--surface);
@@ -1312,9 +1313,22 @@ html[data-view="tray"] .tray-empty {
 
 .login-status {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
   color: var(--fg-soft);
+}
+
+.login-status svg,
+.login-error svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.login-status span,
+.login-error span,
+.login-url {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .login-url a {
@@ -1323,7 +1337,7 @@ html[data-view="tray"] .tray-empty {
 
 .login-error {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   color: var(--crit);
 }
@@ -1331,6 +1345,7 @@ html[data-view="tray"] .tray-empty {
 .login-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }

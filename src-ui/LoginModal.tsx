@@ -52,7 +52,7 @@ export function LoginModal({
               </button>
               <button
                 type="button"
-                className="icon-button subtle"
+                className="secondary"
                 onClick={onCancel}
               >
                 Close
@@ -81,7 +81,7 @@ export function LoginModal({
             <div className="login-actions">
               <button
                 type="button"
-                className="icon-button subtle"
+                className="secondary"
                 onClick={onCancel}
               >
                 Cancel
