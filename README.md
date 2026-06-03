@@ -1,7 +1,12 @@
 # Burnrate
 
 [![CI](https://github.com/jamesbrink/burnrate/actions/workflows/ci.yml/badge.svg)](https://github.com/jamesbrink/burnrate/actions/workflows/ci.yml)
+[![Release](https://github.com/jamesbrink/burnrate/actions/workflows/release.yml/badge.svg)](https://github.com/jamesbrink/burnrate/actions/workflows/release.yml)
+[![crates.io](https://img.shields.io/crates/v/burnrate.svg)](https://crates.io/crates/burnrate)
+[![downloads](https://img.shields.io/crates/d/burnrate.svg)](https://crates.io/crates/burnrate)
+[![latest release](https://img.shields.io/github/v/release/jamesbrink/burnrate?sort=semver)](https://github.com/jamesbrink/burnrate/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](https://github.com/jamesbrink/burnrate/releases/latest)
 
 Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, credits, spend, and subscription limits. Built with Tauri 2 (Rust + React/TypeScript) and lives in the system tray (the menu bar on macOS).
 
