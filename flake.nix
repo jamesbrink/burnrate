@@ -1,5 +1,5 @@
 {
-  description = "Desktop usage monitor for Claude Code, Codex, and OpenRouter quotas, credits, and subscription limits.";
+  description = "Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, credits, spend, and subscription limits.";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -223,6 +223,24 @@
               {
                 name = "RUST_BACKTRACE";
                 value = "1";
+              }
+            ]
+            ++ lib.optionals pkgs.stdenv.isDarwin [
+              {
+                name = "CC";
+                value = "/usr/bin/cc";
+              }
+              {
+                name = "CXX";
+                value = "/usr/bin/c++";
+              }
+              {
+                name = "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER";
+                value = "/usr/bin/cc";
+              }
+              {
+                name = "CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER";
+                value = "/usr/bin/cc";
               }
             ]
             ++ lib.optionals pkgs.stdenv.isLinux [

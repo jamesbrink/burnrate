@@ -304,6 +304,9 @@ fn push_spend_bucket(
     let Some(amount) = amount else {
         return;
     };
+    if amount <= 0.0 {
+        return;
+    }
     buckets.push(UsageBucketSnapshot {
         id: id.to_string(),
         label: label.to_string(),

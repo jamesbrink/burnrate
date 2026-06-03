@@ -11,9 +11,9 @@ import {
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import {
   bucketPercent,
+  displayBuckets,
   formatLimit,
   formatReset,
-  primaryBucket,
 } from "./format";
 import { ProviderLogo } from "./ProviderLogo";
 import type {
@@ -352,9 +352,8 @@ function AccountButton({
 }
 
 function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
-  const buckets = snapshot.usageBuckets.length > 0 ? snapshot.usageBuckets : [];
-  const primary = primaryBucket(snapshot);
-  const plan = snapshot.subscription?.planLabel ?? "Unknown plan";
+  const buckets = displayBuckets(snapshot);
+  const plan = snapshot.subscription?.planLabel;
 
   return (
     <article className={`usage-row ${snapshot.status}`}>
@@ -364,7 +363,8 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
           <span>
             <strong>{snapshot.label}</strong>
             <small>
-              {providerLabels[snapshot.provider]} · {plan}
+              {providerLabels[snapshot.provider]}
+              {plan ? ` · ${plan}` : ""}
             </small>
           </span>
         </div>
@@ -375,10 +375,6 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
           {buckets.map((bucket) => (
             <BucketLine key={bucket.id} bucket={bucket} />
           ))}
-        </div>
-      ) : primary ? (
-        <div className="usage-buckets">
-          <BucketLine bucket={primary} />
         </div>
       ) : (
         <p className="snapshot-message">

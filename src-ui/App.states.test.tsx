@@ -10,6 +10,7 @@ import { App } from "./App";
 import {
   bucketFromQuota,
   bucketPercent,
+  displayBuckets,
   formatLimit,
   formatNumber,
   formatReset,
@@ -594,6 +595,36 @@ test("formats quota fallback and reset edge cases", () => {
       status: "healthy",
     }),
   ).toBe("Unknown");
+  expect(
+    displayBuckets(
+      snapshot("healthy", {
+        usageBuckets: [
+          {
+            id: "unknown",
+            label: "Unknown",
+            window: null,
+            used: 0,
+            limit: null,
+            remaining: null,
+            unit: "USD",
+            resetAt: null,
+            status: "healthy",
+          },
+          {
+            id: "current-burn",
+            label: "Current burn",
+            window: null,
+            used: 0,
+            limit: 80,
+            remaining: null,
+            unit: "USD/hr",
+            resetAt: null,
+            status: "healthy",
+          },
+        ],
+      }),
+    ).map((bucket) => bucket.id),
+  ).toEqual(["current-burn"]);
   expect(
     formatLimit({
       id: "credits",

@@ -16,6 +16,7 @@ test("renders provider rows and snapshot states", async () => {
   expect(screen.getAllByText("OpenRouter").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Runpod").length).toBeGreaterThan(0);
   expect(screen.getByText("Current burn")).toBeInTheDocument();
+  expect(screen.queryByText("Unknown plan")).not.toBeInTheDocument();
 });
 
 test("adds a manual account in browser fallback mode", async () => {

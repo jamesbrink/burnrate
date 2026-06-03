@@ -6,6 +6,17 @@ export function primaryBucket(
   return snapshot.usageBuckets[0] ?? bucketFromQuota(snapshot);
 }
 
+export function displayBuckets(snapshot: UsageSnapshot): UsageBucketSnapshot[] {
+  const buckets = snapshot.usageBuckets.filter(hasBucketValue);
+  if (buckets.length > 0) return buckets;
+  const fallback = bucketFromQuota(snapshot);
+  return fallback && hasBucketValue(fallback) ? [fallback] : [];
+}
+
+export function hasBucketValue(bucket: UsageBucketSnapshot): boolean {
+  return bucket.limit !== null || bucket.remaining !== null || bucket.used !== 0;
+}
+
 export function bucketFromQuota(
   snapshot: UsageSnapshot,
 ): UsageBucketSnapshot | null {
