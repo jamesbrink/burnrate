@@ -60,21 +60,29 @@ pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<Usag
     // is the source of truth for health. Keep a balance snapshot available even
     // if one of the REST attribution endpoints is temporarily unavailable or
     // changes shape.
-    let pods_24h = fetch_billing_sum(http, &token, &rest_base, "billing/pods")
-        .await
-        .ok();
-    let serverless_24h = fetch_billing_sum(http, &token, &rest_base, "billing/endpoints")
-        .await
-        .ok();
-    let storage_24h = fetch_billing_sum(http, &token, &rest_base, "billing/networkvolumes")
-        .await
-        .ok();
-    let pods = fetch_json(http, &token, rest_url(&rest_base, "pods")?)
-        .await
-        .ok();
-    let endpoints = fetch_json(http, &token, rest_url(&rest_base, "endpoints")?)
-        .await
-        .ok();
+    let pods_url = rest_url(&rest_base, "pods")?;
+    let endpoints_url = rest_url(&rest_base, "endpoints")?;
+    let token_ref = token.as_str();
+    let rest_base_ref = rest_base.as_str();
+    let (pods_24h, serverless_24h, storage_24h, pods, endpoints) = tokio::join!(
+        async {
+            fetch_billing_sum(http, token_ref, rest_base_ref, "billing/pods")
+                .await
+                .ok()
+        },
+        async {
+            fetch_billing_sum(http, token_ref, rest_base_ref, "billing/endpoints")
+                .await
+                .ok()
+        },
+        async {
+            fetch_billing_sum(http, token_ref, rest_base_ref, "billing/networkvolumes")
+                .await
+                .ok()
+        },
+        async move { fetch_json(http, token_ref, pods_url).await.ok() },
+        async move { fetch_json(http, token_ref, endpoints_url).await.ok() },
+    );
 
     Ok(build_snapshot(
         account,
@@ -327,6 +335,9 @@ fn runpod_status(account: RunpodAccountState) -> SnapshotStatus {
 
     if account.under_balance.unwrap_or(false)
         || balance <= min_balance
+        || account
+            .spend_limit
+            .is_some_and(|limit| limit > 0.0 && current_spend >= limit)
         || runway_seconds(account).is_some_and(|seconds| seconds <= RUNPOD_STOP_PROTECTION_SECONDS)
     {
         return SnapshotStatus::Exhausted;
@@ -582,6 +593,14 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(runpod_status(under_balance), SnapshotStatus::Exhausted);
+
+        let over_spend_limit = RunpodAccountState {
+            balance: Some(100.0),
+            current_spend_per_hr: Some(80.0),
+            spend_limit: Some(80.0),
+            ..Default::default()
+        };
+        assert_eq!(runpod_status(over_spend_limit), SnapshotStatus::Exhausted);
     }
 
     #[test]
