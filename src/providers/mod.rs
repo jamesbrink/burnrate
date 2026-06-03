@@ -1,5 +1,6 @@
 mod claude;
 mod codex;
+pub(crate) mod login;
 mod openrouter;
 mod runpod;
 
