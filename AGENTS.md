@@ -202,7 +202,7 @@ npx vitest run src-ui/api.test.ts        # single UI test file
 npx vitest run -t "summary promotes"     # single UI test by name
 
 npm run coverage       # UI + Rust coverage; both gated at 80%
-                       # (Rust gate ignores main.rs/app_state.rs/tray.rs — Tauri glue)
+                       # (Rust gate ignores main.rs/app_state.rs/tray.rs/updater.rs — Tauri glue)
 
 ./scripts/build-app    # npm run build + cargo build --release (embeds dist/ via default custom-protocol)
 ./scripts/package-dmg  # macOS .dmg + .app bundle via `tauri build` (real Dock icon; macOS only)

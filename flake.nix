@@ -132,6 +132,17 @@
 
               cargoLock.lockFile = ./Cargo.lock;
 
+              # The reproducible Nix build has no Tauri signing key, but
+              # `createUpdaterArtifacts: true` makes `tauri build` try to sign
+              # the updater bundle and fail ("public key found, but no private
+              # key"). Updater artifacts are a release-only concern (produced by
+              # the signed GitHub release/nightly workflows), so disable them
+              # here.
+              postPatch = ''
+                substituteInPlace tauri.conf.json \
+                  --replace-fail '"createUpdaterArtifacts": true' '"createUpdaterArtifacts": false'
+              '';
+
               npmRoot = ".";
               npmDeps = pkgs.fetchNpmDeps {
                 name = "${finalAttrs.pname}-${finalAttrs.version}-npm-deps";
