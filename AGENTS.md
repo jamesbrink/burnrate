@@ -6,7 +6,8 @@
 ## Overview
 
 Burnrate is a macOS-first menu-bar app that monitors remaining quota/credits
-across Claude Code, Codex, and OpenRouter. It is a **Tauri 2** app: a Rust
+across Claude Code, Codex, OpenRouter, and Runpod (with multiple accounts per
+provider for Claude Code and Codex). It is a **Tauri 2** app: a Rust
 backend (`src/`) plus a React + TypeScript frontend (`src-ui/`), shipped both as
 native bundles (GitHub Releases) and as a binary crate (`cargo install
 burnrate`).
@@ -28,12 +29,18 @@ burnrate`).
   the `ProviderClient`, and a `LoginManager`. `dashboard()` fans out one snapshot
   fetch per enabled account concurrently (`tokio::spawn`) in display order, rolls
   the results into a `TraySummary`, and persists any newly discovered account
-  emails. Hosts the login orchestration: `start_account_login` creates an
-  isolated, disabled placeholder account + per-account CLI dir and spawns the
-  sign-in; on completion it reuses/refreshes an existing account when the email
-  already matches, else enables the new one, emitting `burnrate-login-complete` /
-  `-failed`. `logout_account` runs the CLI sign-out for managed dirs only (never
-  the system default). All persistence flows through here.
+  emails. Hosts the login orchestration: `start_account_login` either
+  re-authenticates an existing account **in place** (`reauth_id` — refreshing its
+  real credential location, e.g. the system-default `~/.claude`) or creates an
+  isolated, disabled placeholder account + per-account CLI dir for a brand-new
+  account, then spawns the sign-in; on completion it reuses/refreshes an existing
+  account when the email already matches, else enables the new one, emitting
+  `burnrate-login-complete` / `-failed`. `cancel_account_login` only tears down a
+  placeholder when it actually canceled an active brand-new sign-in (the
+  `LoginManager` is reauth-aware and single-flight). `logout_account` and
+  `remove_account` share one teardown that, for managed dirs only (never the
+  system default), runs the CLI sign-out, deletes the orphan-prone macOS Keychain
+  entry as a fallback, and removes the dir. All persistence flows through here.
 - `config.rs` — `AppConfig` (settings + accounts) persisted to `accounts.json`.
   Writes are atomic (temp file + rename) with `0600` file / `0700` dir perms on
   unix; a malformed file is moved aside (`.json.invalid-<nonce>`) and replaced
