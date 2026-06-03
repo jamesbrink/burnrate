@@ -9,6 +9,7 @@ pub(crate) enum ProviderKind {
     #[serde(rename = "openrouter", alias = "open-router")]
     OpenRouter,
     Runpod,
+    Aws,
 }
 
 impl ProviderKind {
@@ -18,6 +19,7 @@ impl ProviderKind {
             ProviderKind::Codex => "codex",
             ProviderKind::OpenRouter => "openrouter",
             ProviderKind::Runpod => "runpod",
+            ProviderKind::Aws => "aws",
         }
     }
 }
@@ -78,6 +80,20 @@ pub(crate) struct AccountConfig {
     /// system default location (`~/.claude` / `~/.codex`).
     #[serde(default)]
     pub config_dir: Option<String>,
+    /// AWS profile name. `None` uses the SDK default credential chain and
+    /// current `AWS_PROFILE` environment, without storing static keys.
+    #[serde(default)]
+    pub aws_profile: Option<String>,
+    /// AWS region for SDK configuration. Cost Explorer itself is global; when
+    /// unset Burnrate defaults to `us-east-1` so the SDK has a region.
+    #[serde(default)]
+    pub aws_region: Option<String>,
+    /// Optional monthly budget in USD used to calculate remaining/warning state.
+    #[serde(default)]
+    pub aws_monthly_budget_usd: Option<f64>,
+    /// User-configurable Cost Explorer categories shown as sub-buckets.
+    #[serde(default)]
+    pub aws_categories: Vec<AwsCategoryConfig>,
     /// Global display order; lower sorts first. `None` is legacy/unset and sorts
     /// after explicitly ordered accounts.
     #[serde(default)]
@@ -103,6 +119,14 @@ pub(crate) struct AccountInput {
     pub endpoint_override: Option<String>,
     pub secret_storage: SecretStorageMode,
     pub secret: Option<String>,
+    #[serde(default)]
+    pub aws_profile: Option<String>,
+    #[serde(default)]
+    pub aws_region: Option<String>,
+    #[serde(default)]
+    pub aws_monthly_budget_usd: Option<f64>,
+    #[serde(default)]
+    pub aws_categories: Vec<AwsCategoryConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,8 +145,55 @@ pub(crate) struct AccountView {
     pub email: Option<String>,
     #[serde(default)]
     pub config_dir: Option<String>,
+    #[serde(default)]
+    pub aws_profile: Option<String>,
+    #[serde(default)]
+    pub aws_region: Option<String>,
+    #[serde(default)]
+    pub aws_monthly_budget_usd: Option<f64>,
+    #[serde(default)]
+    pub aws_categories: Vec<AwsCategoryConfig>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AwsCategoryConfig {
+    pub id: String,
+    pub label: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub filter: AwsCostFilter,
+    #[serde(default)]
+    pub group_by: Option<AwsGroupBy>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum AwsCostFilter {
+    Dimension { key: String, values: Vec<String> },
+    Tag { key: String, values: Vec<String> },
+    CostCategory { key: String, values: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AwsGroupBy {
+    pub kind: AwsGroupByKind,
+    pub key: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum AwsGroupByKind {
+    Dimension,
+    Tag,
+    CostCategory,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -244,6 +315,7 @@ mod tests {
         assert_eq!(ProviderKind::Codex.as_str(), "codex");
         assert_eq!(ProviderKind::OpenRouter.as_str(), "openrouter");
         assert_eq!(ProviderKind::Runpod.as_str(), "runpod");
+        assert_eq!(ProviderKind::Aws.as_str(), "aws");
         assert_eq!(
             serde_json::to_string(&ProviderKind::OpenRouter).unwrap(),
             "\"openrouter\""

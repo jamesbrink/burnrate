@@ -31,6 +31,7 @@ import { LoginModal } from "./LoginModal";
 import {
   OPENROUTER_DEFAULT_ENDPOINT,
   RUNPOD_DEFAULT_ENDPOINT,
+  cloneDefaultAwsCategories,
   emptyForm,
   Preferences,
   providerLabels,
@@ -65,7 +66,8 @@ export function App() {
   const lastPreferenceSize = useRef({ width: 0, height: 0 });
   const lastTrayHeight = useRef(0);
 
-  const updateChannel: UpdateChannel = state?.settings?.updateChannel ?? "stable";
+  const updateChannel: UpdateChannel =
+    state?.settings?.updateChannel ?? "stable";
   const updater = useUpdater(updateChannel);
 
   useEffect(() => {
@@ -382,7 +384,10 @@ export function App() {
       const accounts = await saveAccount({
         ...form,
         endpointOverride,
-        secret: form.secret?.trim() || null,
+        secret: form.provider === "aws" ? null : form.secret?.trim() || null,
+        awsProfile: form.awsProfile?.trim() || null,
+        awsRegion: form.awsRegion?.trim() || null,
+        awsCategories: form.awsCategories ?? [],
       });
       updateAccounts(accounts, settings, summary);
       setForm(emptyForm);
@@ -413,6 +418,15 @@ export function App() {
             : ""),
       secretStorage: account.secretStorage,
       secret: "",
+      awsProfile: account.awsProfile ?? null,
+      awsRegion: account.awsRegion ?? "us-east-1",
+      awsMonthlyBudgetUsd: account.awsMonthlyBudgetUsd ?? null,
+      awsCategories:
+        account.provider === "aws"
+          ? account.awsCategories?.length
+            ? account.awsCategories
+            : cloneDefaultAwsCategories()
+          : [],
     });
   }
 
@@ -480,6 +494,10 @@ export function App() {
             : "",
       secretStorage: "keyring",
       secret: "",
+      awsProfile: null,
+      awsRegion: provider === "aws" ? "us-east-1" : null,
+      awsMonthlyBudgetUsd: null,
+      awsCategories: provider === "aws" ? cloneDefaultAwsCategories() : [],
     });
   }
 

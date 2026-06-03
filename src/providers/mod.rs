@@ -1,3 +1,4 @@
+mod aws;
 mod claude;
 mod codex;
 pub(crate) mod login;
@@ -75,6 +76,7 @@ impl ProviderClient {
             ProviderKind::Codex => codex::fetch(&self.http, account).await,
             ProviderKind::OpenRouter => openrouter::fetch(&self.http, account).await,
             ProviderKind::Runpod => runpod::fetch(&self.http, account).await,
+            ProviderKind::Aws => aws::fetch(account).await,
         };
 
         match result {
@@ -635,6 +637,7 @@ fn token_pointers(provider: ProviderKind) -> &'static [&'static str] {
             "/apiKey",
         ],
         ProviderKind::OpenRouter | ProviderKind::Runpod => &["/api_key", "/apiKey", "/key"],
+        ProviderKind::Aws => &[],
     }
 }
 
@@ -844,6 +847,10 @@ mod tests {
             plaintext_secret: None,
             email: None,
             config_dir: None,
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
             order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

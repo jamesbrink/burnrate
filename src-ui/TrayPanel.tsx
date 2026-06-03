@@ -26,6 +26,7 @@ import type {
 const providerLabels = {
   "claude-code": "Claude",
   codex: "Codex",
+  aws: "AWS",
   openrouter: "OpenRouter",
   runpod: "Runpod",
 } as const;

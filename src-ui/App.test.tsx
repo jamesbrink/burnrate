@@ -15,6 +15,9 @@ test("renders provider rows and snapshot states", async () => {
   expect(screen.getAllByText("Weekly").length).toBeGreaterThan(0);
   expect(screen.getAllByText("OpenRouter").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Runpod").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("AWS").length).toBeGreaterThan(0);
+  expect(screen.getByText("Bedrock")).toBeInTheDocument();
+  expect(screen.getByText("EC2 compute")).toBeInTheDocument();
   expect(screen.getByText("Current burn")).toBeInTheDocument();
   expect(screen.queryByText("Unknown plan")).not.toBeInTheDocument();
 });
@@ -33,6 +36,28 @@ test("adds a manual account in browser fallback mode", async () => {
   await user.click(screen.getByRole("button", { name: "Add" }));
 
   expect(await screen.findByText("OpenRouter Team")).toBeInTheDocument();
+});
+
+test("adds an AWS account with profile and category presets", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "Accounts" });
+  await user.selectOptions(screen.getByLabelText("Provider"), "aws");
+  expect(screen.getAllByLabelText("Label")[0]).toHaveValue("AWS");
+  expect(screen.getByLabelText("AWS profile")).toHaveValue("");
+  expect(screen.getByLabelText("Region")).toHaveValue("us-east-1");
+  expect(screen.getByDisplayValue("Amazon Bedrock")).toBeInTheDocument();
+  expect(
+    screen.getByDisplayValue("Amazon Elastic Compute Cloud - Compute"),
+  ).toBeInTheDocument();
+
+  await user.clear(screen.getAllByLabelText("Label")[0]);
+  await user.type(screen.getAllByLabelText("Label")[0], "AWS Team");
+  await user.type(screen.getByLabelText("AWS profile"), "work");
+  await user.click(screen.getByRole("button", { name: "Add" }));
+
+  expect(await screen.findByText("AWS Team")).toBeInTheDocument();
 });
 
 test("adds a Runpod account with the default REST endpoint", async () => {
@@ -106,5 +131,5 @@ test("runs detect and refresh actions", async () => {
   await user.click(screen.getByTitle("Detect accounts"));
   await user.click(screen.getByTitle("Refresh"));
 
-  expect(await screen.findByText("Burnrate: 1 warning")).toBeInTheDocument();
+  expect(await screen.findByText("Burnrate: 2 warning")).toBeInTheDocument();
 });

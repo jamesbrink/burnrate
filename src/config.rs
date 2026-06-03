@@ -44,6 +44,10 @@ impl AppConfig {
                 },
                 email: account.email.clone(),
                 config_dir: account.config_dir.clone(),
+                aws_profile: account.aws_profile.clone(),
+                aws_region: account.aws_region.clone(),
+                aws_monthly_budget_usd: account.aws_monthly_budget_usd,
+                aws_categories: account.aws_categories.clone(),
                 created_at: account.created_at,
                 updated_at: account.updated_at,
             })
@@ -111,6 +115,10 @@ impl AppConfig {
             account.enabled = input.enabled;
             account.endpoint_override = input.endpoint_override;
             account.secret_storage = input.secret_storage;
+            account.aws_profile = input.aws_profile;
+            account.aws_region = input.aws_region;
+            account.aws_monthly_budget_usd = input.aws_monthly_budget_usd;
+            account.aws_categories = input.aws_categories;
             account.auto_detected = false;
             account.updated_at = now;
             return account.clone();
@@ -129,6 +137,10 @@ impl AppConfig {
             plaintext_secret: None,
             email: None,
             config_dir: None,
+            aws_profile: input.aws_profile,
+            aws_region: input.aws_region,
+            aws_monthly_budget_usd: input.aws_monthly_budget_usd,
+            aws_categories: input.aws_categories,
             order_index: None,
             created_at: now,
             updated_at: now,
@@ -339,6 +351,10 @@ pub(crate) fn default_auto_account(
         plaintext_secret: None,
         email: None,
         config_dir: None,
+        aws_profile: None,
+        aws_region: None,
+        aws_monthly_budget_usd: None,
+        aws_categories: Vec::new(),
         order_index: None,
         created_at: now,
         updated_at: now,
@@ -386,6 +402,10 @@ mod tests {
             endpoint_override: None,
             secret_storage: SecretStorageMode::Plaintext,
             secret: Some("secret".to_string()),
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
         });
 
         save_to_path(&path, &config).unwrap();
@@ -439,6 +459,10 @@ mod tests {
             endpoint_override: Some("https://example.test".to_string()),
             secret_storage: SecretStorageMode::Plaintext,
             secret: None,
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
         });
         config.accounts[0].plaintext_secret = Some("sk-test".to_string());
 
@@ -463,6 +487,10 @@ mod tests {
             endpoint_override: None,
             secret_storage: SecretStorageMode::Plaintext,
             secret: None,
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
         });
         config.accounts[0].keyring_account = Some("stale-keyring-entry".to_string());
 
@@ -496,6 +524,10 @@ mod tests {
             endpoint_override: None,
             secret_storage: SecretStorageMode::Keyring,
             secret: None,
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
         });
 
         config.upsert_manual(AccountInput {
@@ -506,6 +538,10 @@ mod tests {
             endpoint_override: Some("http://localhost".to_string()),
             secret_storage: SecretStorageMode::Plaintext,
             secret: None,
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
         });
 
         assert_eq!(config.accounts.len(), 1);
@@ -525,6 +561,10 @@ mod tests {
             endpoint_override: None,
             secret_storage: SecretStorageMode::Keyring,
             secret: None,
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
         });
 
         let removed = config.remove("openrouter-main").unwrap();
@@ -562,6 +602,10 @@ mod tests {
             endpoint_override: None,
             secret_storage: SecretStorageMode::Keyring,
             secret: None,
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
         });
     }
 

@@ -1,4 +1,9 @@
-export type ProviderKind = "claude-code" | "codex" | "openrouter" | "runpod";
+export type ProviderKind =
+  | "claude-code"
+  | "codex"
+  | "openrouter"
+  | "runpod"
+  | "aws";
 export type SecretStorageMode = "keyring" | "plaintext";
 export type SnapshotStatus =
   | "healthy"
@@ -27,6 +32,10 @@ export interface AccountView {
   hasSecret: boolean;
   email: string | null;
   configDir: string | null;
+  awsProfile?: string | null;
+  awsRegion?: string | null;
+  awsMonthlyBudgetUsd?: number | null;
+  awsCategories?: AwsCategoryConfig[];
   createdAt: string;
   updatedAt: string;
 }
@@ -39,6 +48,30 @@ export interface AccountInput {
   endpointOverride?: string | null;
   secretStorage: SecretStorageMode;
   secret?: string | null;
+  awsProfile?: string | null;
+  awsRegion?: string | null;
+  awsMonthlyBudgetUsd?: number | null;
+  awsCategories?: AwsCategoryConfig[];
+}
+
+export type AwsCostFilter =
+  | { kind: "dimension"; key: string; values: string[] }
+  | { kind: "tag"; key: string; values: string[] }
+  | { kind: "costCategory"; key: string; values: string[] };
+
+export type AwsGroupByKind = "dimension" | "tag" | "cost-category";
+
+export interface AwsGroupBy {
+  kind: AwsGroupByKind;
+  key: string;
+}
+
+export interface AwsCategoryConfig {
+  id: string;
+  label: string;
+  enabled: boolean;
+  filter: AwsCostFilter;
+  groupBy?: AwsGroupBy | null;
 }
 
 export interface QuotaSnapshot {

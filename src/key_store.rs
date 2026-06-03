@@ -53,6 +53,12 @@ pub(crate) fn migrate_secret(previous: &AccountConfig, account: &mut AccountConf
     Ok(())
 }
 
+pub(crate) fn clear_secret(account: &mut AccountConfig) -> Result<()> {
+    remove_secret(account)?;
+    clear_secret_refs(account);
+    Ok(())
+}
+
 fn clear_secret_refs(account: &mut AccountConfig) {
     if let Some(keyring_account) = &account.keyring_account {
         forget_keyring_secret(keyring_account);
@@ -162,6 +168,10 @@ mod tests {
             plaintext_secret: None,
             email: None,
             config_dir: None,
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
             order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -181,6 +191,17 @@ mod tests {
     fn plaintext_validation_requires_explicit_secret() {
         let account = account(SecretStorageMode::Plaintext);
         assert!(validate_plaintext_mode(&account).is_err());
+    }
+
+    #[test]
+    fn clear_secret_removes_plaintext_secret_refs() {
+        let mut account = account(SecretStorageMode::Plaintext);
+        account.plaintext_secret = Some("sk-test".to_string());
+
+        clear_secret(&mut account).unwrap();
+
+        assert!(account.keyring_account.is_none());
+        assert!(account.plaintext_secret.is_none());
     }
 
     #[test]

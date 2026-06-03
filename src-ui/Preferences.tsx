@@ -30,6 +30,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import {
   OPENROUTER_DEFAULT_ENDPOINT,
   RUNPOD_DEFAULT_ENDPOINT,
+  cloneDefaultAwsCategories,
   emptyForm,
   providerLabels,
 } from "./constants";
@@ -59,6 +60,7 @@ export interface UpdatesPanelProps {
 export {
   OPENROUTER_DEFAULT_ENDPOINT,
   RUNPOD_DEFAULT_ENDPOINT,
+  cloneDefaultAwsCategories,
   emptyForm,
   providerLabels,
 };

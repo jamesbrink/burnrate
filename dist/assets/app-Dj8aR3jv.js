@@ -1,1 +1,0 @@
-import{t as e}from"./index-CNRBdHJ6.js";var t;(function(e){e.Nsis=`nsis`,e.Msi=`msi`,e.Deb=`deb`,e.Rpm=`rpm`,e.AppImage=`appimage`,e.App=`app`})(t||={});async function n(){return e(`plugin:app|version`)}export{n as getVersion};

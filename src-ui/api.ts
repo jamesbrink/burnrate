@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { cloneDefaultAwsCategories } from "./constants";
 import type {
   AccountInput,
   AccountView,
@@ -83,6 +84,25 @@ let mockAccounts: AccountView[] = [
     hasSecret: true,
     email: null,
     configDir: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "aws-main",
+    provider: "aws",
+    label: "AWS",
+    enabled: true,
+    autoDetected: false,
+    credentialPath: null,
+    endpointOverride: null,
+    secretStorage: "keyring",
+    hasSecret: false,
+    email: null,
+    configDir: null,
+    awsProfile: "work",
+    awsRegion: "us-east-1",
+    awsMonthlyBudgetUsd: 200,
+    awsCategories: cloneDefaultAwsCategories(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -218,6 +238,58 @@ const mockSnapshots: UsageSnapshot[] = [
     fetchedAt: new Date().toISOString(),
   },
   {
+    accountId: "aws-main",
+    provider: "aws",
+    label: "AWS",
+    status: "warning",
+    subscription: null,
+    usageBuckets: [
+      {
+        id: "aws-mtd",
+        label: "AWS month-to-date",
+        window: "month-to-date",
+        used: 164.25,
+        limit: 200,
+        remaining: 35.75,
+        unit: "USD",
+        resetAt: null,
+        status: "warning",
+      },
+      {
+        id: "aws-category-bedrock",
+        label: "Bedrock",
+        window: "month-to-date",
+        used: 48.5,
+        limit: null,
+        remaining: null,
+        unit: "USD",
+        resetAt: null,
+        status: "healthy",
+      },
+      {
+        id: "aws-category-ec2-compute",
+        label: "EC2 compute",
+        window: "month-to-date",
+        used: 72.1,
+        limit: null,
+        remaining: null,
+        unit: "USD",
+        resetAt: null,
+        status: "healthy",
+      },
+    ],
+    quota: {
+      used: 164.25,
+      limit: 200,
+      remaining: 35.75,
+      unit: "USD",
+      resetAt: null,
+    },
+    message:
+      "AWS account 123456789012 · Cost Explorer marks current data as estimated",
+    fetchedAt: new Date().toISOString(),
+  },
+  {
     accountId: "runpod-main",
     provider: "runpod",
     label: "Runpod",
@@ -278,13 +350,7 @@ export async function loadDashboard(): Promise<DashboardState> {
   return {
     accounts: mockAccounts,
     snapshots: mockSnapshots,
-    traySummary: {
-      label: "Burnrate: 1 warning",
-      status: "warning",
-      criticalCount: 0,
-      warningCount: 1,
-      updatedAt: new Date().toISOString(),
-    },
+    traySummary: summarizeMockSnapshots(mockSnapshots),
     settings: mockSettings,
   };
 }
@@ -309,6 +375,10 @@ export async function saveAccount(input: AccountInput): Promise<AccountView[]> {
     hasSecret: Boolean(input.secret),
     email: null,
     configDir: null,
+    awsProfile: input.awsProfile ?? null,
+    awsRegion: input.awsRegion ?? null,
+    awsMonthlyBudgetUsd: input.awsMonthlyBudgetUsd ?? null,
+    awsCategories: input.awsCategories ?? [],
     createdAt: now,
     updatedAt: now,
   };

@@ -7,6 +7,7 @@ import type { LoginSession } from "./useLogin";
 const providerNames: Record<ProviderKind, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
+  aws: "AWS",
   openrouter: "OpenRouter",
   runpod: "Runpod",
 };

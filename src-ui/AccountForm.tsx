@@ -1,7 +1,18 @@
 import { LogIn, LogOut, Plus, RotateCcw } from "lucide-react";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
-import { providerDefaultEndpoints, providerLabels } from "./constants";
-import type { AccountInput, ProviderKind, SecretStorageMode } from "./types";
+import {
+  AWS_DEFAULT_REGION,
+  cloneDefaultAwsCategories,
+  providerDefaultEndpoints,
+  providerLabels,
+} from "./constants";
+import type {
+  AccountInput,
+  AwsCategoryConfig,
+  AwsCostFilter,
+  ProviderKind,
+  SecretStorageMode,
+} from "./types";
 
 /** Providers authenticated through the CLI rather than a pasted API key. */
 const CLI_PROVIDERS: ProviderKind[] = ["claude-code", "codex"];
@@ -31,6 +42,7 @@ export function AccountForm({
   onLogout?: (id: string) => void;
 }) {
   const isCliProvider = CLI_PROVIDERS.includes(form.provider);
+  const isAwsProvider = form.provider === "aws";
   const showSignInControls = Boolean(activeId) && isCliProvider;
 
   return (
@@ -75,20 +87,28 @@ export function AccountForm({
           Provider
           <select
             value={form.provider}
-            onChange={(event) =>
+            onChange={(event) => {
+              const provider = event.target.value as ProviderKind;
               setForm((current) => ({
                 ...current,
-                provider: event.target.value as ProviderKind,
-                label: providerLabels[event.target.value as ProviderKind],
-                endpointOverride:
-                  providerDefaultEndpoints[
-                    event.target.value as ProviderKind
-                  ] ?? "",
-              }))
-            }
+                provider,
+                label: providerLabels[provider],
+                endpointOverride: providerDefaultEndpoints[provider] ?? "",
+                secret: provider === "aws" ? "" : current.secret,
+                awsRegion:
+                  provider === "aws"
+                    ? current.awsRegion || AWS_DEFAULT_REGION
+                    : current.awsRegion,
+                awsCategories:
+                  provider === "aws" && !current.awsCategories?.length
+                    ? cloneDefaultAwsCategories()
+                    : current.awsCategories,
+              }));
+            }}
           >
             <option value="openrouter">OpenRouter</option>
             <option value="runpod">Runpod</option>
+            <option value="aws">AWS</option>
             <option value="claude-code">Claude Code</option>
             <option value="codex">Codex</option>
           </select>
@@ -109,55 +129,61 @@ export function AccountForm({
         </label>
       </div>
 
-      <div className="segmented" role="group" aria-label="Secret storage">
-        {(["keyring", "plaintext"] satisfies SecretStorageMode[]).map(
-          (mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={form.secretStorage === mode ? "active" : ""}
-              onClick={() =>
-                setForm((current) => ({
-                  ...current,
-                  secretStorage: mode,
-                }))
-              }
-            >
-              {mode === "keyring" ? "Keyring" : "Plaintext"}
-            </button>
-          ),
-        )}
-      </div>
+      {isAwsProvider ? (
+        <AwsFields form={form} setForm={setForm} />
+      ) : (
+        <>
+          <div className="segmented" role="group" aria-label="Secret storage">
+            {(["keyring", "plaintext"] satisfies SecretStorageMode[]).map(
+              (mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={form.secretStorage === mode ? "active" : ""}
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      secretStorage: mode,
+                    }))
+                  }
+                >
+                  {mode === "keyring" ? "Keyring" : "Plaintext"}
+                </button>
+              ),
+            )}
+          </div>
 
-      <div className="form-grid">
-        <label>
-          {isCliProvider ? "API Key (optional)" : "API Key"}
-          <input
-            type="password"
-            value={form.secret ?? ""}
-            placeholder={activeId ? "Leave blank to keep existing" : ""}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                secret: event.target.value,
-              }))
-            }
-          />
-        </label>
+          <div className="form-grid">
+            <label>
+              {isCliProvider ? "API Key (optional)" : "API Key"}
+              <input
+                type="password"
+                value={form.secret ?? ""}
+                placeholder={activeId ? "Leave blank to keep existing" : ""}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    secret: event.target.value,
+                  }))
+                }
+              />
+            </label>
 
-        <label>
-          Endpoint
-          <input
-            value={form.endpointOverride ?? ""}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                endpointOverride: event.target.value,
-              }))
-            }
-          />
-        </label>
-      </div>
+            <label>
+              Endpoint
+              <input
+                value={form.endpointOverride ?? ""}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    endpointOverride: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          </div>
+        </>
+      )}
 
       <label className="toggle">
         <input
@@ -178,5 +204,211 @@ export function AccountForm({
         {activeId ? "Save" : "Add"}
       </button>
     </form>
+  );
+}
+
+function AwsFields({
+  form,
+  setForm,
+}: {
+  form: AccountInput;
+  setForm: Dispatch<SetStateAction<AccountInput>>;
+}) {
+  const categories = form.awsCategories?.length
+    ? form.awsCategories
+    : cloneDefaultAwsCategories();
+
+  function updateCategory(
+    index: number,
+    updater: (category: AwsCategoryConfig) => AwsCategoryConfig,
+  ) {
+    setForm((current) => {
+      const currentCategories = current.awsCategories?.length
+        ? current.awsCategories
+        : cloneDefaultAwsCategories();
+      return {
+        ...current,
+        awsCategories: currentCategories.map((category, i) =>
+          i === index ? updater(category) : category,
+        ),
+      };
+    });
+  }
+
+  function addCustomService() {
+    setForm((current) => ({
+      ...current,
+      awsCategories: [
+        ...(current.awsCategories?.length
+          ? current.awsCategories
+          : cloneDefaultAwsCategories()),
+        {
+          id: `custom-${Date.now()}`,
+          label: "Custom service",
+          enabled: false,
+          filter: { kind: "dimension", key: "SERVICE", values: [""] },
+          groupBy: null,
+        },
+      ],
+    }));
+  }
+
+  return (
+    <div className="aws-fields">
+      <p className="form-help">
+        AWS uses the SDK default credential chain (AWS_PROFILE, shared config,
+        SSO, environment, or instance role). Burnrate does not store AWS access
+        keys.
+      </p>
+      <div className="form-grid">
+        <label>
+          AWS profile
+          <input
+            value={form.awsProfile ?? ""}
+            placeholder="default / AWS_PROFILE"
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                awsProfile: event.target.value,
+              }))
+            }
+          />
+        </label>
+        <label>
+          Region
+          <input
+            value={form.awsRegion ?? AWS_DEFAULT_REGION}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                awsRegion: event.target.value,
+              }))
+            }
+          />
+        </label>
+      </div>
+      <label>
+        Monthly budget (USD, optional)
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={form.awsMonthlyBudgetUsd ?? ""}
+          onChange={(event) =>
+            setForm((current) => ({
+              ...current,
+              awsMonthlyBudgetUsd: event.target.value
+                ? Number(event.target.value)
+                : null,
+            }))
+          }
+        />
+      </label>
+
+      <div className="aws-category-list">
+        <div className="aws-category-heading">
+          <strong>AWS categories</strong>
+          <button
+            type="button"
+            className="secondary"
+            onClick={addCustomService}
+          >
+            Add custom service
+          </button>
+        </div>
+        {categories.map((category, index) => (
+          <AwsCategoryRow
+            key={category.id}
+            category={category}
+            onChange={(next) => updateCategory(index, () => next)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AwsCategoryRow({
+  category,
+  onChange,
+}: {
+  category: AwsCategoryConfig;
+  onChange: (category: AwsCategoryConfig) => void;
+}) {
+  const filter = category.filter;
+  const value = filter.values[0] ?? "";
+
+  function updateFilter(next: Partial<AwsCostFilter> & { value?: string }) {
+    const kind = next.kind ?? filter.kind;
+    const key = next.key ?? filter.key;
+    const values = next.value !== undefined ? [next.value] : filter.values;
+    onChange({
+      ...category,
+      filter:
+        kind === "tag"
+          ? { kind, key, values }
+          : kind === "costCategory"
+            ? { kind, key, values }
+            : { kind: "dimension", key, values },
+    });
+  }
+
+  return (
+    <div className="aws-category-row">
+      <label className="toggle compact">
+        <input
+          type="checkbox"
+          checked={category.enabled}
+          onChange={(event) =>
+            onChange({ ...category, enabled: event.target.checked })
+          }
+        />
+        Enabled
+      </label>
+      <div className="form-grid">
+        <label>
+          Label
+          <input
+            value={category.label}
+            onChange={(event) =>
+              onChange({ ...category, label: event.target.value })
+            }
+          />
+        </label>
+        <label>
+          Filter type
+          <select
+            value={filter.kind}
+            onChange={(event) =>
+              updateFilter({
+                kind: event.target.value as AwsCostFilter["kind"],
+              })
+            }
+          >
+            <option value="dimension">Dimension</option>
+            <option value="tag">Tag</option>
+            <option value="costCategory">Cost category</option>
+          </select>
+        </label>
+      </div>
+      <div className="form-grid">
+        <label>
+          Filter key
+          <input
+            value={filter.key}
+            placeholder="SERVICE, TAG key, or cost category name"
+            onChange={(event) => updateFilter({ key: event.target.value })}
+          />
+        </label>
+        <label>
+          Filter value
+          <input
+            value={value}
+            placeholder="Amazon Bedrock"
+            onChange={(event) => updateFilter({ value: event.target.value })}
+          />
+        </label>
+      </div>
+    </div>
   );
 }

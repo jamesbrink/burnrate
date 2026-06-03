@@ -75,7 +75,9 @@ impl AppState {
             .find(|item| item.id == account.id)
             .expect("upserted account exists");
 
-        if let Some(secret) = input.secret {
+        if account.provider == ProviderKind::Aws {
+            key_store::clear_secret(account)?;
+        } else if let Some(secret) = input.secret {
             key_store::set_secret(account, Some(secret))?;
             key_store::validate_plaintext_mode(account)?;
         } else if let Some(previous) = previous {
@@ -302,6 +304,10 @@ impl AppState {
             plaintext_secret: None,
             email: None,
             config_dir: Some(dir_string),
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
             order_index: None,
             created_at: now,
             updated_at: now,

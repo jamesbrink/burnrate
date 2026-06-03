@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](https://github.com/jamesbrink/burnrate/releases/latest)
 
-Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, credits, spend, and subscription limits. Built with Tauri 2 (Rust + React/TypeScript) and lives in the system tray (the menu bar on macOS).
+Desktop usage monitor for Claude Code, Codex, OpenRouter, Runpod, and AWS quotas, credits, spend, and subscription limits. Built with Tauri 2 (Rust + React/TypeScript) and lives in the system tray (the menu bar on macOS).
 
 ## Screenshots
 
@@ -24,13 +24,14 @@ Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, cre
 
 - Menu-bar tray summary with a left-click usage popover and right-click actions (Preferences, Refresh, Quit).
 - Native translucent (vibrancy) popover on macOS that follows the system light/dark appearance, sizes itself to its content, and dismisses when it loses focus.
-- Native Preferences window for account management and manual OpenRouter/Runpod setup.
-- Auto-detects Claude Code and Codex accounts from local config; OpenRouter and Runpod are added via API key.
+- Native Preferences window for account management and manual OpenRouter/Runpod/AWS setup.
+- Auto-detects Claude Code and Codex accounts from local config; OpenRouter and Runpod are added via API key, and AWS uses your existing AWS profile/default credential chain.
 - **Multiple Claude Code and Codex accounts**, each signed in from the app via browser OAuth and shown with its email address and usage.
 - **Drag to reorder** accounts — reorder the tray usage cards or the Preferences list; the order persists across both windows.
 - Claude Code subscription buckets (5-hour, weekly, model-specific) with stale-auth checks via `claude auth status`.
 - Codex Pro/Max plan and rate-limit buckets read from the Codex app server.
 - Runpod prepaid balance, current spend, burn-rate runway, active resources, and recent Pods/Serverless/storage costs.
+- AWS Cost Explorer month-to-date USD spend with optional monthly budgets and configurable service/tag/cost-category buckets such as Bedrock, EC2 compute, and S3.
 - Secrets in the OS keyring by default, with an explicit plaintext fallback.
 - Hides from the Dock by default; appears only while Preferences is open.
 - **Automatic updates (macOS)** with selectable **Stable** and **Nightly** channels: a dismissible banner and tray "Check for Updates…" entry offer a signature-verified one-click "Install & Restart." Choose the channel under Preferences → Updates.
@@ -63,6 +64,31 @@ claude auth login
 **Adding accounts from the app.** In Preferences, use **Add account → Sign in with browser** to authenticate a Claude Code or Codex account directly — Burnrate shells out to the official `claude` / `codex` CLI, opens your browser, and reads the resulting email and usage. Additional accounts are isolated in their own CLI config dir under `BURNRATE_CONFIG_DIR/cli/<provider>/<id>`, so the first auto-detected account keeps using your shared terminal session (`~/.claude`, `~/.codex`) while extra accounts stay separate. Signing the same email in twice refreshes the existing account instead of creating a duplicate. **Sign in again** (in an account's edit panel) re-authenticates that account in place — for the auto-detected account it refreshes your real `~/.claude` / `~/.codex` session, so it doubles as the fix for a stale or expired default login. **Sign out** (or removing the account) clears only that managed account — running the CLI sign-out and deleting its isolated dir — and never touches your system session. OpenRouter and Runpod are still added with an API key.
 
 Burnrate refreshes in the background every five minutes and caches successful snapshots for five minutes to avoid tight polling. Runpod uses `https://rest.runpod.io/v1` for resources/billing and `https://api.runpod.io/graphql` for balance/burn state by default; `BURNRATE_RUNPOD_REST_URL` and `BURNRATE_RUNPOD_GRAPHQL_URL` can override those endpoints for development or proxies.
+
+### AWS setup
+
+Add AWS from **Preferences → Add account → AWS**. Burnrate uses the official AWS SDK default credential chain, so you can leave the profile blank to use `AWS_PROFILE`/`default`, or enter a shared config/credentials/SSO profile name. No static AWS access keys are stored in Burnrate. Cost Explorer is a global billing API; Burnrate defaults the SDK region to `us-east-1` when no region is configured.
+
+The primary AWS bucket is current-month-to-date `UnblendedCost` in USD from Cost Explorer `GetCostAndUsage`. Configure an optional monthly budget amount to turn the primary spend bucket into Burnrate-style remaining/warning/exhausted status. Category buckets are user-editable Cost Explorer filters. Presets include Bedrock (`SERVICE = Amazon Bedrock`), EC2 compute (`SERVICE = Amazon Elastic Compute Cloud - Compute`), S3 (`SERVICE = Amazon Simple Storage Service`), plus custom dimension/tag/cost-category filters.
+
+Minimum Cost Explorer permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["ce:GetCostAndUsage", "sts:GetCallerIdentity"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Cost Explorer data is not real time. Current-month data can be delayed and AWS may mark fresh results as estimated; Burnrate surfaces estimated results and pagination in the account message. `UsageQuantity` is intentionally not used for the primary bucket because units are not meaningful across mixed AWS services.
+
+Optional future AWS features may require additional permissions only when enabled: service discovery/autocomplete (`ce:GetDimensionValues`), Budgets (`budgets:DescribeBudget`, `budgets:DescribeBudgets`), Free Tier (`freetier:GetFreeTierUsage`), and Bedrock operational CloudWatch metrics (`cloudwatch:GetMetricData`, `cloudwatch:ListMetrics`).
 
 Only non-secret account configuration is stored on disk. On macOS the default path is `~/Library/Application Support/burnrate/accounts.json`; set `BURNRATE_CONFIG_DIR` to override. Manual secrets live in the OS keyring unless plaintext storage is explicitly selected for that account.
 

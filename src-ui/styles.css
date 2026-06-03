@@ -542,6 +542,38 @@ p {
   min-height: auto;
 }
 
+.toggle.compact {
+  max-width: max-content;
+}
+
+.form-help {
+  margin: 0;
+  color: var(--fg-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.aws-fields,
+.aws-category-list,
+.aws-category-row {
+  display: grid;
+  gap: 10px;
+}
+
+.aws-category-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.aws-category-row {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--surface-soft);
+}
+
 .primary {
   min-height: 38px;
   border: 0;
@@ -733,6 +765,18 @@ p {
     color-mix(in srgb, var(--fg) 10%, var(--surface))
   );
   border-color: light-dark(#d8dee3, var(--hairline));
+}
+
+.provider-logo-aws {
+  color: light-dark(#c76300, #ffb15a);
+  background: light-dark(
+    #fff4e5,
+    color-mix(in srgb, #ff9900 20%, var(--surface))
+  );
+  border-color: light-dark(
+    #ffd79a,
+    color-mix(in srgb, #ff9900 32%, var(--surface))
+  );
 }
 
 .provider-logo-openrouter {
@@ -939,6 +983,12 @@ html[data-view="tray"] .provider-logo-codex {
   color: var(--tray-fg);
   background: color-mix(in srgb, CanvasText 10%, transparent);
   border-color: var(--tray-hairline);
+}
+
+html[data-view="tray"] .provider-logo-aws {
+  color: light-dark(#c76300, #ffb15a);
+  background: color-mix(in srgb, #ff9900 20%, transparent);
+  border-color: color-mix(in srgb, #ff9900 30%, transparent);
 }
 
 html[data-view="tray"] .provider-logo-openrouter {
