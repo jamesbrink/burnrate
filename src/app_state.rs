@@ -199,6 +199,7 @@ impl AppState {
         }
         login::ensure_provider_login_supported(provider).await?;
 
+        let (input_tx, input_rx) = tokio::sync::mpsc::unbounded_channel();
         let is_reauth = reauth_id.is_some();
         let (id, config_dir, email_hint, view) = match reauth_id {
             Some(reauth_id) => {
@@ -211,7 +212,8 @@ impl AppState {
                         .cloned()
                         .ok_or_else(|| anyhow!("account no longer exists"))?
                 };
-                self.login_manager.reserve(&account.id, true)?;
+                self.login_manager
+                    .reserve(&account.id, true, input_tx.clone())?;
                 let view = match self.account_view(&account.id) {
                     Some(view) => view,
                     None => {
@@ -223,7 +225,7 @@ impl AppState {
             }
             None => {
                 let id = format!("{}-{}", provider.as_str(), uuid::Uuid::new_v4().simple());
-                self.login_manager.reserve(&id, false)?;
+                self.login_manager.reserve(&id, false, input_tx.clone())?;
                 let view = match self.create_pending_login(provider, &id, label) {
                     Ok(view) => view,
                     Err(error) => {
@@ -245,6 +247,7 @@ impl AppState {
                 id_task.clone(),
                 config_dir,
                 email_hint,
+                input_rx,
             )
             .await;
             let state = app_task.state::<AppState>();
@@ -255,6 +258,14 @@ impl AppState {
         self.login_manager.attach(&id, handle.abort_handle());
 
         Ok(view)
+    }
+
+    pub(crate) fn submit_account_login_code(&self, id: &str, code: String) -> Result<()> {
+        let code = code.trim();
+        if code.is_empty() {
+            return Err(anyhow!("Paste the authentication code first."));
+        }
+        self.login_manager.submit_input(id, code.to_string())
     }
 
     fn account_view(&self, id: &str) -> Option<AccountView> {

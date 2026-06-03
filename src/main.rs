@@ -103,6 +103,17 @@ async fn start_account_login(
 }
 
 #[tauri::command]
+fn submit_account_login_code(
+    state: State<'_, AppState>,
+    id: String,
+    code: String,
+) -> Result<(), String> {
+    state
+        .submit_account_login_code(&id, code)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn cancel_account_login(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -430,6 +441,7 @@ fn main() {
             detect_accounts,
             reorder_accounts,
             start_account_login,
+            submit_account_login_code,
             cancel_account_login,
             logout_account,
             refresh_snapshots,

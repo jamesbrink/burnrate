@@ -16,8 +16,9 @@ use anyhow::{Result, anyhow};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
+    sync::mpsc,
     task::AbortHandle,
     time::timeout,
 };
@@ -41,6 +42,8 @@ pub(crate) struct LoginProgress {
     pub line: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub needs_code: bool,
 }
 
 /// Result of a successful sign-in.
@@ -74,6 +77,7 @@ struct ActiveLogin {
     /// pending account). Cancellation must not delete a re-auth target.
     is_reauth: bool,
     abort: Option<AbortHandle>,
+    input: mpsc::UnboundedSender<String>,
 }
 
 impl LoginManager {
@@ -83,7 +87,12 @@ impl LoginManager {
 
     /// Reserve the single login slot for `account_id`. Fails if a sign-in is
     /// already running.
-    pub(crate) fn reserve(&self, account_id: &str, is_reauth: bool) -> Result<()> {
+    pub(crate) fn reserve(
+        &self,
+        account_id: &str,
+        is_reauth: bool,
+        input: mpsc::UnboundedSender<String>,
+    ) -> Result<()> {
         let mut guard = self.active.lock().expect("login manager lock");
         if let Some(active) = guard.as_ref() {
             return Err(anyhow!(
@@ -95,6 +104,7 @@ impl LoginManager {
             account_id: account_id.to_string(),
             is_reauth,
             abort: None,
+            input,
         });
         Ok(())
     }
@@ -107,6 +117,20 @@ impl LoginManager {
         {
             active.abort = Some(abort);
         }
+    }
+
+    pub(crate) fn submit_input(&self, account_id: &str, input: String) -> Result<()> {
+        let guard = self.active.lock().expect("login manager lock");
+        let Some(active) = guard.as_ref() else {
+            return Err(anyhow!("No sign-in is in progress."));
+        };
+        if active.account_id != account_id {
+            return Err(anyhow!("That sign-in is no longer active."));
+        }
+        active
+            .input
+            .send(input)
+            .map_err(|_| anyhow!("The sign-in process is no longer accepting input."))
     }
 
     /// Clear the slot once a login finishes (success or failure).
@@ -147,16 +171,24 @@ pub(crate) async fn run_login(
     account_id: String,
     config_dir: Option<String>,
     email_hint: Option<String>,
+    input_rx: mpsc::UnboundedReceiver<String>,
 ) -> Result<LoginOutcome> {
     let (binary, args, env_key) = login_command(provider, email_hint.as_deref())?;
     let id = account_id.clone();
     let mut on_progress = move |line: &str, url: Option<&str>| {
+        let needs_code = provider == ProviderKind::ClaudeCode && url.is_some();
+        let line = if needs_code {
+            "Copy the authentication code from the browser, then paste it here."
+        } else {
+            line
+        };
         let _ = app.emit(
             LOGIN_PROGRESS_EVENT,
             LoginProgress {
                 id: id.clone(),
                 line: line.to_string(),
                 url: url.map(str::to_string),
+                needs_code,
             },
         );
     };
@@ -165,7 +197,8 @@ pub(crate) async fn run_login(
         &args,
         env_key,
         config_dir.as_deref(),
-        true,
+        provider != ProviderKind::ClaudeCode,
+        input_rx,
         &mut on_progress,
     )
     .await?;
@@ -222,6 +255,7 @@ async fn run_login_inner(
     env_key: &str,
     config_dir: Option<&str>,
     open_browser: bool,
+    mut input_rx: mpsc::UnboundedReceiver<String>,
     on_progress: &mut (dyn FnMut(&str, Option<&str>) + Send),
 ) -> Result<()> {
     let resolved = super::resolve_cli(binary);
@@ -229,7 +263,7 @@ async fn run_login_inner(
     command
         .args(args)
         .env("PATH", super::augmented_path())
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
@@ -243,6 +277,10 @@ async fn run_login_inner(
             "Failed to launch `{binary}`: {err}. Set BURNRATE_CLAUDE_BIN / BURNRATE_CODEX_BIN if the CLI lives elsewhere."
         )
     })?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("no stdin for sign-in process"))?;
     let stdout = child
         .stdout
         .take()
@@ -254,12 +292,27 @@ async fn run_login_inner(
     let mut out = BufReader::new(stdout).lines();
     let mut err = BufReader::new(stderr).lines();
     let mut opened = false;
+    let mut input_done = false;
     let mut last_status: Option<String> = None;
 
     let status = timeout(LOGIN_TIMEOUT, async {
         let (mut out_done, mut err_done) = (false, false);
         while !(out_done && err_done) {
             let line = tokio::select! {
+                input = input_rx.recv(), if !input_done => {
+                    match input {
+                        Some(input) => {
+                            let mut input = input.trim().to_string();
+                            if !input.ends_with('\n') {
+                                input.push('\n');
+                            }
+                            stdin.write_all(input.as_bytes()).await?;
+                            stdin.flush().await?;
+                        }
+                        None => input_done = true,
+                    }
+                    None
+                },
                 res = out.next_line(), if !out_done => match res? {
                     Some(line) => Some(line),
                     None => { out_done = true; None }
@@ -454,18 +507,40 @@ mod tests {
     #[test]
     fn login_manager_is_single_flight() {
         let manager = LoginManager::new();
-        manager.reserve("claude-code-a", false).unwrap();
+        let (tx, _) = mpsc::unbounded_channel();
+        manager.reserve("claude-code-a", false, tx).unwrap();
         // A second concurrent login is rejected.
-        assert!(manager.reserve("codex-b", false).is_err());
+        let (tx, _) = mpsc::unbounded_channel();
+        assert!(manager.reserve("codex-b", false, tx).is_err());
         // After finishing, the slot frees up.
         manager.finish("claude-code-a");
-        manager.reserve("codex-b", true).unwrap();
+        let (tx, _) = mpsc::unbounded_channel();
+        manager.reserve("codex-b", true, tx).unwrap();
         // Cancel of a stale id is a no-op (returns None).
         assert_eq!(manager.cancel("claude-code-a"), None);
         // Cancelling the active reauth login reports is_reauth = true.
         assert_eq!(manager.cancel("codex-b"), Some(true));
-        manager.reserve("claude-code-c", false).unwrap();
+        let (tx, _) = mpsc::unbounded_channel();
+        manager.reserve("claude-code-c", false, tx).unwrap();
         assert_eq!(manager.cancel("claude-code-c"), Some(false));
+    }
+
+    #[test]
+    fn login_manager_forwards_submitted_input_to_active_login() {
+        let manager = LoginManager::new();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        manager.reserve("claude-code-a", false, tx).unwrap();
+
+        manager
+            .submit_input("claude-code-a", "auth-code#state".to_string())
+            .unwrap();
+
+        assert_eq!(rx.try_recv().unwrap(), "auth-code#state");
+        assert!(
+            manager
+                .submit_input("other", "ignored".to_string())
+                .is_err()
+        );
     }
 
     #[test]
@@ -526,6 +601,7 @@ exit 0
             "CODEX_HOME",
             Some(home.to_str().unwrap()),
             false,
+            mpsc::unbounded_channel().1,
             &mut on_progress,
         )
         .await
@@ -567,6 +643,7 @@ exit 0
             "CODEX_HOME",
             Some(dir.path().to_str().unwrap()),
             false,
+            mpsc::unbounded_channel().1,
             &mut on_progress,
         )
         .await
@@ -574,5 +651,50 @@ exit 0
         .to_string();
 
         assert!(error.contains("Sign-in did not complete"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_login_inner_writes_submitted_input_to_child_stdin() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join("stdin-fixture");
+        let seen = dir.path().join("seen");
+        std::fs::write(
+            &binary,
+            format!(
+                r#"#!/bin/sh
+echo "Open https://auth.example/manual in your browser"
+IFS= read -r code
+printf "%s" "$code" > "{}"
+exit 0
+"#,
+                seen.display()
+            ),
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&binary).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&binary, perms).unwrap();
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        let mut on_progress = |_: &str, _: Option<&str>| {};
+        let binary = binary.to_string_lossy().to_string();
+        let args = vec!["login".to_string()];
+        let pending = run_login_inner(
+            &binary,
+            &args,
+            "CODEX_HOME",
+            Some(dir.path().to_str().unwrap()),
+            false,
+            rx,
+            &mut on_progress,
+        );
+
+        tx.send("auth-code#state".to_string()).unwrap();
+        pending.await.unwrap();
+
+        assert_eq!(std::fs::read_to_string(seen).unwrap(), "auth-code#state");
     }
 }

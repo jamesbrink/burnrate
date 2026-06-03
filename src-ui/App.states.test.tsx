@@ -49,6 +49,7 @@ const api = vi.hoisted(() => ({
   saveAccount: vi.fn(),
   saveSettings: vi.fn(),
   startAccountLogin: vi.fn(),
+  submitLoginCode: vi.fn(),
   updaterAvailable: vi.fn(),
 }));
 
@@ -72,6 +73,7 @@ beforeEach(() => {
   api.reorderAccounts.mockResolvedValue([]);
   api.logoutAccount.mockResolvedValue([]);
   api.startAccountLogin.mockResolvedValue({ id: "pending-1" });
+  api.submitLoginCode.mockResolvedValue(undefined);
   api.cancelAccountLogin.mockResolvedValue([]);
   api.guardedFetch.mockResolvedValue(dashboardState());
   // Default: cold start (no cached dashboard) so existing tests exercise the

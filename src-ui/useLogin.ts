@@ -5,6 +5,7 @@ import {
   onLoginFailed,
   onLoginProgress,
   startAccountLogin,
+  submitLoginCode,
 } from "./api";
 import type {
   AccountView,
@@ -25,6 +26,7 @@ export interface LoginSession {
   status: LoginStatus;
   url: string | null;
   lines: string[];
+  needsCode: boolean;
   error: string | null;
 }
 
@@ -70,6 +72,7 @@ export function useLogin({
         status: "waiting",
         url: progress.url ?? current.url,
         lines: [...current.lines, progress.line].slice(-MAX_LOG_LINES),
+        needsCode: current.needsCode || Boolean(progress.needsCode),
       };
     });
   }, []);
@@ -143,7 +146,10 @@ export function useLogin({
         if (sessionRef.current?.id === complete.id) {
           applyComplete(complete);
         } else {
-          bufferFor(complete.id).terminal = { kind: "complete", payload: complete };
+          bufferFor(complete.id).terminal = {
+            kind: "complete",
+            payload: complete,
+          };
         }
       }),
     );
@@ -166,7 +172,11 @@ export function useLogin({
   }, [applyProgress, applyComplete, applyFailed, bufferFor]);
 
   const start = useCallback(
-    async (provider: ProviderKind, label: string, accountId?: string | null) => {
+    async (
+      provider: ProviderKind,
+      label: string,
+      accountId?: string | null,
+    ) => {
       try {
         const pending = await startAccountLogin(provider, label, accountId);
         setSession({
@@ -177,6 +187,7 @@ export function useLogin({
           status: "starting",
           url: null,
           lines: [],
+          needsCode: false,
           error: null,
         });
         // Replay any events that arrived before the session id was known.
@@ -190,6 +201,7 @@ export function useLogin({
           status: "failed",
           url: null,
           lines: [],
+          needsCode: false,
           error: String(error),
         });
       }
@@ -216,5 +228,13 @@ export function useLogin({
     }
   }, [start]);
 
-  return { session, start, cancel, retry };
+  const submitCode = useCallback(async (code: string) => {
+    const current = sessionRef.current;
+    if (!current) {
+      return;
+    }
+    await submitLoginCode(current.id, code);
+  }, []);
+
+  return { session, start, cancel, retry, submitCode };
 }

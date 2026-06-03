@@ -569,6 +569,7 @@ export function App() {
           session={login.session}
           onCancel={() => void login.cancel()}
           onRetry={login.retry}
+          onSubmitCode={login.submitCode}
         />
       ) : null}
     </>

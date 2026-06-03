@@ -65,6 +65,14 @@ test("tracks progress, ignores other ids, and completes", async () => {
   });
   expect(result.current.session?.status).toBe("waiting");
   expect(result.current.session?.url).toBe("https://auth.example/x");
+  expect(result.current.session?.needsCode).toBe(false);
+
+  emit("burnrate-login-progress", {
+    id,
+    line: "Paste the code",
+    needsCode: true,
+  });
+  expect(result.current.session?.needsCode).toBe(true);
 
   // A completion for another id does nothing.
   emit("burnrate-login-complete", { id: "other", account: account("other") });

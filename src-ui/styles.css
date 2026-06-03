@@ -1335,6 +1335,42 @@ html[data-view="tray"] .tray-empty {
   color: var(--accent);
 }
 
+.login-code-form {
+  display: grid;
+  gap: 8px;
+}
+
+.login-code-form label {
+  color: var(--fg-soft);
+  font-weight: 620;
+}
+
+.login-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.login-code-row input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 34px;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--fg);
+  padding: 7px 9px;
+}
+
+.login-code-row input::placeholder {
+  color: var(--fg-faint);
+}
+
+.login-code-error {
+  color: var(--crit);
+  overflow-wrap: anywhere;
+}
+
 .login-error {
   display: flex;
   align-items: flex-start;
@@ -1348,6 +1384,13 @@ html[data-view="tray"] .tray-empty {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+@media (max-width: 420px) {
+  .login-code-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 /* Tray variants */

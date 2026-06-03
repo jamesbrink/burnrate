@@ -117,6 +117,7 @@ export interface LoginProgress {
   id: string;
   line: string;
   url?: string | null;
+  needsCode?: boolean;
 }
 
 /** Successful sign-in (`burnrate-login-complete`). */

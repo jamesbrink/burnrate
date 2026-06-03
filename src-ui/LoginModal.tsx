@@ -1,3 +1,4 @@
+import { useState, type FormEvent } from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { ProviderLogo } from "./ProviderLogo";
 import type { ProviderKind } from "./types";
@@ -18,13 +19,37 @@ export function LoginModal({
   session,
   onCancel,
   onRetry,
+  onSubmitCode,
 }: {
   session: LoginSession;
   onCancel: () => void;
   onRetry: () => void;
+  onSubmitCode: (code: string) => Promise<void>;
 }) {
   const failed = session.status === "failed";
   const lastLine = session.lines[session.lines.length - 1];
+  const [code, setCode] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submitCode = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = code.trim();
+    if (!trimmed) {
+      setSubmitError("Paste the authentication code first.");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onSubmitCode(trimmed);
+      setCode("");
+    } catch (error) {
+      setSubmitError(String(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="login-overlay" role="presentation" onClick={onCancel}>
@@ -50,11 +75,7 @@ export function LoginModal({
               <button type="button" className="primary" onClick={onRetry}>
                 Try again
               </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={onCancel}
-              >
+              <button type="button" className="secondary" onClick={onCancel}>
                 Close
               </button>
             </div>
@@ -72,18 +93,45 @@ export function LoginModal({
             </p>
             {session.url ? (
               <p className="login-url">
-                Browser didn’t open?{" "}
+                {session.needsCode
+                  ? "Need the code page again? "
+                  : "Browser didn’t open? "}
                 <a href={session.url} target="_blank" rel="noreferrer">
-                  Open the sign-in page
+                  {session.needsCode
+                    ? "Open the code page"
+                    : "Open the sign-in page"}
                 </a>
               </p>
             ) : null}
+            {session.needsCode ? (
+              <form className="login-code-form" onSubmit={submitCode}>
+                <label htmlFor="login-auth-code">
+                  Paste the full authentication code
+                </label>
+                <div className="login-code-row">
+                  <input
+                    id="login-auth-code"
+                    type="password"
+                    autoComplete="one-time-code"
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    placeholder="authorization-code#state"
+                  />
+                  <button
+                    type="submit"
+                    className="primary"
+                    disabled={submitting}
+                  >
+                    Submit code
+                  </button>
+                </div>
+                {submitError ? (
+                  <p className="login-code-error">{submitError}</p>
+                ) : null}
+              </form>
+            ) : null}
             <div className="login-actions">
-              <button
-                type="button"
-                className="secondary"
-                onClick={onCancel}
-              >
+              <button type="button" className="secondary" onClick={onCancel}>
                 Cancel
               </button>
             </div>

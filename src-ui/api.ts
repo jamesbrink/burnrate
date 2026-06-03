@@ -413,6 +413,13 @@ export async function cancelAccountLogin(id: string): Promise<AccountView[]> {
   return mockAccounts;
 }
 
+export async function submitLoginCode(id: string, code: string): Promise<void> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    return invoke<void>("submit_account_login_code", { id, code });
+  }
+}
+
 export async function logoutAccount(id: string): Promise<AccountView[]> {
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
@@ -733,8 +740,12 @@ function queueMockLogin(id: string, provider: ProviderKind, label: string) {
       new CustomEvent<LoginProgress>("burnrate-login-progress", {
         detail: {
           id,
-          line: "Opening your browser to finish signing in…",
+          line:
+            provider === "claude-code"
+              ? "Copy the authentication code from the browser, then paste it here."
+              : "Opening your browser to finish signing in…",
           url: "https://example.com/oauth/authorize?code=MOCK",
+          needsCode: provider === "claude-code",
         },
       }),
     );
