@@ -73,6 +73,7 @@ pub(crate) fn parse_openrouter(
         provider: account.provider,
         label: account.label.clone(),
         status,
+        email: None,
         subscription: None,
         usage_buckets: vec![bucket],
         quota,
@@ -105,6 +106,9 @@ mod tests {
             secret_storage: SecretStorageMode::Plaintext,
             keyring_account: None,
             plaintext_secret: Some("sk-test".to_string()),
+            email: None,
+            config_dir: None,
+            order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

@@ -327,6 +327,7 @@ fn build_snapshot(
         provider: account.provider,
         label: account.label.clone(),
         status,
+        email: None,
         subscription: None,
         usage_buckets: buckets,
         quota,
@@ -558,6 +559,9 @@ mod tests {
             secret_storage: SecretStorageMode::Plaintext,
             keyring_account: None,
             plaintext_secret: Some("rp-test".to_string()),
+            email: None,
+            config_dir: None,
+            order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

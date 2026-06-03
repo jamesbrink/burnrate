@@ -160,6 +160,9 @@ mod tests {
             secret_storage: mode,
             keyring_account: None,
             plaintext_secret: None,
+            email: None,
+            config_dir: None,
+            order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

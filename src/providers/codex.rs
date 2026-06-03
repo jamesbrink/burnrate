@@ -339,6 +339,7 @@ fn parse_codex_app_server_snapshots(
         subscription,
         usage_buckets: buckets,
         quota,
+        email: None,
         message: reached_type.map(|reason| format!("Rate limit reached: {reason}")),
         fetched_at: Utc::now(),
     }
@@ -569,6 +570,7 @@ fn parse_codex_legacy_rate_limits(
         subscription,
         usage_buckets: buckets,
         quota,
+        email: None,
         message: None,
         fetched_at: Utc::now(),
     }
@@ -602,6 +604,9 @@ mod tests {
             secret_storage: SecretStorageMode::Plaintext,
             keyring_account: None,
             plaintext_secret: Some("token".to_string()),
+            email: None,
+            config_dir: None,
+            order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

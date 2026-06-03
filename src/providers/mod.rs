@@ -129,6 +129,7 @@ pub(crate) fn error_snapshot(account: &AccountConfig, error: anyhow::Error) -> U
         provider: account.provider,
         label: account.label.clone(),
         status: SnapshotStatus::Error,
+        email: account.email.clone(),
         subscription: None,
         usage_buckets: Vec::new(),
         quota: None,
@@ -794,6 +795,9 @@ mod tests {
             secret_storage: SecretStorageMode::Plaintext,
             keyring_account: None,
             plaintext_secret: None,
+            email: None,
+            config_dir: None,
+            order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

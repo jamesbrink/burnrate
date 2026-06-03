@@ -663,6 +663,7 @@ fn parse_claude_oauth_usage(account: &AccountConfig, usage: ClaudeOAuthUsage) ->
         subscription,
         usage_buckets: buckets,
         quota,
+        email: None,
         message: None,
         fetched_at: Utc::now(),
     }
@@ -801,6 +802,9 @@ mod tests {
             secret_storage: SecretStorageMode::Plaintext,
             keyring_account: None,
             plaintext_secret: None,
+            email: None,
+            config_dir: None,
+            order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

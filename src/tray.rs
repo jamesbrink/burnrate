@@ -440,6 +440,7 @@ mod tests {
             provider: ProviderKind::OpenRouter,
             label: "OpenRouter".to_string(),
             status,
+            email: None,
             subscription: None,
             usage_buckets: Vec::new(),
             quota: None,

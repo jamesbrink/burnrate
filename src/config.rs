@@ -27,8 +27,8 @@ pub(crate) struct AppConfig {
 
 impl AppConfig {
     pub(crate) fn views(&self) -> Vec<AccountView> {
-        self.accounts
-            .iter()
+        self.sorted_accounts()
+            .into_iter()
             .map(|account| AccountView {
                 id: account.id.clone(),
                 provider: account.provider,
@@ -42,10 +42,60 @@ impl AppConfig {
                     SecretStorageMode::Keyring => account.keyring_account.is_some(),
                     SecretStorageMode::Plaintext => account.plaintext_secret.is_some(),
                 },
+                email: account.email.clone(),
+                config_dir: account.config_dir.clone(),
                 created_at: account.created_at,
                 updated_at: account.updated_at,
             })
             .collect()
+    }
+
+    /// Accounts in display order: explicit `order_index` first (ascending),
+    /// then legacy/unset accounts in their stored insertion order.
+    fn sorted_accounts(&self) -> Vec<&AccountConfig> {
+        let mut refs: Vec<(usize, &AccountConfig)> = self.accounts.iter().enumerate().collect();
+        refs.sort_by(|(ai, a), (bi, b)| match (a.order_index, b.order_index) {
+            (Some(x), Some(y)) => x.cmp(&y).then(ai.cmp(bi)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => ai.cmp(bi),
+        });
+        refs.into_iter().map(|(_, account)| account).collect()
+    }
+
+    /// Enabled accounts (clones) in display order, for snapshot fan-out.
+    pub(crate) fn enabled_accounts_ordered(&self) -> Vec<AccountConfig> {
+        self.sorted_accounts()
+            .into_iter()
+            .filter(|account| account.enabled)
+            .cloned()
+            .collect()
+    }
+
+    /// Apply a user-defined global order. `ids` lists accounts in the desired
+    /// order; any account not present is appended after, preserving its prior
+    /// relative order. `order_index` is re-normalized to a dense `0..n`. Does not
+    /// touch `updated_at` (which keys the provider success cache).
+    pub(crate) fn reorder(&mut self, ids: &[String]) {
+        let mut ordered: Vec<usize> = Vec::with_capacity(self.accounts.len());
+        for id in ids {
+            if let Some(index) = self.accounts.iter().position(|account| &account.id == id)
+                && !ordered.contains(&index)
+            {
+                ordered.push(index);
+            }
+        }
+        // Append any accounts not named in `ids`, in their current display order.
+        let remaining: Vec<usize> = self
+            .sorted_accounts()
+            .into_iter()
+            .filter_map(|account| self.accounts.iter().position(|a| a.id == account.id))
+            .filter(|index| !ordered.contains(index))
+            .collect();
+        ordered.extend(remaining);
+        for (rank, &index) in ordered.iter().enumerate() {
+            self.accounts[index].order_index = Some(rank as i64);
+        }
     }
 
     pub(crate) fn upsert_manual(&mut self, input: AccountInput) -> AccountConfig {
@@ -77,6 +127,9 @@ impl AppConfig {
             secret_storage: input.secret_storage,
             keyring_account: None,
             plaintext_secret: None,
+            email: None,
+            config_dir: None,
+            order_index: None,
             created_at: now,
             updated_at: now,
         };
@@ -276,9 +329,34 @@ pub(crate) fn default_auto_account(
         secret_storage: SecretStorageMode::Keyring,
         keyring_account: None,
         plaintext_secret: None,
+        email: None,
+        config_dir: None,
+        order_index: None,
         created_at: now,
         updated_at: now,
     }
+}
+
+/// The isolated CLI home Burnrate manages for a non-default account, e.g.
+/// `<config_dir>/cli/claude-code/<account-id>` used as `CLAUDE_CONFIG_DIR` /
+/// `CODEX_HOME`. The auto-detected primary account does not use this (it shares
+/// the system default location).
+pub(crate) fn account_cli_dir(provider: ProviderKind, account_id: &str) -> Result<PathBuf> {
+    Ok(config_dir()?
+        .join("cli")
+        .join(provider.as_str())
+        .join(account_id))
+}
+
+/// True only when `path` lives under Burnrate's managed `<config_dir>/cli/` tree.
+/// Guards destructive cleanup from ever touching a system default such as
+/// `~/.claude` or `~/.codex`.
+pub(crate) fn is_managed_cli_dir(path: &Path) -> bool {
+    let Ok(root) = config_dir() else {
+        return false;
+    };
+    let cli_root = root.join("cli");
+    path.starts_with(&cli_root) && path != cli_root
 }
 
 #[cfg(test)]
@@ -465,5 +543,143 @@ mod tests {
         assert_eq!(config.accounts.len(), 1);
         assert!(config.accounts[0].auto_detected);
         assert_eq!(config.accounts[0].updated_at, updated_at);
+    }
+
+    fn add_account(config: &mut AppConfig, id: &str, provider: ProviderKind) {
+        config.upsert_manual(AccountInput {
+            id: Some(id.to_string()),
+            provider,
+            label: id.to_string(),
+            enabled: true,
+            endpoint_override: None,
+            secret_storage: SecretStorageMode::Keyring,
+            secret: None,
+        });
+    }
+
+    fn view_ids(config: &AppConfig) -> Vec<String> {
+        config.views().into_iter().map(|view| view.id).collect()
+    }
+
+    #[test]
+    fn reorder_assigns_dense_indices_and_appends_unspecified() {
+        let mut config = AppConfig::default();
+        add_account(&mut config, "a", ProviderKind::ClaudeCode);
+        add_account(&mut config, "b", ProviderKind::Codex);
+        add_account(&mut config, "c", ProviderKind::OpenRouter);
+
+        config.reorder(&["c".to_string(), "a".to_string(), "b".to_string()]);
+        assert_eq!(view_ids(&config), vec!["c", "a", "b"]);
+        for account in &config.accounts {
+            assert!(account.order_index.is_some());
+        }
+
+        // A partial list reorders the named account and appends the rest in
+        // their current display order.
+        config.reorder(&["b".to_string()]);
+        assert_eq!(view_ids(&config), vec!["b", "c", "a"]);
+    }
+
+    #[test]
+    fn reorder_ignores_unknown_ids() {
+        let mut config = AppConfig::default();
+        add_account(&mut config, "a", ProviderKind::ClaudeCode);
+        add_account(&mut config, "b", ProviderKind::Codex);
+
+        config.reorder(&["ghost".to_string(), "b".to_string(), "a".to_string()]);
+
+        assert_eq!(view_ids(&config), vec!["b", "a"]);
+    }
+
+    #[test]
+    fn views_keep_insertion_order_until_reordered() {
+        let mut config = AppConfig::default();
+        add_account(&mut config, "a", ProviderKind::ClaudeCode);
+        add_account(&mut config, "b", ProviderKind::Codex);
+        add_account(&mut config, "c", ProviderKind::OpenRouter);
+
+        // Legacy/unset order_index renders in insertion order.
+        assert_eq!(view_ids(&config), vec!["a", "b", "c"]);
+
+        // An explicitly ordered account sorts ahead of unset ones.
+        config.accounts[2].order_index = Some(0);
+        assert_eq!(view_ids(&config), vec!["c", "a", "b"]);
+    }
+
+    #[test]
+    fn enabled_accounts_ordered_filters_and_sorts() {
+        let mut config = AppConfig::default();
+        add_account(&mut config, "a", ProviderKind::ClaudeCode);
+        add_account(&mut config, "b", ProviderKind::Codex);
+        add_account(&mut config, "c", ProviderKind::OpenRouter);
+        config.accounts[1].enabled = false;
+        config.reorder(&["c".to_string(), "a".to_string(), "b".to_string()]);
+
+        let enabled: Vec<String> = config
+            .enabled_accounts_ordered()
+            .into_iter()
+            .map(|account| account.id)
+            .collect();
+
+        assert_eq!(enabled, vec!["c", "a"]);
+    }
+
+    #[test]
+    fn loads_legacy_account_without_new_fields() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        fs::write(
+            &path,
+            r#"{
+                "accounts": [{
+                    "id": "claude-code-local",
+                    "provider": "claude-code",
+                    "label": "Claude Code",
+                    "enabled": true,
+                    "autoDetected": true,
+                    "credentialPath": "/home/user/.claude",
+                    "endpointOverride": null,
+                    "secretStorage": "keyring",
+                    "keyringAccount": null,
+                    "plaintextSecret": null,
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "updatedAt": "2026-01-01T00:00:00Z"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = load_from_path(&path).unwrap();
+
+        assert_eq!(loaded.accounts.len(), 1);
+        assert_eq!(loaded.accounts[0].email, None);
+        assert_eq!(loaded.accounts[0].config_dir, None);
+        assert_eq!(loaded.accounts[0].order_index, None);
+        assert_eq!(loaded.accounts[0].cli_config_dir(), None);
+    }
+
+    #[test]
+    fn account_cli_dir_is_under_config_dir() {
+        let expected = config_dir()
+            .unwrap()
+            .join("cli")
+            .join("codex")
+            .join("codex-123");
+        let actual = account_cli_dir(ProviderKind::Codex, "codex-123").unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn is_managed_cli_dir_guards_system_default() {
+        let root = config_dir().unwrap();
+        let managed = root.join("cli").join("claude-code").join("acct-1");
+
+        assert!(is_managed_cli_dir(&managed));
+        // The `cli` root itself is not a deletable per-account dir.
+        assert!(!is_managed_cli_dir(&root.join("cli")));
+        // A system default location must never be considered managed.
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+        assert!(!is_managed_cli_dir(&home.join(".claude")));
+        assert!(!is_managed_cli_dir(&home.join(".codex")));
     }
 }
