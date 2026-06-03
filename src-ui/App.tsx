@@ -169,18 +169,23 @@ export function App() {
   };
 
   async function onUpdateChannelChange(channel: UpdateChannel) {
-    if (channel === settings.updateChannel) {
+    const previousSettings = settings;
+    if (channel === previousSettings.updateChannel) {
       return;
     }
     // Optimistically reflect the choice; persist, then let the backend's
-    // settings-updated event reconcile both windows.
-    const next: AppSettings = { ...settings, updateChannel: channel };
+    // settings-updated event reconcile both windows. Roll back if the save
+    // fails so the UI doesn't drift from the stored config.
+    const next: AppSettings = { ...previousSettings, updateChannel: channel };
     setState((previous) =>
       previous ? { ...previous, settings: next } : previous,
     );
     try {
       await saveSettings(next);
     } catch (err) {
+      setState((previous) =>
+        previous ? { ...previous, settings: previousSettings } : previous,
+      );
       setError(String(err));
     }
   }

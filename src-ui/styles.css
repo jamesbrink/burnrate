@@ -555,24 +555,6 @@ p {
   font-weight: 700;
 }
 
-.secondary {
-  min-height: 38px;
-  border: 1px solid var(--field-border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--fg);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-weight: 600;
-  padding: 0 12px;
-}
-
-.secondary:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--fg) 38%, var(--hairline));
-}
-
 /* Update banner (Preferences) ------------------------------------------- */
 .update-banner {
   display: flex;

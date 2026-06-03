@@ -434,6 +434,8 @@ test("surfaces an error when saving the update channel fails", async () => {
   });
 
   expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
+  // The optimistic change rolls back to the persisted channel on failure.
+  expect(screen.getByLabelText("Release channel")).toHaveValue("stable");
 });
 
 test("falls back to frontend warning and stale summaries", async () => {

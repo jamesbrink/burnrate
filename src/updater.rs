@@ -231,7 +231,10 @@ pub(crate) async fn check_for_updates(
     state: State<'_, UpdaterState>,
     channel: String,
 ) -> Result<Option<UpdateInfo>, String> {
-    if !updater_pubkey_configured() {
+    // Gate on the full support check (bundled macOS + pubkey), not just the
+    // pubkey: a direct invoke on an unsupported build must not stash a pending
+    // update that could never be installed.
+    if !updater_available() {
         return Ok(None);
     }
     let endpoints = endpoints_for(&channel).await?;
@@ -287,6 +290,9 @@ pub(crate) async fn install_pending_update(
     state: State<'_, UpdaterState>,
     version: String,
 ) -> Result<(), String> {
+    if !updater_available() {
+        return Err("Updates are not supported on this build.".to_string());
+    }
     let slot = state.pending_update.lock().await;
     let update = slot
         .as_ref()

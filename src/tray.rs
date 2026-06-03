@@ -149,15 +149,25 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let preferences =
         MenuItem::with_id(app, "preferences", "Open Preferences", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
-    let check_updates = MenuItem::with_id(
-        app,
-        "check-updates",
-        "Check for Updates…",
-        true,
-        None::<&str>,
-    )?;
     let quit = MenuItem::with_id(app, "quit", "Quit Burnrate", true, None::<&str>)?;
-    let items: [&dyn IsMenuItem<Wry>; 4] = [&preferences, &refresh, &check_updates, &quit];
+    // Only advertise "Check for Updates…" where the in-app updater actually
+    // works (a signed, bundled macOS app); on other builds it would be a no-op.
+    let check_updates = if crate::updater::updater_available() {
+        Some(MenuItem::with_id(
+            app,
+            "check-updates",
+            "Check for Updates…",
+            true,
+            None::<&str>,
+        )?)
+    } else {
+        None
+    };
+    let mut items: Vec<&dyn IsMenuItem<Wry>> = vec![&preferences, &refresh];
+    if let Some(ref check_updates) = check_updates {
+        items.push(check_updates);
+    }
+    items.push(&quit);
     let menu = Menu::with_items(app, &items)?;
 
     let _ = app.remove_tray_by_id(TRAY_ID);
