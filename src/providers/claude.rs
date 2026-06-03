@@ -58,8 +58,6 @@ struct ClaudeAuthStatus {
     subscription_type: Option<String>,
     #[serde(default)]
     email: Option<String>,
-    #[serde(default)]
-    org_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -863,7 +861,6 @@ mod tests {
             api_provider: api_provider.map(ToString::to_string),
             subscription_type: subscription_type.map(ToString::to_string),
             email: None,
-            org_name: None,
         }
     }
 

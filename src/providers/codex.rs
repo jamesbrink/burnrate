@@ -93,14 +93,17 @@ pub(crate) fn detect() -> Option<AccountConfig> {
 }
 
 pub(crate) async fn fetch(http: &Client, account: &AccountConfig) -> Result<UsageSnapshot> {
-    if account.endpoint_override.is_some()
+    let email = read_codex_email(account.cli_config_dir());
+    let mut snapshot = if account.endpoint_override.is_some()
         || std::env::var("BURNRATE_CODEX_RATE_LIMITS_URL").is_ok()
     {
-        return fetch_http_override(http, account).await;
-    }
-
-    let value = read_codex_app_server_rate_limits().await?;
-    Ok(parse_codex_rate_limits(account, &value))
+        fetch_http_override(http, account).await?
+    } else {
+        let value = read_codex_app_server_rate_limits(account.cli_config_dir()).await?;
+        parse_codex_rate_limits(account, &value)
+    };
+    snapshot.email = email;
+    Ok(snapshot)
 }
 
 async fn fetch_http_override(http: &Client, account: &AccountConfig) -> Result<UsageSnapshot> {
@@ -124,16 +127,26 @@ async fn fetch_http_override(http: &Client, account: &AccountConfig) -> Result<U
     Ok(parse_codex_rate_limits(account, &value))
 }
 
-async fn read_codex_app_server_rate_limits() -> Result<Value> {
-    let binary = std::env::var("BURNRATE_CODEX_BIN")
+pub(crate) fn codex_binary() -> String {
+    std::env::var("BURNRATE_CODEX_BIN")
         .or_else(|_| std::env::var("CODEX_BIN"))
-        .unwrap_or_else(|_| "codex".to_string());
-    read_codex_app_server_rate_limits_with_binary(&binary).await
+        .unwrap_or_else(|_| "codex".to_string())
 }
 
-async fn read_codex_app_server_rate_limits_with_binary(binary: &str) -> Result<Value> {
+async fn read_codex_app_server_rate_limits(config_dir: Option<&str>) -> Result<Value> {
+    read_codex_app_server_rate_limits_with_binary(&codex_binary(), config_dir).await
+}
+
+async fn read_codex_app_server_rate_limits_with_binary(
+    binary: &str,
+    config_dir: Option<&str>,
+) -> Result<Value> {
     let resolved = super::resolve_cli(binary);
     let path_env = super::augmented_path();
+    let codex_home = config_dir
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     timeout(APP_SERVER_TIMEOUT, async move {
         let mut command = Command::new(&resolved);
         command
@@ -143,6 +156,9 @@ async fn read_codex_app_server_rate_limits_with_binary(binary: &str) -> Result<V
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
+        if let Some(home) = codex_home.as_deref() {
+            command.env("CODEX_HOME", home);
+        }
 
         let mut child = command.spawn().with_context(|| {
             format!(
@@ -576,6 +592,111 @@ fn parse_codex_legacy_rate_limits(
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct CodexAuthFile {
+    #[serde(default)]
+    tokens: Option<CodexTokens>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CodexTokens {
+    #[serde(default)]
+    id_token: Option<String>,
+}
+
+/// Identity claims decoded from a Codex `id_token`. `email` is the field we use;
+/// the rest are parsed for completeness and exercised by tests.
+#[allow(dead_code)] // name/plan/account_id reserved for future display
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct CodexIdClaims {
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub chatgpt_plan_type: Option<String>,
+    pub chatgpt_account_id: Option<String>,
+}
+
+fn codex_home_dir(config_dir: Option<&str>) -> Option<PathBuf> {
+    config_dir
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var("CODEX_HOME").ok().map(PathBuf::from))
+        .or_else(|| dirs::home_dir().map(|home| home.join(".codex")))
+}
+
+fn read_codex_auth_json(config_dir: Option<&str>) -> Option<CodexAuthFile> {
+    let path = codex_home_dir(config_dir)?.join("auth.json");
+    let contents = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&contents).ok()
+}
+
+/// Decode the *payload* of a Codex `id_token` (a JWT) and pull the account
+/// claims. The signature is intentionally NOT verified: this is the user's own
+/// local `auth.json`, already trusted, and we read only non-secret identity
+/// claims (never the token itself).
+pub(crate) fn parse_codex_id_token(id_token: &str) -> Option<CodexIdClaims> {
+    use base64::Engine;
+    let payload_segment = id_token.split('.').nth(1)?;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_segment)
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(payload_segment))
+        .ok()?;
+    let value: Value = serde_json::from_slice(&decoded).ok()?;
+    let auth = value.pointer("/https:~1~1api.openai.com~1auth");
+    Some(CodexIdClaims {
+        email: string_claim(&value, "/email"),
+        name: string_claim(&value, "/name"),
+        chatgpt_plan_type: auth
+            .and_then(|auth| auth.get("chatgpt_plan_type"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        chatgpt_account_id: auth
+            .and_then(|auth| auth.get("chatgpt_account_id"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    })
+}
+
+fn string_claim(value: &Value, pointer: &str) -> Option<String> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Best-effort read of the signed-in Codex email for an account's config dir.
+fn read_codex_email(config_dir: Option<&str>) -> Option<String> {
+    let auth = read_codex_auth_json(config_dir)?;
+    let id_token = auth.tokens?.id_token?;
+    parse_codex_id_token(&id_token)?.email
+}
+
+/// `codex login` argument vector (browser OAuth).
+#[allow(dead_code)] // wired in providers::login
+pub(crate) fn codex_login_args() -> Vec<String> {
+    vec!["login".to_string()]
+}
+
+/// `codex logout` argument vector.
+#[allow(dead_code)] // wired in providers::login
+pub(crate) fn codex_logout_args() -> Vec<String> {
+    vec!["logout".to_string()]
+}
+
+/// Verify a freshly completed Codex login under `config_dir`, returning the
+/// account email. A parseable `auth.json` with an `id_token` is the success
+/// signal.
+#[allow(dead_code)] // wired in providers::login
+pub(crate) fn login_verify(config_dir: Option<&str>) -> Result<Option<String>> {
+    let auth = read_codex_auth_json(config_dir)
+        .ok_or_else(|| anyhow!("Codex login did not complete; no auth.json was written."))?;
+    let id_token = auth
+        .tokens
+        .and_then(|tokens| tokens.id_token)
+        .ok_or_else(|| anyhow!("Codex auth.json is missing an id_token."))?;
+    Ok(parse_codex_id_token(&id_token).and_then(|claims| claims.email))
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
@@ -815,13 +936,14 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let binary = dir.path().join("codex-fixture");
+        // The fixture echoes back $CODEX_HOME so we can assert it was threaded in.
         std::fs::write(
             &binary,
             r#"#!/bin/sh
 while IFS= read -r line; do
   case "$line" in
     *account/rateLimits/read*)
-      echo '{"id":2,"result":{"rateLimits":{"planType":"pro","primary":{"usedPercent":10,"resetsAt":1780000000000,"windowDurationMins":300}}}}'
+      echo "{\"id\":2,\"result\":{\"rateLimits\":{\"planType\":\"pro\",\"primary\":{\"usedPercent\":10,\"resetsAt\":1780000000000,\"windowDurationMins\":300}}},\"codexHome\":\"$CODEX_HOME\"}"
       exit 0
       ;;
   esac
@@ -833,10 +955,82 @@ done
         perms.set_mode(0o755);
         std::fs::set_permissions(&binary, perms).unwrap();
 
-        let value = read_codex_app_server_rate_limits_with_binary(&binary.to_string_lossy())
-            .await
-            .unwrap();
+        let home = dir.path().join("codex-home");
+        let value = read_codex_app_server_rate_limits_with_binary(
+            &binary.to_string_lossy(),
+            Some(home.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(value["result"]["rateLimits"]["planType"], "pro");
+        // CODEX_HOME was passed through to the spawned app-server.
+        assert_eq!(value["codexHome"], home.to_string_lossy().as_ref());
+    }
+
+    fn make_id_token(payload: serde_json::Value) -> String {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&payload).unwrap());
+        format!("header.{encoded}.signature")
+    }
+
+    #[test]
+    fn parse_codex_id_token_extracts_email_plan_and_account() {
+        let token = make_id_token(json!({
+            "email": "brink.james@gmail.com",
+            "name": "James Brink",
+            "https://api.openai.com/auth": {
+                "chatgpt_plan_type": "pro",
+                "chatgpt_account_id": "de09b74b-41f5-4ebd-87a3-3f6d336d6926"
+            }
+        }));
+
+        let claims = parse_codex_id_token(&token).unwrap();
+
+        assert_eq!(claims.email.as_deref(), Some("brink.james@gmail.com"));
+        assert_eq!(claims.name.as_deref(), Some("James Brink"));
+        assert_eq!(claims.chatgpt_plan_type.as_deref(), Some("pro"));
+        assert_eq!(
+            claims.chatgpt_account_id.as_deref(),
+            Some("de09b74b-41f5-4ebd-87a3-3f6d336d6926")
+        );
+    }
+
+    #[test]
+    fn parse_codex_id_token_rejects_malformed_input() {
+        assert!(parse_codex_id_token("not-a-jwt").is_none());
+        assert!(parse_codex_id_token("header.%%%notbase64%%%.sig").is_none());
+        assert!(parse_codex_id_token("").is_none());
+    }
+
+    #[test]
+    fn login_verify_reads_email_from_auth_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let token = make_id_token(json!({ "email": "user@example.com" }));
+        std::fs::write(
+            dir.path().join("auth.json"),
+            serde_json::to_string(&json!({
+                "auth_mode": "chatgpt",
+                "tokens": { "id_token": token }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let email = login_verify(Some(dir.path().to_str().unwrap())).unwrap();
+        assert_eq!(email.as_deref(), Some("user@example.com"));
+    }
+
+    #[test]
+    fn login_verify_errors_when_auth_json_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(login_verify(Some(dir.path().to_str().unwrap())).is_err());
+    }
+
+    #[test]
+    fn codex_login_and_logout_args() {
+        assert_eq!(codex_login_args(), vec!["login"]);
+        assert_eq!(codex_logout_args(), vec!["logout"]);
     }
 }
