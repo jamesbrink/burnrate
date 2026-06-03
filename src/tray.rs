@@ -242,7 +242,7 @@ pub(crate) fn set_dock_icon_if_unbundled() {
 pub(crate) fn set_dock_icon_if_unbundled() {}
 
 #[cfg(target_os = "macos")]
-fn running_in_app_bundle() -> bool {
+pub(crate) fn running_in_app_bundle() -> bool {
     std::env::current_exe()
         .map(|path| path_is_in_app_bundle(&path.to_string_lossy()))
         .unwrap_or(false)

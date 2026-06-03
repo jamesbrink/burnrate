@@ -138,6 +138,35 @@ test("re-checking the same dismissed version stays dismissed", async () => {
   expect(result.current.state.dismissed).toBe(true);
 });
 
+test("install is a no-op before any update is found", async () => {
+  const { result } = renderHook(() => useUpdater("stable"));
+  await act(async () => {
+    await result.current.install();
+  });
+  // No pending version → nothing to install, backend not called.
+  expect(api.installUpdate).not.toHaveBeenCalled();
+  expect(result.current.state.downloading).toBe(false);
+});
+
+test("install passes the displayed version to the backend", async () => {
+  api.checkForUpdates.mockResolvedValue({
+    version: "2.0.0",
+    currentVersion: "1.0.0",
+    body: null,
+    date: null,
+  });
+  api.installUpdate.mockResolvedValue(undefined);
+
+  const { result } = renderHook(() => useUpdater("stable"));
+  await act(async () => {
+    await result.current.checkNow();
+  });
+  await act(async () => {
+    await result.current.install();
+  });
+  expect(api.installUpdate).toHaveBeenCalledWith("2.0.0");
+});
+
 test("install is a no-op while already downloading", async () => {
   api.checkForUpdates.mockResolvedValue({
     version: "2.0.0",

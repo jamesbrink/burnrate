@@ -122,9 +122,13 @@ export function useUpdater(
 
   const install = useCallback(async () => {
     if (stateRef.current.downloading) return;
+    const version = stateRef.current.version;
+    if (!version) return;
     update({ downloading: true, progress: 0, error: null });
     try {
-      await installUpdate();
+      // Pass the version we're showing so the backend refuses to install a
+      // different pending update if a later check swapped it.
+      await installUpdate(version);
       // The backend restarts on success; reaching here means a silent failure.
     } catch (err) {
       update({ downloading: false, progress: 0, error: String(err) });

@@ -651,10 +651,10 @@ export async function checkForUpdates(
   return import.meta.env.VITE_MOCK_UPDATE === "1" ? MOCK_UPDATE : null;
 }
 
-export async function installUpdate(): Promise<void> {
+export async function installUpdate(version: string): Promise<void> {
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
-    await invoke("install_pending_update");
+    await invoke("install_pending_update", { version });
     return;
   }
   // Mock: stream a few progress ticks so the UI animates, then stop (a real

@@ -198,11 +198,27 @@ fn classify_check_error(err: tauri_plugin_updater::Error) -> Result<(), String> 
     }
 }
 
-/// True on desktop builds with a configured pubkey. The frontend gates its
-/// update UI on this so dev / unsigned builds stay quiet.
+/// Whether this build can actually self-update. We only publish a macOS
+/// (`darwin-*`) updater manifest, and `tauri-plugin-updater` resolves the
+/// install target from the running `.app` bundle — so a bare `cargo install`
+/// binary or any Linux/Windows build can't install our `.app.tar.gz`. Gate the
+/// updater to a bundled macOS app so those builds don't advertise (and then
+/// fail) updates.
+#[cfg(target_os = "macos")]
+fn updater_supported() -> bool {
+    crate::tray::running_in_app_bundle()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn updater_supported() -> bool {
+    false
+}
+
+/// True only on a bundled macOS `.app` with a configured pubkey. The frontend
+/// gates its update UI on this so dev / unsigned / unsupported builds stay quiet.
 #[tauri::command]
 pub(crate) fn updater_available() -> bool {
-    cfg!(desktop) && updater_pubkey_configured()
+    updater_supported() && updater_pubkey_configured()
 }
 
 /// Check the given channel's release feed for an update. On success the
@@ -257,19 +273,30 @@ pub(crate) async fn check_for_updates(
 }
 
 /// Download and install the pending update, then restart the app. Emits
-/// `burnrate-update-progress` (u32, 0–100) as bytes arrive. Errors if no
-/// update is pending.
+/// `burnrate-update-progress` (u32, 0–100) as bytes arrive.
+///
+/// `version` is the version the UI is offering to install; if a later check
+/// (e.g. from the other window or a channel switch) replaced the pending slot,
+/// this returns an error instead of silently installing a different
+/// channel/version. The lock is held for the whole download so a concurrent
+/// check can't swap the slot mid-install, and the pending update is kept on
+/// failure so the banner's retry can try the same version again.
 #[tauri::command]
 pub(crate) async fn install_pending_update(
     app: AppHandle,
     state: State<'_, UpdaterState>,
+    version: String,
 ) -> Result<(), String> {
-    let update = state
-        .pending_update
-        .lock()
-        .await
-        .take()
+    let slot = state.pending_update.lock().await;
+    let update = slot
+        .as_ref()
         .ok_or_else(|| "No pending update".to_string())?;
+    if update.version != version {
+        return Err(format!(
+            "Pending update changed (have {}, expected {version}); re-check for updates.",
+            update.version
+        ));
+    }
 
     let app_for_cb = app.clone();
     let mut total: u64 = 0;

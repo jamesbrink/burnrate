@@ -273,7 +273,7 @@ test("installUpdate streams mock progress events", async () => {
     seen.push(pct);
   });
 
-  await installUpdate();
+  await installUpdate("9.9.9");
   vi.advanceTimersByTime(500);
 
   expect(seen).toContain(0);
