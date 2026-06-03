@@ -1,4 +1,4 @@
-export type ProviderKind = "claude-code" | "codex" | "openrouter";
+export type ProviderKind = "claude-code" | "codex" | "openrouter" | "runpod";
 export type SecretStorageMode = "keyring" | "plaintext";
 export type SnapshotStatus =
   | "healthy"

@@ -28,15 +28,18 @@ import type {
 
 export const OPENROUTER_DEFAULT_ENDPOINT =
   "https://openrouter.ai/api/v1/credits";
+export const RUNPOD_DEFAULT_ENDPOINT = "https://rest.runpod.io/v1";
 
 export const providerLabels: Record<ProviderKind, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
   openrouter: "OpenRouter",
+  runpod: "Runpod",
 };
 
 const providerDefaultEndpoints: Partial<Record<ProviderKind, string>> = {
   openrouter: OPENROUTER_DEFAULT_ENDPOINT,
+  runpod: RUNPOD_DEFAULT_ENDPOINT,
 };
 
 const statusLabels: Record<SnapshotStatus, string> = {
@@ -202,6 +205,7 @@ export function Preferences({
                   }
                 >
                   <option value="openrouter">OpenRouter</option>
+                  <option value="runpod">Runpod</option>
                   <option value="claude-code">Claude Code</option>
                   <option value="codex">Codex</option>
                 </select>

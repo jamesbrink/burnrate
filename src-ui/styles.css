@@ -629,6 +629,18 @@ p {
   );
 }
 
+.provider-logo-runpod {
+  color: light-dark(#15a37c, #66dfbd);
+  background: light-dark(
+    #e9fbf5,
+    color-mix(in srgb, #15a37c 20%, var(--surface))
+  );
+  border-color: light-dark(
+    #bfefe0,
+    color-mix(in srgb, #15a37c 32%, var(--surface))
+  );
+}
+
 /* ─── Tray popover: native macOS menu-bar look ──────────────────────────────
    Scoped to the tray window (html[data-view="tray"], set in main.tsx) so none
    of this touches the Preferences window, which shares this stylesheet. Colors
@@ -806,6 +818,12 @@ html[data-view="tray"] .provider-logo-openrouter {
   color: light-dark(#3a5fd9, #8aa6ff);
   background: color-mix(in srgb, #4b6fe0 20%, transparent);
   border-color: color-mix(in srgb, #4b6fe0 30%, transparent);
+}
+
+html[data-view="tray"] .provider-logo-runpod {
+  color: light-dark(#158968, #66dfbd);
+  background: color-mix(in srgb, #15a37c 20%, transparent);
+  border-color: color-mix(in srgb, #15a37c 30%, transparent);
 }
 
 html[data-view="tray"] .tray-status {

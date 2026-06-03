@@ -24,8 +24,9 @@ export function bucketFromQuota(
 }
 
 export function bucketPercent(bucket: UsageBucketSnapshot): number {
-  if (!bucket.limit || bucket.remaining === null) return 0;
-  return Math.max(0, Math.min(100, (bucket.remaining / bucket.limit) * 100));
+  if (!bucket.limit) return 0;
+  const value = bucket.remaining === null ? bucket.used : bucket.remaining;
+  return Math.max(0, Math.min(100, (value / bucket.limit) * 100));
 }
 
 export function formatNumber(value: number): string {
@@ -35,15 +36,17 @@ export function formatNumber(value: number): string {
 }
 
 export function formatLimit(bucket: UsageBucketSnapshot): string {
-  const remaining =
+  const value =
     bucket.remaining === null
-      ? "Unknown"
+      ? bucket.limit === null && bucket.used === 0
+        ? "Unknown"
+        : formatBucketNumber(bucket.used, bucket.unit)
       : formatBucketNumber(bucket.remaining, bucket.unit);
   const limit =
     bucket.limit === null
       ? ""
       : ` / ${formatBucketNumber(bucket.limit, bucket.unit)}`;
-  return `${remaining}${limit}`;
+  return `${value}${limit}`;
 }
 
 function formatBucketNumber(value: number, unit: string): string {

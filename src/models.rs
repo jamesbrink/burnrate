@@ -8,6 +8,7 @@ pub(crate) enum ProviderKind {
     Codex,
     #[serde(rename = "openrouter", alias = "open-router")]
     OpenRouter,
+    Runpod,
 }
 
 impl ProviderKind {
@@ -16,6 +17,7 @@ impl ProviderKind {
             ProviderKind::ClaudeCode => "claude-code",
             ProviderKind::Codex => "codex",
             ProviderKind::OpenRouter => "openrouter",
+            ProviderKind::Runpod => "runpod",
         }
     }
 }
@@ -186,6 +188,7 @@ mod tests {
         assert_eq!(ProviderKind::ClaudeCode.as_str(), "claude-code");
         assert_eq!(ProviderKind::Codex.as_str(), "codex");
         assert_eq!(ProviderKind::OpenRouter.as_str(), "openrouter");
+        assert_eq!(ProviderKind::Runpod.as_str(), "runpod");
         assert_eq!(
             serde_json::to_string(&ProviderKind::OpenRouter).unwrap(),
             "\"openrouter\""

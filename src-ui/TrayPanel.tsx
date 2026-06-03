@@ -18,6 +18,7 @@ const providerLabels = {
   "claude-code": "Claude",
   codex: "Codex",
   openrouter: "OpenRouter",
+  runpod: "Runpod",
 } as const;
 
 const statusLabels: Record<SnapshotStatus, string> = {

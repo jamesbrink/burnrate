@@ -41,7 +41,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://api.anthropic.com https://chatgpt.com https://openrouter.ai http://localhost:* http://127.0.0.1:*; img-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://api.anthropic.com https://chatgpt.com https://openrouter.ai https://rest.runpod.io https://api.runpod.io http://localhost:* http://127.0.0.1:*; img-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
   "bundle": {
@@ -58,7 +58,7 @@
     "createUpdaterArtifacts": false,
     "category": "DeveloperTool",
     "shortDescription": "Desktop quota and usage monitor",
-    "longDescription": "Burnrate monitors usage and remaining quota across Claude Code, Codex, and OpenRouter accounts.",
+    "longDescription": "Burnrate monitors usage and remaining quota across Claude Code, Codex, OpenRouter, and Runpod accounts.",
     "macOS": {
       "entitlements": "entitlements.macos.plist"
     }

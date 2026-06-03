@@ -1,6 +1,7 @@
 mod claude;
 mod codex;
 mod openrouter;
+mod runpod;
 
 use std::{
     collections::HashMap,
@@ -56,6 +57,7 @@ impl ProviderClient {
             ProviderKind::ClaudeCode => claude::fetch(&self.http, account).await,
             ProviderKind::Codex => codex::fetch(&self.http, account).await,
             ProviderKind::OpenRouter => openrouter::fetch(&self.http, account).await,
+            ProviderKind::Runpod => runpod::fetch(&self.http, account).await,
         };
 
         match result {
@@ -602,7 +604,7 @@ fn token_pointers(provider: ProviderKind) -> &'static [&'static str] {
             "/api_key",
             "/apiKey",
         ],
-        ProviderKind::OpenRouter => &["/api_key", "/apiKey", "/key"],
+        ProviderKind::OpenRouter | ProviderKind::Runpod => &["/api_key", "/apiKey", "/key"],
     }
 }
 

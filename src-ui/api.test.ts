@@ -65,7 +65,7 @@ test("wires browser refresh events and refresh snapshot fallback", async () => {
   window.dispatchEvent(new Event("burnrate-refresh-requested"));
 
   expect(handler).toHaveBeenCalledOnce();
-  await expect(refreshSnapshots()).resolves.toHaveLength(3);
+  await expect(refreshSnapshots()).resolves.toHaveLength(4);
 });
 
 test("isStale compares against the freshness threshold", () => {
@@ -94,51 +94,48 @@ test("writeCachedDashboard swallows storage failures", () => {
 });
 
 test("guardedFetch de-dupes concurrent fetches", async () => {
-  const setItem = vi.spyOn(Storage.prototype, "setItem");
-
   const [first, second] = await Promise.all([guardedFetch(), guardedFetch()]);
 
-  // One underlying fetch → one cache write → both callers share the payload.
-  expect(setItem).toHaveBeenCalledTimes(1);
+  // One underlying fetch → one cache entry → both callers share the payload.
+  expect(readCachedDashboard()?.dashboard.snapshots).toHaveLength(4);
   expect(first).toBe(second);
 });
 
 test("guardedFetch throttles non-forced fetches but honors force", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(0);
-  const setItem = vi.spyOn(Storage.prototype, "setItem");
 
   await guardedFetch();
-  expect(setItem).toHaveBeenCalledTimes(1);
+  expect(readCachedDashboard()?.fetchedAt).toBe(0);
 
   // Within the throttle window a non-forced call returns cache (no new write).
   vi.setSystemTime(5_000);
-  await guardedFetch();
-  expect(setItem).toHaveBeenCalledTimes(1);
+  const throttled = await guardedFetch();
+  expect(readCachedDashboard()?.fetchedAt).toBe(0);
 
   // force bypasses the throttle.
-  await guardedFetch({ force: true });
-  expect(setItem).toHaveBeenCalledTimes(2);
+  const forced = await guardedFetch({ force: true });
+  expect(readCachedDashboard()?.fetchedAt).toBe(5_000);
+  expect(forced).not.toBe(throttled);
 });
 
 test("guardedFetch honors a fresh persisted cache after a reload resets the guard", async () => {
   // Simulate an HMR/window reload: cache persists in sessionStorage but the
   // module-scoped lastFetchAt is back to 0.
   writeCachedDashboard(dashboardState());
+  const cachedAt = readCachedDashboard()?.fetchedAt;
   __resetFetchGuard();
-  const setItem = vi.spyOn(Storage.prototype, "setItem");
 
   const result = await guardedFetch();
 
   // Served from the fresh cache — no underlying fetch, so no new cache write.
-  expect(setItem).not.toHaveBeenCalled();
+  expect(readCachedDashboard()?.fetchedAt).toBe(cachedAt);
   expect(result.snapshots).toHaveLength(1);
 });
 
 test("markFetched records the dashboard and resets the throttle window", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(0);
-  const setItem = vi.spyOn(Storage.prototype, "setItem");
 
   markFetched(dashboardState());
   expect(readCachedDashboard()?.fetchedAt).toBe(0);
@@ -146,7 +143,7 @@ test("markFetched records the dashboard and resets the throttle window", async (
   // A non-forced fetch right after markFetched stays throttled (no new write).
   vi.setSystemTime(3_000);
   await guardedFetch();
-  expect(setItem).toHaveBeenCalledTimes(1);
+  expect(readCachedDashboard()?.fetchedAt).toBe(0);
 });
 
 test("resizeTrayToContent resolves to a no-op outside Tauri", async () => {

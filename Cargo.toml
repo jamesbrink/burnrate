@@ -2,12 +2,12 @@
 name = "burnrate"
 version = "0.1.0"
 edition = "2024"
-description = "Desktop usage monitor for Claude Code, Codex, and OpenRouter quotas, credits, and subscription limits."
+description = "Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, credits, spend, and subscription limits."
 license = "MIT"
 repository = "https://github.com/jamesbrink/burnrate"
 homepage = "https://github.com/jamesbrink/burnrate"
 readme = "README.md"
-keywords = ["tauri", "usage", "quota", "claude", "codex"]
+keywords = ["usage", "quota", "claude", "codex", "runpod"]
 categories = ["command-line-utilities", "gui"]
 include = [
   "src/**",

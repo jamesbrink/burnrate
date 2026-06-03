@@ -3,16 +3,17 @@
 [![CI](https://github.com/jamesbrink/burnrate/actions/workflows/ci.yml/badge.svg)](https://github.com/jamesbrink/burnrate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Desktop usage monitor for Claude Code, Codex, and OpenRouter quotas, credits, and subscription limits. Built with Tauri 2 (Rust + React/TypeScript) and lives in the system tray (the menu bar on macOS).
+Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, credits, spend, and subscription limits. Built with Tauri 2 (Rust + React/TypeScript) and lives in the system tray (the menu bar on macOS).
 
 ## Features
 
 - Menu-bar tray summary with a left-click usage popover and right-click actions (Preferences, Refresh, Quit).
 - Native translucent (vibrancy) popover on macOS that follows the system light/dark appearance, sizes itself to its content, and dismisses when it loses focus.
-- Native Preferences window for account management and manual OpenRouter setup.
-- Auto-detects Claude Code and Codex accounts from local config; OpenRouter is added via API key.
+- Native Preferences window for account management and manual OpenRouter/Runpod setup.
+- Auto-detects Claude Code and Codex accounts from local config; OpenRouter and Runpod are added via API key.
 - Claude Code subscription buckets (5-hour, weekly, model-specific) with stale-auth checks via `claude auth status`.
 - Codex Pro/Max plan and rate-limit buckets read from the Codex app server.
+- Runpod prepaid balance, current spend, burn-rate runway, active resources, and recent Pods/Serverless/storage costs.
 - Secrets in the OS keyring by default, with an explicit plaintext fallback.
 - Hides from the Dock by default; appears only while Preferences is open.
 
@@ -41,7 +42,7 @@ Claude Code usage requires a first-party `claude.ai` OAuth login with an active 
 claude auth login
 ```
 
-Burnrate refreshes in the background every five minutes and caches successful snapshots for five minutes to avoid tight polling.
+Burnrate refreshes in the background every five minutes and caches successful snapshots for five minutes to avoid tight polling. Runpod uses `https://rest.runpod.io/v1` for resources/billing and `https://api.runpod.io/graphql` for balance/burn state by default; `BURNRATE_RUNPOD_REST_URL` and `BURNRATE_RUNPOD_GRAPHQL_URL` can override those endpoints for development or proxies.
 
 Only non-secret account configuration is stored on disk. On macOS the default path is `~/Library/Application Support/burnrate/accounts.json`; set `BURNRATE_CONFIG_DIR` to override. Manual secrets live in the OS keyring unless plaintext storage is explicitly selected for that account.
 

@@ -23,6 +23,7 @@ import {
 } from "./api";
 import {
   OPENROUTER_DEFAULT_ENDPOINT,
+  RUNPOD_DEFAULT_ENDPOINT,
   emptyForm,
   Preferences,
 } from "./Preferences";
@@ -307,10 +308,14 @@ export function App() {
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     const endpoint = form.endpointOverride?.trim() || null;
+    const defaultEndpoint =
+      form.provider === "openrouter"
+        ? OPENROUTER_DEFAULT_ENDPOINT
+        : form.provider === "runpod"
+          ? RUNPOD_DEFAULT_ENDPOINT
+          : null;
     const endpointOverride =
-      form.provider === "openrouter" && endpoint === OPENROUTER_DEFAULT_ENDPOINT
-        ? null
-        : endpoint;
+      defaultEndpoint !== null && endpoint === defaultEndpoint ? null : endpoint;
     setBusy(true);
     setError(null);
     try {
@@ -341,7 +346,11 @@ export function App() {
       enabled: account.enabled,
       endpointOverride:
         account.endpointOverride ??
-        (account.provider === "openrouter" ? OPENROUTER_DEFAULT_ENDPOINT : ""),
+        (account.provider === "openrouter"
+          ? OPENROUTER_DEFAULT_ENDPOINT
+          : account.provider === "runpod"
+            ? RUNPOD_DEFAULT_ENDPOINT
+            : ""),
       secretStorage: account.secretStorage,
       secret: "",
     });

@@ -14,6 +14,8 @@ test("renders provider rows and snapshot states", async () => {
   expect(screen.getAllByText("5-hour").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Weekly").length).toBeGreaterThan(0);
   expect(screen.getAllByText("OpenRouter").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Runpod").length).toBeGreaterThan(0);
+  expect(screen.getByText("Current burn")).toBeInTheDocument();
 });
 
 test("adds a manual account in browser fallback mode", async () => {
@@ -30,6 +32,24 @@ test("adds a manual account in browser fallback mode", async () => {
   await user.click(screen.getByRole("button", { name: "Add" }));
 
   expect(await screen.findByText("OpenRouter Team")).toBeInTheDocument();
+});
+
+test("adds a Runpod account with the default REST endpoint", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "Accounts" });
+  await user.selectOptions(screen.getByLabelText("Provider"), "runpod");
+  expect(screen.getByLabelText("Label")).toHaveValue("Runpod");
+  expect(screen.getByLabelText("Endpoint")).toHaveValue(
+    "https://rest.runpod.io/v1",
+  );
+  await user.clear(screen.getByLabelText("Label"));
+  await user.type(screen.getByLabelText("Label"), "Runpod Team");
+  await user.type(screen.getByLabelText("API Key"), "rp-test");
+  await user.click(screen.getByRole("button", { name: "Add" }));
+
+  expect(await screen.findByText("Runpod Team")).toBeInTheDocument();
 });
 
 test("edits and resets an existing account", async () => {
