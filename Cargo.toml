@@ -1,6 +1,6 @@
 [package]
 name = "burnrate"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, credits, spend, and subscription limits."
 license = "MIT"

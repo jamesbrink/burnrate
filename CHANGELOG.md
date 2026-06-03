@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/jamesbrink/burnrate/compare/v0.1.3...v0.1.4) - 2026-06-03
+
+### Fixed
+
+- *(login)* repair Claude Code sign-in flow ([#18](https://github.com/jamesbrink/burnrate/pull/18))
+
 ## [0.1.3](https://github.com/jamesbrink/burnrate/compare/v0.1.2...v0.1.3) - 2026-06-03
 
 ### Added
