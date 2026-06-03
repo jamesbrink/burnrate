@@ -163,6 +163,14 @@ impl AppConfig {
     }
 }
 
+/// Create a directory (and parents) with private `0700` permissions on its leaf,
+/// matching the hardening used for the config dir. Used for per-account CLI homes.
+pub(crate) fn create_private_dir(path: &Path) -> Result<()> {
+    let existed = path.exists();
+    fs::create_dir_all(path).with_context(|| format!("failed to create {}", path.display()))?;
+    set_private_dir_permissions(path, existed)
+}
+
 pub(crate) fn config_dir() -> Result<PathBuf> {
     if let Ok(path) = std::env::var("BURNRATE_CONFIG_DIR") {
         return Ok(PathBuf::from(path));

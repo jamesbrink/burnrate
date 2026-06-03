@@ -672,13 +672,11 @@ fn read_codex_email(config_dir: Option<&str>) -> Option<String> {
 }
 
 /// `codex login` argument vector (browser OAuth).
-#[allow(dead_code)] // wired in providers::login
 pub(crate) fn codex_login_args() -> Vec<String> {
     vec!["login".to_string()]
 }
 
 /// `codex logout` argument vector.
-#[allow(dead_code)] // wired in providers::login
 pub(crate) fn codex_logout_args() -> Vec<String> {
     vec!["logout".to_string()]
 }
@@ -686,7 +684,6 @@ pub(crate) fn codex_logout_args() -> Vec<String> {
 /// Verify a freshly completed Codex login under `config_dir`, returning the
 /// account email. A parseable `auth.json` with an `id_token` is the success
 /// signal.
-#[allow(dead_code)] // wired in providers::login
 pub(crate) fn login_verify(config_dir: Option<&str>) -> Result<Option<String>> {
     let auth = read_codex_auth_json(config_dir)
         .ok_or_else(|| anyhow!("Codex login did not complete; no auth.json was written."))?;

@@ -8,7 +8,7 @@ mod providers;
 mod tray;
 
 use app_state::AppState;
-use models::{AccountInput, AccountView, AppSettings, DashboardState};
+use models::{AccountInput, AccountView, AppSettings, DashboardState, LoginFailed, ProviderKind};
 use std::time::Duration;
 
 #[cfg(target_os = "macos")]
@@ -69,6 +69,61 @@ fn remove_account(state: State<'_, AppState>, id: String) -> Result<Vec<AccountV
 #[tauri::command]
 fn detect_accounts(state: State<'_, AppState>) -> Result<Vec<AccountView>, String> {
     state.detect_accounts().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn reorder_accounts(
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+) -> Result<Vec<AccountView>, String> {
+    state
+        .reorder_accounts(&ids)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn start_account_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    provider: ProviderKind,
+    label: String,
+) -> Result<AccountView, String> {
+    state
+        .start_account_login(app.clone(), provider, label)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn cancel_account_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<AccountView>, String> {
+    let accounts = state
+        .cancel_account_login(&id)
+        .map_err(|error| error.to_string())?;
+    let _ = app.emit(
+        "burnrate-login-failed",
+        LoginFailed {
+            id,
+            error: "Sign-in canceled.".to_string(),
+        },
+    );
+    Ok(accounts)
+}
+
+#[tauri::command]
+async fn logout_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<AccountView>, String> {
+    let accounts = state
+        .logout_account(&id)
+        .await
+        .map_err(|error| error.to_string())?;
+    refresh_dashboard_for_app(&app).await;
+    Ok(accounts)
 }
 
 #[tauri::command]
@@ -350,6 +405,10 @@ fn main() {
             save_settings,
             remove_account,
             detect_accounts,
+            reorder_accounts,
+            start_account_login,
+            cancel_account_login,
+            logout_account,
             refresh_snapshots,
             resize_preferences_to_content,
             resize_tray_to_content,

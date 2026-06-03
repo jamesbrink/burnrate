@@ -516,7 +516,6 @@ async fn ensure_claude_code_auth(config_dir: Option<&str>) -> Result<Option<Stri
 /// Verify a freshly completed login for `config_dir`, returning the account
 /// email. Unlike [`ensure_claude_code_auth`], a failed status call is an error
 /// here because we are confirming a just-finished sign-in.
-#[allow(dead_code)] // wired in providers::login
 pub(crate) async fn login_verify(config_dir: Option<&str>) -> Result<Option<String>> {
     let status = claude_auth_status(config_dir).await?;
     validate_auth_status(&status)?;
@@ -526,7 +525,6 @@ pub(crate) async fn login_verify(config_dir: Option<&str>) -> Result<Option<Stri
 /// `claude auth login` argument vector. `--claudeai` selects the subscription
 /// (first-party) flow that usage tracking requires; `--email` pre-fills the
 /// login page when known.
-#[allow(dead_code)] // wired in providers::login
 pub(crate) fn claude_login_args(email: Option<&str>) -> Vec<String> {
     let mut args = vec![
         "auth".to_string(),
@@ -541,7 +539,6 @@ pub(crate) fn claude_login_args(email: Option<&str>) -> Vec<String> {
 }
 
 /// `claude auth logout` argument vector.
-#[allow(dead_code)] // wired in providers::login
 pub(crate) fn claude_logout_args() -> Vec<String> {
     vec!["auth".to_string(), "logout".to_string()]
 }

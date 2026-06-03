@@ -184,6 +184,22 @@ pub(crate) struct QuotaSnapshot {
     pub reset_at: Option<DateTime<Utc>>,
 }
 
+/// Emitted as `burnrate-login-complete` when an interactive sign-in succeeds.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LoginComplete {
+    pub id: String,
+    pub account: AccountView,
+}
+
+/// Emitted as `burnrate-login-failed` when a sign-in errors or is cancelled.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LoginFailed {
+    pub id: String,
+    pub error: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DashboardState {

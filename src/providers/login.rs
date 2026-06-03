@@ -10,9 +10,6 @@
 //! Raw tokens must never reach the UI or logs, so progress lines pass through an
 //! allowlist redactor ([`sanitize_line`]) before being emitted.
 
-// Items here are consumed by `app_state`/`main` once the IPC commands are wired.
-#![allow(dead_code)]
-
 use std::{process::Stdio, sync::Mutex, time::Duration};
 
 use anyhow::{Result, anyhow};
@@ -189,7 +186,7 @@ async fn run_login_inner(
     env_key: &str,
     config_dir: &str,
     open_browser: bool,
-    on_progress: &mut dyn FnMut(&str, Option<&str>),
+    on_progress: &mut (dyn FnMut(&str, Option<&str>) + Send),
 ) -> Result<()> {
     let resolved = super::resolve_cli(binary);
     let mut command = Command::new(&resolved);
