@@ -171,6 +171,13 @@ pub(crate) fn delete_claude_keychain(account: &crate::models::AccountConfig) {
     claude::delete_keychain_credentials(account);
 }
 
+/// macOS fallback keyed by a config dir, for clearing the Keychain credential of
+/// a stale managed dir that is being discarded (reuse-policy adoption).
+#[cfg(target_os = "macos")]
+pub(crate) fn delete_claude_keychain_for_dir(config_dir: Option<&str>) {
+    claude::delete_keychain_credentials_for_dir(config_dir);
+}
+
 /// Sign the account out via the provider CLI (clears Keychain / `auth.json`).
 pub(crate) async fn run_logout(provider: ProviderKind, config_dir: Option<&str>) -> Result<()> {
     let (binary, args, env_key) = logout_command(provider)?;

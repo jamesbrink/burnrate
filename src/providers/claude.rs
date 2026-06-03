@@ -401,8 +401,16 @@ async fn read_credentials(account: &AccountConfig) -> Result<CredentialFile> {
 /// `claude auth logout` would otherwise leave orphaned after the dir is deleted.
 #[cfg(target_os = "macos")]
 pub(crate) fn delete_keychain_credentials(account: &AccountConfig) {
+    delete_keychain_credentials_for_dir(account.cli_config_dir());
+}
+
+/// Like [`delete_keychain_credentials`] but keyed directly by a config dir, for
+/// clearing the credential of a *stale* dir that is about to be discarded (e.g.
+/// when the reuse policy adopts a freshly authenticated dir into an account).
+#[cfg(target_os = "macos")]
+pub(crate) fn delete_keychain_credentials_for_dir(config_dir: Option<&str>) {
     let user = keychain_username();
-    let service_name = keychain_service_name_for(account.cli_config_dir(), oauth_file_suffix());
+    let service_name = keychain_service_name_for(config_dir, oauth_file_suffix());
     let _ = Command::new("security")
         .args(["delete-generic-password", "-s", &service_name, "-a", &user])
         .output();

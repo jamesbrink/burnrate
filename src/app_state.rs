@@ -409,10 +409,16 @@ impl AppState {
                     .as_deref()
                     .is_some_and(|dir| config::is_managed_cli_dir(Path::new(dir)));
                 if existing_managed {
-                    // Adopt the freshly authenticated dir; drop the stale one.
+                    // Adopt the freshly authenticated dir; drop the stale one
+                    // (including its macOS Keychain credential, which is keyed by
+                    // the dir and would otherwise be orphaned).
                     let stale = existing.config_dir.take();
                     existing.config_dir = pending_dir.clone();
                     existing.credential_path = pending_dir;
+                    #[cfg(target_os = "macos")]
+                    if provider == ProviderKind::ClaudeCode {
+                        login::delete_claude_keychain_for_dir(stale.as_deref());
+                    }
                     cleanup_managed_dir(stale.as_deref());
                 } else {
                     // The match is the system-default account; keep its creds and
@@ -452,14 +458,20 @@ impl AppState {
         let _ = config::save_to_path(&self.config_path, &config);
     }
 
-    pub(crate) fn cancel_account_login(&self, id: &str) -> Result<Vec<AccountView>> {
-        // Only tear down the placeholder when we actually canceled an *active*
-        // brand-new sign-in. A late cancel that races a completing login (`None`)
-        // or a re-auth (`Some(true)`) must leave the account in place.
-        if self.login_manager.cancel(id) == Some(false) {
+    /// Cancel an in-progress sign-in. Returns `(canceled, accounts)` where
+    /// `canceled` is true only when an active login was actually aborted — a late
+    /// cancel that races a completing login returns false so the caller does not
+    /// emit a spurious failure over the success.
+    pub(crate) fn cancel_account_login(&self, id: &str) -> Result<(bool, Vec<AccountView>)> {
+        let outcome = self.login_manager.cancel(id);
+        // Only tear down the placeholder when we canceled an *active* brand-new
+        // sign-in; a re-auth (`Some(true)`) or a raced cancel (`None`) leaves the
+        // account in place.
+        if outcome == Some(false) {
             self.discard_pending_login(id);
         }
-        Ok(self.config.lock().expect("config lock").views())
+        let accounts = self.config.lock().expect("config lock").views();
+        Ok((outcome.is_some(), accounts))
     }
 
     /// Sign out and remove an account. Browser-login (managed) Claude/Codex

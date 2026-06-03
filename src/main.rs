@@ -106,16 +106,20 @@ fn cancel_account_login(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<Vec<AccountView>, String> {
-    let accounts = state
+    let (canceled, accounts) = state
         .cancel_account_login(&id)
         .map_err(|error| error.to_string())?;
-    let _ = app.emit(
-        "burnrate-login-failed",
-        LoginFailed {
-            id,
-            error: "Sign-in canceled.".to_string(),
-        },
-    );
+    // Only signal failure when we actually aborted an active sign-in, so a cancel
+    // that raced a completing login can't flip the UI from success to failure.
+    if canceled {
+        let _ = app.emit(
+            "burnrate-login-failed",
+            LoginFailed {
+                id,
+                error: "Sign-in canceled.".to_string(),
+            },
+        );
+    }
     Ok(accounts)
 }
 

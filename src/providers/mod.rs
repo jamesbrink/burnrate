@@ -29,6 +29,11 @@ const PROVIDER_CACHE_TTL_MS: u64 = 5 * 60 * 1000;
 pub(crate) struct ProviderClient {
     http: Client,
     cache: Arc<Mutex<HashMap<String, ProviderCacheEntry>>>,
+    /// Per-account async locks that serialize concurrent fetches so a cold launch
+    /// (two webview windows + the background refresh all calling `dashboard()`)
+    /// triggers a single credential read per account rather than racing — which
+    /// otherwise surfaces as a duplicate macOS Keychain prompt for Claude.
+    fetch_locks: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 #[derive(Clone)]
@@ -45,10 +50,21 @@ impl ProviderClient {
                 .build()
                 .expect("provider HTTP client should build"),
             cache: Arc::new(Mutex::new(HashMap::new())),
+            fetch_locks: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     pub(crate) async fn refresh_account(&self, account: &AccountConfig) -> UsageSnapshot {
+        let now = now_millis();
+        if let Some(snapshot) = self.cached_before_fetch(account, now) {
+            return snapshot;
+        }
+
+        // Serialize concurrent fetches for the same account, then re-check the
+        // cache: the first caller does the real fetch (one credential read) and
+        // the rest return its cached result instead of reading credentials again.
+        let lock = self.fetch_lock(account);
+        let _guard = lock.lock().await;
         let now = now_millis();
         if let Some(snapshot) = self.cached_before_fetch(account, now) {
             return snapshot;
@@ -68,6 +84,18 @@ impl ProviderClient {
             }
             Err(error) => error_snapshot(account, error),
         }
+    }
+
+    /// The per-account serialization lock, keyed so each account (not each
+    /// distinct snapshot revision) has exactly one — bounding the map to the
+    /// number of accounts.
+    fn fetch_lock(&self, account: &AccountConfig) -> Arc<tokio::sync::Mutex<()>> {
+        self.fetch_locks
+            .lock()
+            .expect("provider fetch locks")
+            .entry(cache_key_prefix(account))
+            .or_default()
+            .clone()
     }
 
     fn cached_before_fetch(&self, account: &AccountConfig, now: u64) -> Option<UsageSnapshot> {
@@ -991,6 +1019,39 @@ mod tests {
         let provider = ProviderClient::new();
         let first = provider.refresh_account(&account).await;
         let second = provider.refresh_account(&account).await;
+
+        assert_eq!(first.quota.as_ref().unwrap().remaining, Some(60.0));
+        assert_eq!(second.quota.as_ref().unwrap().remaining, Some(60.0));
+    }
+
+    #[tokio::test]
+    async fn refresh_account_dedupes_concurrent_cold_fetches() {
+        let server = MockServer::start().await;
+        // `.expect(1)` fails on drop if two requests arrive — i.e. if concurrent
+        // cold fetches were NOT collapsed. This is the deterministic analog of the
+        // macOS Keychain double-prompt: one credential read instead of two.
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "total_credits": 100.0,
+                    "total_usage": 40.0
+                }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mut account = account();
+        account.id = "provider-dedupe-openrouter".to_string();
+        account.endpoint_override = Some(server.uri());
+        account.plaintext_secret = Some("sk-test".to_string());
+        let provider = ProviderClient::new();
+
+        let (first, second) = tokio::join!(
+            provider.refresh_account(&account),
+            provider.refresh_account(&account),
+        );
 
         assert_eq!(first.quota.as_ref().unwrap().remaining, Some(60.0));
         assert_eq!(second.quota.as_ref().unwrap().remaining, Some(60.0));
