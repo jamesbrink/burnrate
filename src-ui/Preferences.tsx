@@ -56,6 +56,11 @@ export interface UpdatesPanelProps {
   onDismiss: () => void;
 }
 
+export interface TraySettingsPanelProps {
+  trayScaleToFit: boolean;
+  onTrayScaleToFitChange: (enabled: boolean) => void;
+}
+
 // Re-exported for existing importers (App.tsx). Source of truth: ./constants.
 export {
   OPENROUTER_DEFAULT_ENDPOINT,
@@ -102,6 +107,7 @@ export function Preferences({
   onManualAdd,
   onLogout,
   onReorderAccounts,
+  settings,
   updates,
 }: {
   accounts: AccountView[];
@@ -122,6 +128,7 @@ export function Preferences({
   onManualAdd: (provider: ProviderKind) => void;
   onLogout: (id: string) => void;
   onReorderAccounts: (orderedIds: string[]) => void;
+  settings: TraySettingsPanelProps;
   updates: UpdatesPanelProps;
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -245,10 +252,37 @@ export function Preferences({
             onLogout={onLogout}
           />
 
+          <TraySettings {...settings} />
+
           <UpdatesSettings {...updates} />
         </section>
       </section>
     </main>
+  );
+}
+
+function TraySettings({
+  trayScaleToFit,
+  onTrayScaleToFitChange,
+}: TraySettingsPanelProps) {
+  return (
+    <section className="prefs-tray-settings" aria-label="Tray popover">
+      <SectionTitle title="Tray popover" detail="Sizing" />
+      <label className="settings-toggle">
+        <span>
+          <strong>Scale dense popovers to fit</strong>
+          <small>
+            Shrinks tray content by up to 50% before showing an internal
+            scrollbar.
+          </small>
+        </span>
+        <input
+          type="checkbox"
+          checked={trayScaleToFit}
+          onChange={(event) => onTrayScaleToFitChange(event.target.checked)}
+        />
+      </label>
+    </section>
   );
 }
 

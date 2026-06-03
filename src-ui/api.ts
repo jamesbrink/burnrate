@@ -111,6 +111,7 @@ let mockAccounts: AccountView[] = [
 let mockSettings: AppSettings = {
   hideFromDock: true,
   updateChannel: "stable",
+  trayScaleToFit: true,
 };
 
 const mockSnapshots: UsageSnapshot[] = [
@@ -627,10 +628,17 @@ export async function resizePreferencesToContent(
   }
 }
 
-export async function resizeTrayToContent(height: number): Promise<void> {
+export type TrayContentSize = {
+  width: number;
+  height: number;
+};
+
+export async function resizeTrayToContent(
+  size: TrayContentSize,
+): Promise<void> {
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
-    await invoke("resize_tray_to_content", { height });
+    await invoke("resize_tray_to_content", size);
   }
 }
 

@@ -659,10 +659,38 @@ p {
   font-weight: 600;
 }
 
-/* Updates settings section ---------------------------------------------- */
+/* Settings sections ----------------------------------------------------- */
+.prefs-tray-settings,
 .prefs-updates {
   display: grid;
   gap: 10px;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-toggle > span {
+  display: grid;
+  gap: 3px;
+}
+
+.settings-toggle strong {
+  font-size: 13px;
+}
+
+.settings-toggle small {
+  color: var(--fg-soft);
+  line-height: 1.35;
+}
+
+.settings-toggle input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
 }
 
 .updates-body {
@@ -838,7 +866,9 @@ html[data-view="tray"] {
 
 html[data-view="tray"] body,
 html[data-view="tray"] #root {
+  height: 100vh;
   background: var(--tray-fallback);
+  overflow: hidden;
   overscroll-behavior: none;
 }
 
@@ -850,14 +880,41 @@ html[data-view="tray"][data-vibrancy="1"] #root {
 }
 
 html[data-view="tray"] .tray-panel {
-  min-height: 100vh;
+  --tray-scale: 1;
+  width: calc(100% / var(--tray-scale));
+  height: calc(100vh / var(--tray-scale));
+  transform: scale(var(--tray-scale));
+  transform-origin: top left;
   padding: 11px 12px 12px;
   background: transparent;
   color: var(--tray-fg);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+html[data-view="tray"] .tray-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   align-content: start;
   gap: 9px;
-  -webkit-font-smoothing: antialiased;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
+}
+
+html[data-view="tray"] .tray-panel-dense {
+  gap: 7px;
+  padding: 10px 10px 11px;
+}
+
+html[data-view="tray"] .tray-panel-dense .tray-scroll {
+  gap: 7px;
 }
 
 html[data-view="tray"] .tray-header {
@@ -920,6 +977,11 @@ html[data-view="tray"] .tray-card {
   border: 1px solid var(--tray-hairline);
   border-radius: 10px;
   background: var(--tray-surface);
+}
+
+html[data-view="tray"] .tray-panel-dense .tray-card {
+  padding: 8px 9px;
+  gap: 7px;
 }
 
 html[data-view="tray"] .tray-card.warning {
@@ -1133,6 +1195,11 @@ html[data-view="tray"] .tray-account {
   border: 1px solid var(--tray-hairline);
   border-radius: 9px;
   background: var(--tray-surface);
+}
+
+html[data-view="tray"] .tray-panel-dense .tray-account {
+  min-height: 30px;
+  padding: 5px 9px;
 }
 
 html[data-view="tray"] .tray-account-provider {

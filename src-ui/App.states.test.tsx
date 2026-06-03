@@ -87,7 +87,11 @@ beforeEach(() => {
   api.detectAccounts.mockResolvedValue([]);
   api.removeAccount.mockResolvedValue([]);
   api.saveAccount.mockResolvedValue([]);
-  api.saveSettings.mockResolvedValue({ hideFromDock: false });
+  api.saveSettings.mockResolvedValue({
+    hideFromDock: false,
+    updateChannel: "stable",
+    trayScaleToFit: true,
+  });
 });
 
 afterEach(() => {
@@ -395,6 +399,7 @@ test("persists the chosen update channel", async () => {
   api.saveSettings.mockResolvedValue({
     hideFromDock: true,
     updateChannel: "nightly",
+    trayScaleToFit: true,
   });
 
   render(<App />);
@@ -407,6 +412,26 @@ test("persists the chosen update channel", async () => {
   await waitFor(() =>
     expect(api.saveSettings).toHaveBeenCalledWith(
       expect.objectContaining({ updateChannel: "nightly" }),
+    ),
+  );
+});
+
+test("persists the tray scale-to-fit preference", async () => {
+  api.guardedFetch.mockResolvedValue(dashboardState());
+  api.saveSettings.mockResolvedValue({
+    hideFromDock: false,
+    updateChannel: "stable",
+    trayScaleToFit: false,
+  });
+
+  render(<App />);
+  await screen.findByRole("heading", { name: "Preferences" });
+
+  fireEvent.click(screen.getByLabelText(/Scale dense popovers to fit/));
+
+  await waitFor(() =>
+    expect(api.saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ trayScaleToFit: false }),
     ),
   );
 });
@@ -626,7 +651,10 @@ test("auto-sizes the tray window to its measured content", async () => {
   try {
     render(<App />);
     await waitFor(() =>
-      expect(api.resizeTrayToContent).toHaveBeenCalledWith(expect.any(Number)),
+      expect(api.resizeTrayToContent).toHaveBeenCalledWith({
+        width: expect.any(Number),
+        height: expect.any(Number),
+      }),
     );
   } finally {
     styleSpy.mockRestore();
@@ -638,6 +666,119 @@ test("auto-sizes the tray window to its measured content", async () => {
       );
     }
   }
+});
+
+test("keeps very long tray account rows at the compact width", async () => {
+  window.history.replaceState({}, "", "/?view=tray");
+  const accounts = [
+    accountView({
+      id: "long-account",
+      label:
+        "Exceptionally long account label that would otherwise wrap several times",
+      email: "exceptionally-long-account-email-address-for-testing@example.com",
+    }),
+  ];
+  api.guardedFetch.mockResolvedValue(dashboardState({ accounts }));
+
+  const styleSpy = vi.spyOn(window, "getComputedStyle").mockReturnValue({
+    paddingTop: "12px",
+    paddingBottom: "12px",
+    rowGap: "9px",
+    gap: "9px",
+    getPropertyValue: () => "",
+  } as unknown as CSSStyleDeclaration);
+  const offsetHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "offsetHeight",
+  );
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => 36,
+  });
+
+  try {
+    render(<App />);
+    await waitFor(() =>
+      expect(api.resizeTrayToContent).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 360 }),
+      ),
+    );
+  } finally {
+    styleSpy.mockRestore();
+    if (offsetHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "offsetHeight",
+        offsetHeight,
+      );
+    }
+  }
+});
+
+test("keeps many normal-width tray rows compact", async () => {
+  window.history.replaceState({}, "", "/?view=tray");
+  const accounts = Array.from({ length: 10 }, (_, index) =>
+    accountView({
+      id: `account-${index}`,
+      label: `Account ${index}`,
+      email: `user-${index}@example.com`,
+    }),
+  );
+  api.guardedFetch.mockResolvedValue(dashboardState({ accounts }));
+
+  const styleSpy = vi.spyOn(window, "getComputedStyle").mockReturnValue({
+    paddingTop: "12px",
+    paddingBottom: "12px",
+    rowGap: "9px",
+    gap: "9px",
+    getPropertyValue: () => "",
+  } as unknown as CSSStyleDeclaration);
+  const offsetHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "offsetHeight",
+  );
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => 36,
+  });
+
+  try {
+    render(<App />);
+    await waitFor(() =>
+      expect(api.resizeTrayToContent).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 360 }),
+      ),
+    );
+  } finally {
+    styleSpy.mockRestore();
+    if (offsetHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "offsetHeight",
+        offsetHeight,
+      );
+    }
+  }
+});
+
+test("keeps tray usage and accounts in an internal scroll region", () => {
+  render(
+    <TrayPanel
+      state={dashboardState({ accounts: [accountView()] })}
+      snapshots={[snapshot("healthy")]}
+      busy={false}
+      error={null}
+      onRefresh={() => {}}
+      onOpenPreferences={() => {}}
+      onReorderAccounts={() => {}}
+    />,
+  );
+
+  const scroll = document.querySelector(".tray-scroll");
+  expect(scroll).toBeInTheDocument();
+  expect(scroll).toContainElement(screen.getByLabelText("Usage"));
+  expect(scroll).toContainElement(screen.getByLabelText("Accounts"));
+  expect(scroll).not.toContainElement(document.querySelector(".tray-header"));
 });
 
 test("re-fetches and re-caches the dashboard after detecting accounts", async () => {
@@ -838,6 +979,7 @@ function dashboardState(
     settings: overrides.settings ?? {
       hideFromDock: false,
       updateChannel: "stable",
+      trayScaleToFit: true,
     },
   };
 }

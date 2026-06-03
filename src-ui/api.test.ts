@@ -169,7 +169,9 @@ test("markFetched records the dashboard and resets the throttle window", async (
 });
 
 test("resizeTrayToContent resolves to a no-op outside Tauri", async () => {
-  await expect(resizeTrayToContent(480)).resolves.toBeUndefined();
+  await expect(
+    resizeTrayToContent({ width: 440, height: 480 }),
+  ).resolves.toBeUndefined();
 });
 
 test("reorderAccounts reorders the mock array and drops unknown ids", async () => {
@@ -308,7 +310,11 @@ function dashboardState(): DashboardState {
       warningCount: 0,
       updatedAt: new Date().toISOString(),
     },
-    settings: { hideFromDock: true, updateChannel: "stable" },
+    settings: {
+      hideFromDock: true,
+      updateChannel: "stable",
+      trayScaleToFit: true,
+    },
   };
 }
 

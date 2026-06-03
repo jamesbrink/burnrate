@@ -25,7 +25,9 @@ const PREFERENCES_MIN_HEIGHT: f64 = 360.0;
 const PREFERENCES_MAX_CONTENT_WIDTH: f64 = 1180.0;
 const PREFERENCES_SCREEN_MARGIN: f64 = 18.0;
 const TRAY_CONTENT_WIDTH: f64 = 360.0;
+const TRAY_MAX_CONTENT_WIDTH: f64 = 360.0;
 const TRAY_MIN_HEIGHT: f64 = 200.0;
+const TRAY_MAX_HEIGHT: f64 = 760.0;
 const TRAY_SCREEN_MARGIN: f64 = 8.0;
 const TRAY_OFFSET_Y: f64 = 12.0;
 
@@ -233,6 +235,7 @@ fn resize_preferences_to_content(app: AppHandle, width: f64, height: f64) -> Res
 fn resize_tray_to_content(
     app: AppHandle,
     state: State<'_, tray::TrayWindowState>,
+    width: f64,
     height: f64,
 ) -> Result<(), String> {
     let window = app
@@ -249,33 +252,52 @@ fn resize_tray_to_content(
         .to_logical::<f64>(scale_factor);
     let chrome_width = (outer.width - inner.width).max(0.0);
     let chrome_height = (outer.height - inner.height).max(0.0);
-    let monitor = window
-        .current_monitor()
-        .map_err(|error| error.to_string())?
-        .or(window
-            .primary_monitor()
-            .map_err(|error| error.to_string())?)
-        .ok_or_else(|| "no monitor available for tray window".to_string())?;
-    let work_area = monitor.work_area();
-    let work_size = work_area.size.to_logical::<f64>(monitor.scale_factor());
+    let anchor = state.anchor();
+    let (monitor_scale, work_pos_phys, work_size_phys, work_size) = match anchor {
+        Some(anchor) => {
+            let (scale, position, size) = tray::cursor_monitor_geometry(&app, anchor);
+            (
+                scale,
+                position,
+                size,
+                LogicalSize::new(size.width / scale, size.height / scale),
+            )
+        }
+        None => {
+            let monitor = window
+                .current_monitor()
+                .map_err(|error| error.to_string())?
+                .or(window
+                    .primary_monitor()
+                    .map_err(|error| error.to_string())?)
+                .ok_or_else(|| "no monitor available for tray window".to_string())?;
+            let work_area = monitor.work_area();
+            (
+                monitor.scale_factor(),
+                PhysicalPosition::new(work_area.position.x as f64, work_area.position.y as f64),
+                PhysicalSize::new(work_area.size.width as f64, work_area.size.height as f64),
+                work_area.size.to_logical::<f64>(monitor.scale_factor()),
+            )
+        }
+    };
 
-    let available_width = (work_size.width - (TRAY_SCREEN_MARGIN * 2.0)).max(1.0);
     let available_height = (work_size.height - (TRAY_SCREEN_MARGIN * 2.0)).max(1.0);
-    // Width is fixed to the design width; the frontend only reports content height.
-    let target_width = (TRAY_CONTENT_WIDTH + chrome_width)
-        .ceil()
-        .min(available_width);
-    let target_height = tray::clamp_tray_height(
+    let (target_width, target_height) = tray::clamp_tray_size(
+        width,
         height,
+        chrome_width,
         chrome_height,
+        work_size.width,
         work_size.height,
         TRAY_SCREEN_MARGIN,
+        TRAY_CONTENT_WIDTH,
         TRAY_MIN_HEIGHT,
+        TRAY_MAX_HEIGHT,
+        TRAY_MAX_CONTENT_WIDTH,
     );
 
     window
         .set_size_constraints(WindowSizeConstraints {
-            // Pin the width (min == max) so the popover can never be widened.
             min_width: Some(PixelUnit::Logical(LogicalUnit::new(target_width))),
             min_height: Some(PixelUnit::Logical(LogicalUnit::new(
                 TRAY_MIN_HEIGHT.min(target_height),
@@ -289,23 +311,19 @@ fn resize_tray_to_content(
         .map_err(|error| error.to_string())?;
 
     // Re-anchor in physical pixels (unambiguous across monitors) from the
-    // physical cursor anchor recorded at show time. The popover is already on
-    // the clicked monitor, so its current monitor is the right one to clamp to.
-    let m_scale = monitor.scale_factor();
-    let work_pos_phys =
-        PhysicalPosition::new(work_area.position.x as f64, work_area.position.y as f64);
-    let work_size_phys =
-        PhysicalSize::new(work_area.size.width as f64, work_area.size.height as f64);
-    let window_phys = PhysicalSize::new(target_width * m_scale, target_height * m_scale);
-    let margin = TRAY_SCREEN_MARGIN * m_scale;
-    let target = match state.anchor() {
+    // physical cursor anchor recorded at show time. Prefer the monitor under
+    // that saved anchor so mixed-DPI resizing stays tied to the clicked display.
+    let window_phys =
+        PhysicalSize::new(target_width * monitor_scale, target_height * monitor_scale);
+    let margin = TRAY_SCREEN_MARGIN * monitor_scale;
+    let target = match anchor {
         Some(anchor) => tray::popup_position(
             anchor,
             window_phys,
             work_pos_phys,
             work_size_phys,
             margin,
-            TRAY_OFFSET_Y * m_scale,
+            TRAY_OFFSET_Y * monitor_scale,
         ),
         None => {
             let current = window.outer_position().map_err(|error| error.to_string())?;

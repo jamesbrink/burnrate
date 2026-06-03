@@ -63,9 +63,10 @@ export function TrayPanel({
     id: snapshot.accountId,
     snapshot,
   }));
+  const isDense = Math.max(accounts.length, snapshots.length) >= 8;
 
   return (
-    <main className="tray-panel">
+    <main className={`tray-panel${isDense ? " tray-panel-dense" : ""}`}>
       <header className="tray-header">
         <div>
           <h1>Burnrate</h1>
@@ -97,35 +98,37 @@ export function TrayPanel({
         </div>
       ) : null}
 
-      <section className="tray-section" aria-label="Usage">
-        {cardItems.length > 0 ? (
-          <SortableList
-            items={cardItems}
-            ariaLabel="Usage order"
-            onReorder={(subsetIds) =>
-              onReorderAccounts(
-                reorderWithinSubset(
-                  accounts.map((account) => account.id),
-                  subsetIds,
-                ),
-              )
-            }
-            renderItem={(item, handle) => (
-              <TraySnapshot snapshot={item.snapshot} handle={handle} />
-            )}
-          />
-        ) : (
-          <div className="tray-empty">No enabled accounts.</div>
-        )}
-      </section>
-
-      {accounts.length > 0 ? (
-        <section className="tray-section tray-accounts" aria-label="Accounts">
-          {accounts.map((account) => (
-            <TrayAccount key={account.id} account={account} />
-          ))}
+      <div className="tray-scroll">
+        <section className="tray-section" aria-label="Usage">
+          {cardItems.length > 0 ? (
+            <SortableList
+              items={cardItems}
+              ariaLabel="Usage order"
+              onReorder={(subsetIds) =>
+                onReorderAccounts(
+                  reorderWithinSubset(
+                    accounts.map((account) => account.id),
+                    subsetIds,
+                  ),
+                )
+              }
+              renderItem={(item, handle) => (
+                <TraySnapshot snapshot={item.snapshot} handle={handle} />
+              )}
+            />
+          ) : (
+            <div className="tray-empty">No enabled accounts.</div>
+          )}
         </section>
-      ) : null}
+
+        {accounts.length > 0 ? (
+          <section className="tray-section tray-accounts" aria-label="Accounts">
+            {accounts.map((account) => (
+              <TrayAccount key={account.id} account={account} />
+            ))}
+          </section>
+        ) : null}
+      </div>
     </main>
   );
 }

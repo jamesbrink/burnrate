@@ -49,6 +49,10 @@ pub(crate) struct AppSettings {
     /// config files without this field deserialize to the default.
     #[serde(default)]
     pub update_channel: UpdateChannel,
+    /// Scale dense tray popovers down before falling back to an internal
+    /// scrollbar. Defaults on for new and existing configs.
+    #[serde(default = "default_true")]
+    pub tray_scale_to_fit: bool,
 }
 
 impl Default for AppSettings {
@@ -56,6 +60,7 @@ impl Default for AppSettings {
         Self {
             hide_from_dock: true,
             update_channel: UpdateChannel::default(),
+            tray_scale_to_fit: true,
         }
     }
 }
@@ -341,12 +346,18 @@ mod tests {
     }
 
     #[test]
+    fn default_tray_scale_to_fit_is_enabled() {
+        assert!(AppSettings::default().tray_scale_to_fit);
+    }
+
+    #[test]
     fn settings_without_channel_field_default_to_stable() {
         // Config files written before the updater shipped have no
         // `updateChannel`; they must still deserialize.
         let settings: AppSettings = serde_json::from_str(r#"{"hideFromDock":false}"#).unwrap();
         assert!(!settings.hide_from_dock);
         assert_eq!(settings.update_channel, UpdateChannel::Stable);
+        assert!(settings.tray_scale_to_fit);
     }
 
     #[test]
