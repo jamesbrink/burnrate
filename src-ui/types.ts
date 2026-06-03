@@ -90,8 +90,19 @@ export interface TraySummary {
   updatedAt: string;
 }
 
+export type UpdateChannel = "stable" | "nightly";
+
 export interface AppSettings {
   hideFromDock: boolean;
+  updateChannel: UpdateChannel;
+}
+
+/** Available update returned by the `check_for_updates` command. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  body: string | null;
+  date: string | null;
 }
 
 export interface DashboardState {

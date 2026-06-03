@@ -9,6 +9,8 @@ import type {
   LoginFailed,
   LoginProgress,
   ProviderKind,
+  UpdateChannel,
+  UpdateInfo,
   UsageSnapshot,
 } from "./types";
 
@@ -88,6 +90,7 @@ let mockAccounts: AccountView[] = [
 
 let mockSettings: AppSettings = {
   hideFromDock: true,
+  updateChannel: "stable",
 };
 
 const mockSnapshots: UsageSnapshot[] = [
@@ -561,6 +564,13 @@ export async function closePreferences(): Promise<void> {
   }
 }
 
+export async function openPreferences(): Promise<void> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    await invoke("open_preferences");
+  }
+}
+
 export async function onRefreshRequested(handler: () => void | Promise<void>) {
   /* v8 ignore next 3: native Tauri event path */
   if (isTauri) {
@@ -599,6 +609,84 @@ export async function onSettingsUpdated(
   }
 
   return () => {};
+}
+
+// --- Auto-updater ----------------------------------------------------------
+
+// Outside Tauri (dev:web / vitest) the updater is simulated so the banner and
+// install flow can be exercised without the Rust backend. `VITE_MOCK_UPDATE`
+// (set in dev:web) makes the mock advertise an available update; tests leave it
+// unset so the banner stays hidden unless they opt in.
+const MOCK_UPDATE: UpdateInfo = {
+  version: "9.9.9",
+  currentVersion: "0.0.0",
+  body: "Mock release notes for local preview.",
+  date: null,
+};
+
+export async function getAppVersion(): Promise<string> {
+  /* v8 ignore next 4: native Tauri path */
+  if (isTauri) {
+    const { getVersion } = await import("@tauri-apps/api/app");
+    return getVersion();
+  }
+  return "dev";
+}
+
+export async function updaterAvailable(): Promise<boolean> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    return invoke<boolean>("updater_available");
+  }
+  return import.meta.env.VITE_MOCK_UPDATE === "1";
+}
+
+export async function checkForUpdates(
+  channel: UpdateChannel,
+): Promise<UpdateInfo | null> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    return invoke<UpdateInfo | null>("check_for_updates", { channel });
+  }
+  return import.meta.env.VITE_MOCK_UPDATE === "1" ? MOCK_UPDATE : null;
+}
+
+export async function installUpdate(): Promise<void> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    await invoke("install_pending_update");
+    return;
+  }
+  // Mock: stream a few progress ticks so the UI animates, then stop (a real
+  // install restarts the app, so there's nothing after 100%).
+  for (let pct = 0; pct <= 100; pct += 25) {
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent<number>("burnrate-update-progress", { detail: pct }),
+      );
+    }, pct * 4);
+  }
+}
+
+export async function onUpdateProgress(
+  handler: (percent: number) => void | Promise<void>,
+) {
+  return onLoginEvent<number>("burnrate-update-progress", handler);
+}
+
+export async function onCheckUpdateRequested(
+  handler: () => void | Promise<void>,
+) {
+  /* v8 ignore next 3: native Tauri event path */
+  if (isTauri) {
+    return listen("burnrate-check-update-requested", () => handler());
+  }
+  function listener() {
+    void handler();
+  }
+  window.addEventListener("burnrate-check-update-requested", listener);
+  return () =>
+    window.removeEventListener("burnrate-check-update-requested", listener);
 }
 
 /** Subscribe to a login event, bridging Tauri events and mock CustomEvents. */

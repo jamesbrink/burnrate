@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   CheckCircle2,
+  DownloadCloud,
   KeyRound,
   Plus,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
 } from "./format";
 import { ProviderLogo } from "./ProviderLogo";
 import { SortableList } from "./SortableList";
+import { UpdateBanner } from "./UpdateBanner";
 import {
   OPENROUTER_DEFAULT_ENDPOINT,
   RUNPOD_DEFAULT_ENDPOINT,
@@ -36,9 +38,22 @@ import type {
   AccountView,
   ProviderKind,
   SnapshotStatus,
+  UpdateChannel,
   UsageBucketSnapshot,
   UsageSnapshot,
 } from "./types";
+import type { UpdaterState } from "./useUpdater";
+
+/** Update-channel + auto-updater wiring passed down from `App`. */
+export interface UpdatesPanelProps {
+  channel: UpdateChannel;
+  state: UpdaterState;
+  appVersion: string;
+  onChannelChange: (channel: UpdateChannel) => void;
+  onCheck: () => void;
+  onInstall: () => void;
+  onDismiss: () => void;
+}
 
 // Re-exported for existing importers (App.tsx). Source of truth: ./constants.
 export {
@@ -85,6 +100,7 @@ export function Preferences({
   onManualAdd,
   onLogout,
   onReorderAccounts,
+  updates,
 }: {
   accounts: AccountView[];
   snapshots: UsageSnapshot[];
@@ -104,6 +120,7 @@ export function Preferences({
   onManualAdd: (provider: ProviderKind) => void;
   onLogout: (id: string) => void;
   onReorderAccounts: (orderedIds: string[]) => void;
+  updates: UpdatesPanelProps;
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
 
@@ -133,6 +150,14 @@ export function Preferences({
           </button>
         </div>
       </header>
+
+      <UpdateBanner
+        state={updates.state}
+        channel={updates.channel}
+        onInstall={updates.onInstall}
+        onDismiss={updates.onDismiss}
+        onRetry={updates.onInstall}
+      />
 
       {error ? (
         <div className="notice error" role="alert">
@@ -217,9 +242,83 @@ export function Preferences({
             onStartLogin={onStartLogin}
             onLogout={onLogout}
           />
+
+          <UpdatesSettings {...updates} />
         </section>
       </section>
     </main>
+  );
+}
+
+function UpdatesSettings({
+  channel,
+  state,
+  appVersion,
+  onChannelChange,
+  onCheck,
+  onInstall,
+}: UpdatesPanelProps) {
+  // The banner owns the "update available" affordance; here we surface the
+  // steady-state result of a check inline next to the button.
+  const status = state.checking
+    ? "Checking…"
+    : state.error
+      ? state.error
+      : state.available
+        ? `Version ${state.version} ready to install`
+        : state.hasChecked
+          ? "You're up to date."
+          : "";
+
+  return (
+    <section className="prefs-updates" aria-label="Updates">
+      <SectionTitle title="Updates" detail={`v${appVersion}`} />
+      <div className="updates-body">
+        <label className="updates-channel">
+          <span>Release channel</span>
+          <select
+            value={channel}
+            onChange={(event) =>
+              onChannelChange(event.target.value as UpdateChannel)
+            }
+          >
+            <option value="stable">Stable</option>
+            <option value="nightly">Nightly (latest, less stable)</option>
+          </select>
+        </label>
+        <p className="muted updates-note">
+          Stable tracks signed releases. Nightly follows the rolling{" "}
+          <code>nightly</code> build — newer features, fewer guarantees.
+        </p>
+        <div className="updates-actions">
+          <button
+            className="secondary"
+            onClick={onCheck}
+            disabled={state.checking || state.downloading}
+          >
+            <RefreshCw size={14} className={state.checking ? "spin" : ""} />
+            Check for updates
+          </button>
+          {state.available ? (
+            <button
+              className="primary"
+              onClick={onInstall}
+              disabled={state.downloading}
+            >
+              <DownloadCloud size={14} />
+              {state.downloading
+                ? `Installing… ${state.progress}%`
+                : "Install & Restart"}
+            </button>
+          ) : null}
+        </div>
+        {status ? (
+          <p className={`updates-status ${state.error ? "error" : ""}`}>
+            {status}
+          </p>
+        ) : null}
+      </div>
+    </section>
   );
 }
 

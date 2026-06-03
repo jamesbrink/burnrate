@@ -55,6 +55,7 @@ tauri = { version = "2", features = [
   "macos-private-api",
   "tray-icon",
 ] }
+tauri-plugin-updater = "2"
 thiserror = "2"
 tokio = { version = "1", features = [
   "io-util",
@@ -63,6 +64,7 @@ tokio = { version = "1", features = [
   "rt-multi-thread",
   "time",
 ] }
+url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # Runtime Dock icon for the unbundled binary (see src/tray.rs). The objc2 stack

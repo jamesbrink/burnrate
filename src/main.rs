@@ -6,6 +6,7 @@ mod key_store;
 mod models;
 mod providers;
 mod tray;
+mod updater;
 
 use app_state::AppState;
 use models::{AccountInput, AccountView, AppSettings, DashboardState, LoginFailed, ProviderKind};
@@ -322,6 +323,14 @@ fn close_preferences(app: AppHandle) {
     tray::close_main_window(&app);
 }
 
+/// Open the Preferences window from the tray popover's settings gear, dismissing
+/// the popover so focus moves cleanly to Preferences.
+#[tauri::command]
+fn open_preferences(app: AppHandle) {
+    tray::show_main_window(&app);
+    tray::hide_tray_window(&app);
+}
+
 fn spawn_background_refresh(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -380,9 +389,11 @@ fn main() {
     let state = AppState::load().expect("failed to initialize Burnrate state");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .menu(build_app_menu)
         .manage(state)
         .manage(tray::TrayWindowState::default())
+        .manage(updater::UpdaterState::default())
         .setup(move |app| {
             tray::apply_activation_policy(app.handle(), true);
             tray::set_dock_icon_if_unbundled();
@@ -423,7 +434,11 @@ fn main() {
             refresh_snapshots,
             resize_preferences_to_content,
             resize_tray_to_content,
-            close_preferences
+            close_preferences,
+            open_preferences,
+            updater::updater_available,
+            updater::check_for_updates,
+            updater::install_pending_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running Burnrate");

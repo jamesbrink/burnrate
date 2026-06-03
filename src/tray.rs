@@ -149,8 +149,15 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let preferences =
         MenuItem::with_id(app, "preferences", "Open Preferences", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
+    let check_updates = MenuItem::with_id(
+        app,
+        "check-updates",
+        "Check for Updates…",
+        true,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, "quit", "Quit Burnrate", true, None::<&str>)?;
-    let items: [&dyn IsMenuItem<Wry>; 3] = [&preferences, &refresh, &quit];
+    let items: [&dyn IsMenuItem<Wry>; 4] = [&preferences, &refresh, &check_updates, &quit];
     let menu = Menu::with_items(app, &items)?;
 
     let _ = app.remove_tray_by_id(TRAY_ID);
@@ -165,6 +172,9 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
             "preferences" => show_main_window(app),
             "refresh" => {
                 let _ = app.emit("burnrate-refresh-requested", ());
+            }
+            "check-updates" => {
+                let _ = app.emit("burnrate-check-update-requested", ());
             }
             "quit" => app.exit(0),
             _ => {}

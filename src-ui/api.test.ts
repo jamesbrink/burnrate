@@ -3,16 +3,23 @@ import {
   __resetFetchGuard,
   __resetMockLogins,
   cancelAccountLogin,
+  checkForUpdates,
   detectAccounts,
+  getAppVersion,
   guardedFetch,
+  installUpdate,
   isStale,
   logoutAccount,
   markFetched,
+  onCheckUpdateRequested,
   onLoginComplete,
   onLoginProgress,
   onRefreshRequested,
+  onUpdateProgress,
+  openPreferences,
   readCachedDashboard,
   refreshSnapshots,
+  updaterAvailable,
   reorderAccounts,
   resizeTrayToContent,
   startAccountLogin,
@@ -240,6 +247,52 @@ test("logoutAccount removes the account from the mock list", async () => {
   expect(after.find((account) => account.id === target)).toBeUndefined();
 });
 
+test("updater mock is dormant unless VITE_MOCK_UPDATE is set", async () => {
+  expect(await updaterAvailable()).toBe(false);
+  expect(await checkForUpdates("stable")).toBeNull();
+  expect(await getAppVersion()).toBe("dev");
+  // No-op outside Tauri — just shouldn't throw.
+  await openPreferences();
+});
+
+test("updater mock advertises an update when opted in", async () => {
+  vi.stubEnv("VITE_MOCK_UPDATE", "1");
+  try {
+    expect(await updaterAvailable()).toBe(true);
+    const info = await checkForUpdates("nightly");
+    expect(info?.version).toBe("9.9.9");
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+test("installUpdate streams mock progress events", async () => {
+  vi.useFakeTimers();
+  const seen: number[] = [];
+  const unlisten = await onUpdateProgress((pct) => {
+    seen.push(pct);
+  });
+
+  await installUpdate();
+  vi.advanceTimersByTime(500);
+
+  expect(seen).toContain(0);
+  expect(seen).toContain(100);
+  unlisten();
+});
+
+test("onCheckUpdateRequested bridges window events", async () => {
+  const handler = vi.fn();
+  const unlisten = await onCheckUpdateRequested(handler);
+
+  window.dispatchEvent(new CustomEvent("burnrate-check-update-requested"));
+  expect(handler).toHaveBeenCalledOnce();
+
+  unlisten();
+  window.dispatchEvent(new CustomEvent("burnrate-check-update-requested"));
+  expect(handler).toHaveBeenCalledOnce();
+});
+
 function last<T>(items: T[]): T | undefined {
   return items[items.length - 1];
 }
@@ -255,7 +308,7 @@ function dashboardState(): DashboardState {
       warningCount: 0,
       updatedAt: new Date().toISOString(),
     },
-    settings: { hideFromDock: true },
+    settings: { hideFromDock: true, updateChannel: "stable" },
   };
 }
 

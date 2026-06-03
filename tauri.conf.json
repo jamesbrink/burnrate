@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Burnrate",
-  "version": "0.1.0",
   "identifier": "com.jamesbrink.burnrate",
   "build": {
     "beforeDevCommand": "npm run dev:web",
@@ -44,6 +43,14 @@
       "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://api.anthropic.com https://chatgpt.com https://openrouter.ai https://rest.runpod.io https://api.runpod.io http://localhost:* http://127.0.0.1:*; img-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/jamesbrink/burnrate/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE2OEI5NzhCOTJEMjk2NzQKUldSMGx0S1NpNWVMRnJQdmJ6blBPcmtXUEJrMjE4K2FwaVA0Q1g3UU1LOGcyU091ejJaQm02SXUK"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
@@ -55,7 +62,7 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "category": "DeveloperTool",
     "shortDescription": "Desktop quota and usage monitor",
     "longDescription": "Burnrate monitors usage and remaining quota across Claude Code, Codex, OpenRouter, and Runpod accounts.",

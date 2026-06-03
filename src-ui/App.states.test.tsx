@@ -23,18 +23,24 @@ import type { AccountView, DashboardState, UsageSnapshot } from "./types";
 
 const api = vi.hoisted(() => ({
   cancelAccountLogin: vi.fn(),
+  checkForUpdates: vi.fn(),
   closePreferences: vi.fn(),
   detectAccounts: vi.fn(),
+  getAppVersion: vi.fn(),
   guardedFetch: vi.fn(),
+  installUpdate: vi.fn(),
   isStale: vi.fn(),
   logoutAccount: vi.fn(),
   markFetched: vi.fn(),
+  onCheckUpdateRequested: vi.fn(),
   onDashboardUpdated: vi.fn(),
   onLoginComplete: vi.fn(),
   onLoginFailed: vi.fn(),
   onLoginProgress: vi.fn(),
   onRefreshRequested: vi.fn(),
   onSettingsUpdated: vi.fn(),
+  onUpdateProgress: vi.fn(),
+  openPreferences: vi.fn(),
   readCachedDashboard: vi.fn(),
   removeAccount: vi.fn(),
   reorderAccounts: vi.fn(),
@@ -43,6 +49,7 @@ const api = vi.hoisted(() => ({
   saveAccount: vi.fn(),
   saveSettings: vi.fn(),
   startAccountLogin: vi.fn(),
+  updaterAvailable: vi.fn(),
 }));
 
 vi.mock("./api", () => api);
@@ -55,6 +62,13 @@ beforeEach(() => {
   api.onLoginProgress.mockResolvedValue(() => {});
   api.onLoginComplete.mockResolvedValue(() => {});
   api.onLoginFailed.mockResolvedValue(() => {});
+  api.onUpdateProgress.mockResolvedValue(() => {});
+  api.onCheckUpdateRequested.mockResolvedValue(() => {});
+  api.updaterAvailable.mockResolvedValue(false);
+  api.checkForUpdates.mockResolvedValue(null);
+  api.installUpdate.mockResolvedValue(undefined);
+  api.getAppVersion.mockResolvedValue("1.2.3");
+  api.openPreferences.mockResolvedValue(undefined);
   api.reorderAccounts.mockResolvedValue([]);
   api.logoutAccount.mockResolvedValue([]);
   api.startAccountLogin.mockResolvedValue({ id: "pending-1" });
@@ -374,6 +388,54 @@ test("refreshes usage after saving an OpenRouter account", async () => {
   expect(api.guardedFetch).toHaveBeenCalledWith({ force: true });
 });
 
+test("persists the chosen update channel", async () => {
+  api.guardedFetch.mockResolvedValue(dashboardState());
+  api.saveSettings.mockResolvedValue({
+    hideFromDock: true,
+    updateChannel: "nightly",
+  });
+
+  render(<App />);
+  await screen.findByRole("heading", { name: "Preferences" });
+
+  fireEvent.change(screen.getByLabelText("Release channel"), {
+    target: { value: "nightly" },
+  });
+
+  await waitFor(() =>
+    expect(api.saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ updateChannel: "nightly" }),
+    ),
+  );
+});
+
+test("selecting the already-active channel does not re-save", async () => {
+  api.guardedFetch.mockResolvedValue(dashboardState());
+
+  render(<App />);
+  await screen.findByRole("heading", { name: "Preferences" });
+
+  // dashboardState() defaults to the "stable" channel.
+  fireEvent.change(screen.getByLabelText("Release channel"), {
+    target: { value: "stable" },
+  });
+  expect(api.saveSettings).not.toHaveBeenCalled();
+});
+
+test("surfaces an error when saving the update channel fails", async () => {
+  api.guardedFetch.mockResolvedValue(dashboardState());
+  api.saveSettings.mockRejectedValue(new Error("disk full"));
+
+  render(<App />);
+  await screen.findByRole("heading", { name: "Preferences" });
+
+  fireEvent.change(screen.getByLabelText("Release channel"), {
+    target: { value: "nightly" },
+  });
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
+});
+
 test("falls back to frontend warning and stale summaries", async () => {
   api.guardedFetch.mockResolvedValue(
     dashboardState({
@@ -454,6 +516,7 @@ test("renders tray summary branches and account disabled state", () => {
       busy={false}
       error="network offline"
       onRefresh={() => {}}
+      onOpenPreferences={() => {}}
       onReorderAccounts={() => {}}
     />,
   );
@@ -469,6 +532,7 @@ test("renders tray summary branches and account disabled state", () => {
       busy={false}
       error={null}
       onRefresh={() => {}}
+      onOpenPreferences={() => {}}
       onReorderAccounts={() => {}}
     />,
   );
@@ -481,6 +545,7 @@ test("renders tray summary branches and account disabled state", () => {
       busy={false}
       error={null}
       onRefresh={() => {}}
+      onOpenPreferences={() => {}}
       onReorderAccounts={() => {}}
     />,
   );
@@ -493,11 +558,22 @@ test("renders tray summary branches and account disabled state", () => {
       busy
       error={null}
       onRefresh={() => {}}
+      onOpenPreferences={() => {}}
       onReorderAccounts={() => {}}
     />,
   );
   expect(screen.getByText("All quotas healthy")).toBeInTheDocument();
   expect(screen.getByTitle("Refresh")).toBeDisabled();
+});
+
+test("opens preferences from the tray settings gear", async () => {
+  window.history.replaceState({}, "", "/?view=tray");
+  api.guardedFetch.mockResolvedValue(dashboardState());
+
+  render(<App />);
+
+  fireEvent.click(await screen.findByTitle("Settings"));
+  expect(api.openPreferences).toHaveBeenCalledOnce();
 });
 
 test("dispatches tray refresh requests", async () => {
@@ -595,6 +671,7 @@ test("renders a tray snapshot from the quota fallback with an inline message", (
       busy={false}
       error={null}
       onRefresh={() => {}}
+      onOpenPreferences={() => {}}
       onReorderAccounts={() => {}}
     />,
   );
@@ -754,7 +831,10 @@ function dashboardState(
       warningCount,
       updatedAt: new Date().toISOString(),
     },
-    settings: overrides.settings ?? { hideFromDock: false },
+    settings: overrides.settings ?? {
+      hideFromDock: false,
+      updateChannel: "stable",
+    },
   };
 }
 

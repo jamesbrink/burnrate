@@ -29,16 +29,31 @@ pub(crate) enum SecretStorageMode {
     Plaintext,
 }
 
+/// Release channel the in-app auto-updater follows. `Stable` tracks the
+/// `releases/latest` manifest; `Nightly` follows the rolling `nightly` tag.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum UpdateChannel {
+    #[default]
+    Stable,
+    Nightly,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AppSettings {
     pub hide_from_dock: bool,
+    /// Release channel for automatic updates. Defaults to `Stable`; older
+    /// config files without this field deserialize to the default.
+    #[serde(default)]
+    pub update_channel: UpdateChannel,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             hide_from_dock: true,
+            update_channel: UpdateChannel::default(),
         }
     }
 }
@@ -242,6 +257,24 @@ mod tests {
     #[test]
     fn default_settings_hide_dock_for_tray_first_launch() {
         assert!(AppSettings::default().hide_from_dock);
+    }
+
+    #[test]
+    fn default_update_channel_is_stable() {
+        assert_eq!(AppSettings::default().update_channel, UpdateChannel::Stable);
+        assert_eq!(
+            serde_json::to_string(&UpdateChannel::Nightly).unwrap(),
+            "\"nightly\""
+        );
+    }
+
+    #[test]
+    fn settings_without_channel_field_default_to_stable() {
+        // Config files written before the updater shipped have no
+        // `updateChannel`; they must still deserialize.
+        let settings: AppSettings = serde_json::from_str(r#"{"hideFromDock":false}"#).unwrap();
+        assert!(!settings.hide_from_dock);
+        assert_eq!(settings.update_channel, UpdateChannel::Stable);
     }
 
     #[test]

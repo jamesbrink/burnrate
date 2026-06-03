@@ -1,4 +1,10 @@
-import { AlertCircle, Clock3, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  AlertCircle,
+  Clock3,
+  RefreshCw,
+  Settings,
+  ShieldCheck,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import {
   bucketMeterLabel,
@@ -39,6 +45,7 @@ export function TrayPanel({
   busy,
   error,
   onRefresh,
+  onOpenPreferences,
   onReorderAccounts,
 }: {
   state: DashboardState | null;
@@ -46,6 +53,7 @@ export function TrayPanel({
   busy: boolean;
   error: string | null;
   onRefresh: () => void;
+  onOpenPreferences: () => void;
   onReorderAccounts: (orderedIds: string[]) => void;
 }) {
   const accounts = state?.accounts ?? [];
@@ -62,14 +70,23 @@ export function TrayPanel({
           <h1>Burnrate</h1>
           <p>{summary}</p>
         </div>
-        <button
-          className="icon-button tray-refresh"
-          onClick={onRefresh}
-          disabled={busy}
-          title="Refresh"
-        >
-          <RefreshCw size={16} className={busy ? "spin" : ""} />
-        </button>
+        <div className="tray-header-actions">
+          <button
+            className="icon-button tray-refresh"
+            onClick={onRefresh}
+            disabled={busy}
+            title="Refresh"
+          >
+            <RefreshCw size={16} className={busy ? "spin" : ""} />
+          </button>
+          <button
+            className="icon-button tray-settings"
+            onClick={onOpenPreferences}
+            title="Settings"
+          >
+            <Settings size={16} />
+          </button>
+        </div>
       </header>
 
       {error ? (

@@ -9,6 +9,7 @@ import {
 import {
   closePreferences,
   detectAccounts,
+  getAppVersion,
   guardedFetch,
   isStale,
   logoutAccount,
@@ -16,13 +17,16 @@ import {
   onDashboardUpdated,
   onRefreshRequested,
   onSettingsUpdated,
+  openPreferences,
   readCachedDashboard,
   removeAccount,
   reorderAccounts,
   resizePreferencesToContent,
   resizeTrayToContent,
   saveAccount,
+  saveSettings,
 } from "./api";
+import { useUpdater } from "./useUpdater";
 import { LoginModal } from "./LoginModal";
 import {
   OPENROUTER_DEFAULT_ENDPOINT,
@@ -38,6 +42,7 @@ import type {
   AppSettings,
   DashboardState,
   ProviderKind,
+  UpdateChannel,
   UsageSnapshot,
 } from "./types";
 import { useLogin } from "./useLogin";
@@ -56,8 +61,16 @@ export function App() {
   // Spinner only on a true cold start (no cached data to show).
   const [busy, setBusy] = useState(() => readCachedDashboard() === null);
   const [error, setError] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState("");
   const lastPreferenceSize = useRef({ width: 0, height: 0 });
   const lastTrayHeight = useRef(0);
+
+  const updateChannel: UpdateChannel = state?.settings?.updateChannel ?? "stable";
+  const updater = useUpdater(updateChannel);
+
+  useEffect(() => {
+    void getAppVersion().then(setAppVersion);
+  }, []);
   // Mirror of `state` so the mount-captured `revalidate` can decide whether to
   // show the cold-start spinner without going stale.
   const stateRef = useRef<DashboardState | null>(state);
@@ -150,7 +163,27 @@ export function App() {
     () => summaryFromBackend(state?.traySummary, snapshots),
     [state?.traySummary, snapshots],
   );
-  const settings = state?.settings ?? { hideFromDock: true };
+  const settings: AppSettings = state?.settings ?? {
+    hideFromDock: true,
+    updateChannel: "stable",
+  };
+
+  async function onUpdateChannelChange(channel: UpdateChannel) {
+    if (channel === settings.updateChannel) {
+      return;
+    }
+    // Optimistically reflect the choice; persist, then let the backend's
+    // settings-updated event reconcile both windows.
+    const next: AppSettings = { ...settings, updateChannel: channel };
+    setState((previous) =>
+      previous ? { ...previous, settings: next } : previous,
+    );
+    try {
+      await saveSettings(next);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
 
   useEffect(() => {
     let cleanupDashboard: (() => void) | undefined;
@@ -489,6 +522,7 @@ export function App() {
         busy={busy}
         error={error}
         onRefresh={() => void revalidate({ force: true })}
+        onOpenPreferences={() => void openPreferences()}
         onReorderAccounts={(ids) => void onReorderAccounts(ids)}
       />
     );
@@ -515,6 +549,15 @@ export function App() {
         onManualAdd={manualAdd}
         onLogout={(id) => void onLogout(id)}
         onReorderAccounts={(ids) => void onReorderAccounts(ids)}
+        updates={{
+          channel: settings.updateChannel,
+          state: updater.state,
+          appVersion,
+          onChannelChange: (channel) => void onUpdateChannelChange(channel),
+          onCheck: () => void updater.checkNow(),
+          onInstall: () => void updater.install(),
+          onDismiss: updater.dismiss,
+        }}
       />
       {login.session ? (
         <LoginModal
