@@ -286,10 +286,12 @@ impl AppState {
         self.login_manager.finish(id);
         match result.and_then(|outcome| self.finalize_pending_account(provider, id, outcome)) {
             Ok(view) => {
+                // Emit the originating (pending) id so the UI matches even when
+                // the reuse policy resolved to a different existing account.
                 let _ = app.emit(
                     "burnrate-login-complete",
                     LoginComplete {
-                        id: view.id.clone(),
+                        id: id.to_string(),
                         account: view,
                     },
                 );
