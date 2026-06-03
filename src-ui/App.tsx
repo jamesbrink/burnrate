@@ -357,11 +357,21 @@ export function App() {
     });
   }
 
+  // After an account mutation, re-fetch and re-cache the dashboard so the
+  // persisted cache can't resurrect the old account list / a removed account's
+  // snapshot on the next reload (mirrors the post-save flow in onSubmit).
+  async function applyAccountChange(accounts: AccountView[]) {
+    updateAccounts(accounts, settings, summary);
+    const dashboard = await guardedFetch({ force: true });
+    setState(dashboard);
+    setSnapshots(dashboard.snapshots);
+  }
+
   async function onRemove(id: string) {
     setBusy(true);
     setError(null);
     try {
-      updateAccounts(await removeAccount(id), settings, summary);
+      await applyAccountChange(await removeAccount(id));
     } catch (err) {
       setError(String(err));
     } finally {
@@ -373,7 +383,7 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
-      updateAccounts(await detectAccounts(), settings, summary);
+      await applyAccountChange(await detectAccounts());
     } catch (err) {
       setError(String(err));
     } finally {

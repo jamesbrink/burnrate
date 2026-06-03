@@ -293,9 +293,16 @@ fn show_tray_window(app: &AppHandle<Wry>, position: tauri::PhysicalPosition<f64>
     // not the window's current monitor — so the popover opens on whichever
     // display the tray was clicked on, and lands correctly under mixed DPI.
     let (scale, work_pos, work_size) = cursor_monitor_geometry(app, position);
+    // outer_size() is physical at the window's *current* monitor scale; the
+    // popover will render at the cursor monitor's scale, so convert through
+    // logical to size it for the target display (mixed-DPI correctness).
+    let current_scale = window.scale_factor().unwrap_or(scale);
     let window_size = window
         .outer_size()
-        .map(|size| PhysicalSize::new(size.width as f64, size.height as f64))
+        .map(|size| {
+            let logical = size.to_logical::<f64>(current_scale);
+            PhysicalSize::new(logical.width * scale, logical.height * scale)
+        })
         .unwrap_or_else(|_| PhysicalSize::new(360.0 * scale, 440.0 * scale));
     tray_state.set_anchor(position);
     let target = popup_position(

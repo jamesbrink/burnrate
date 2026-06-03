@@ -121,6 +121,20 @@ test("guardedFetch throttles non-forced fetches but honors force", async () => {
   expect(setItem).toHaveBeenCalledTimes(2);
 });
 
+test("guardedFetch honors a fresh persisted cache after a reload resets the guard", async () => {
+  // Simulate an HMR/window reload: cache persists in sessionStorage but the
+  // module-scoped lastFetchAt is back to 0.
+  writeCachedDashboard(dashboardState());
+  __resetFetchGuard();
+  const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+  const result = await guardedFetch();
+
+  // Served from the fresh cache — no underlying fetch, so no new cache write.
+  expect(setItem).not.toHaveBeenCalled();
+  expect(result.snapshots).toHaveLength(1);
+});
+
 test("markFetched records the dashboard and resets the throttle window", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(0);

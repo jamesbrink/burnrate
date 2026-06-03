@@ -353,8 +353,14 @@ export async function guardedFetch(
   }
   if (!options.force) {
     const cached = readCachedDashboard();
-    if (cached && Date.now() - lastFetchAt < MIN_FETCH_INTERVAL_MS) {
-      return cached.dashboard;
+    // Throttle against the persisted timestamp too: after an HMR/window reload
+    // the module-scoped `lastFetchAt` resets to 0, but a fresh sessionStorage
+    // cache should still suppress the next non-forced fetch.
+    if (cached) {
+      const lastAt = Math.max(lastFetchAt, cached.fetchedAt);
+      if (Date.now() - lastAt < MIN_FETCH_INTERVAL_MS) {
+        return cached.dashboard;
+      }
     }
   }
   inFlightFetch = refreshDashboard()

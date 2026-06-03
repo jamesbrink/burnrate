@@ -544,6 +544,21 @@ test("auto-sizes the tray window to its measured content", async () => {
   }
 });
 
+test("re-fetches and re-caches the dashboard after detecting accounts", async () => {
+  api.guardedFetch.mockResolvedValue(dashboardState());
+  api.detectAccounts.mockResolvedValue([]);
+
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "Preferences" });
+  api.guardedFetch.mockClear(); // ignore the mount fetch
+  fireEvent.click(screen.getByTitle("Detect accounts"));
+
+  await waitFor(() =>
+    expect(api.guardedFetch).toHaveBeenCalledWith({ force: true }),
+  );
+});
+
 test("renders a tray snapshot from the quota fallback with an inline message", () => {
   render(
     <TrayPanel
