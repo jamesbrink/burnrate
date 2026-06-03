@@ -33,6 +33,7 @@ const PROFILE_SCOPE: &str = "user:profile";
 const USAGE_CACHE_TTL_MS: u64 = 5 * 60 * 1000;
 const USAGE_ERROR_BACKOFF_MS: u64 = 2 * 60 * 1000;
 const AUTH_STATUS_TIMEOUT_MS: u64 = 1_500;
+const AUTH_LOGIN_HELP_TIMEOUT_MS: u64 = 1_500;
 const REAUTH_HINT: &str = "Run `claude auth login` to refresh Claude Code authentication.";
 
 #[derive(Debug, Clone)]
@@ -543,15 +544,10 @@ pub(crate) async fn login_verify(config_dir: Option<&str>) -> Result<Option<Stri
     Ok(status.email.clone())
 }
 
-/// `claude auth login` argument vector. `--claudeai` selects the subscription
-/// (first-party) flow that usage tracking requires; `--email` pre-fills the
-/// login page when known.
+/// `claude auth login` argument vector. Claude Code's subscription flow is the
+/// default; `--email` pre-fills the login page when known.
 pub(crate) fn claude_login_args(email: Option<&str>) -> Vec<String> {
-    let mut args = vec![
-        "auth".to_string(),
-        "login".to_string(),
-        "--claudeai".to_string(),
-    ];
+    let mut args = vec!["auth".to_string(), "login".to_string()];
     if let Some(email) = email.map(str::trim).filter(|value| !value.is_empty()) {
         args.push("--email".to_string());
         args.push(email.to_string());
@@ -601,6 +597,66 @@ pub(crate) fn claude_binary() -> String {
     std::env::var("BURNRATE_CLAUDE_BIN")
         .or_else(|_| std::env::var("CLAUDE_BIN"))
         .unwrap_or_else(|_| "claude".to_string())
+}
+
+pub(crate) async fn ensure_login_supported() -> Result<()> {
+    let binary = super::resolve_cli(&claude_binary());
+    ensure_login_supported_for(&binary).await
+}
+
+async fn ensure_login_supported_for(binary: &Path) -> Result<()> {
+    let help = timeout(
+        std::time::Duration::from_millis(AUTH_LOGIN_HELP_TIMEOUT_MS),
+        TokioCommand::new(binary)
+            .args(["auth", "login", "--help"])
+            .env("PATH", super::augmented_path())
+            .stdin(std::process::Stdio::null())
+            .output(),
+    )
+    .await
+    .context("Claude Code login capability check timed out")?
+    .with_context(|| format!("failed to run `{}` auth login --help", binary.display()))?;
+
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    let stderr = String::from_utf8_lossy(&help.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    if help.status.success() && supports_auth_login_help(&combined) {
+        return Ok(());
+    }
+
+    let version = claude_cli_version(binary).await;
+    let detected = version
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| format!(" detected {value}."))
+        .unwrap_or_default();
+    Err(anyhow!(
+        "Claude Code CLI at `{}` does not support `claude auth login`.{} Update Claude Code or set BURNRATE_CLAUDE_BIN to a newer `claude` binary.",
+        binary.display(),
+        detected
+    ))
+}
+
+fn supports_auth_login_help(help: &str) -> bool {
+    help.contains("Sign in to your Anthropic account") && help.contains("--email")
+}
+
+async fn claude_cli_version(binary: &Path) -> Option<String> {
+    let output = timeout(
+        std::time::Duration::from_millis(AUTH_LOGIN_HELP_TIMEOUT_MS),
+        TokioCommand::new(binary)
+            .arg("--version")
+            .env("PATH", super::augmented_path())
+            .stdin(std::process::Stdio::null())
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 async fn claude_auth_status(config_dir: Option<&str>) -> Result<ClaudeAuthStatus> {
@@ -1111,17 +1167,61 @@ mod tests {
 
     #[test]
     fn claude_login_args_select_subscription_flow() {
-        assert_eq!(claude_login_args(None), vec!["auth", "login", "--claudeai"]);
+        assert_eq!(claude_login_args(None), vec!["auth", "login"]);
         assert_eq!(
             claude_login_args(Some("a@b.com")),
-            vec!["auth", "login", "--claudeai", "--email", "a@b.com"]
+            vec!["auth", "login", "--email", "a@b.com"]
         );
         // Blank emails are ignored.
-        assert_eq!(
-            claude_login_args(Some("   ")),
-            vec!["auth", "login", "--claudeai"]
-        );
+        assert_eq!(claude_login_args(Some("   ")), vec!["auth", "login"]);
         assert_eq!(claude_logout_args(), vec!["auth", "logout"]);
+    }
+
+    #[test]
+    fn detects_auth_login_help_surface() {
+        assert!(supports_auth_login_help(
+            "Usage: claude auth login [options]\n\nSign in to your Anthropic account\n\nOptions:\n  --email <email>"
+        ));
+        assert!(!supports_auth_login_help(
+            "Usage: claude [options] [command] [prompt]\n\nCommands:\n  setup-token"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn login_support_check_rejects_old_top_level_help() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join("claude-fixture");
+        std::fs::write(
+            &binary,
+            r#"#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "2.0.31 (Claude Code)"
+  exit 0
+fi
+cat <<'EOF'
+Usage: claude [options] [command] [prompt]
+
+Commands:
+  setup-token
+EOF
+exit 0
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&binary).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&binary, perms).unwrap();
+
+        let error = ensure_login_supported_for(&binary)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("does not support `claude auth login`"));
+        assert!(error.contains("2.0.31"));
     }
 
     #[tokio::test]

@@ -98,6 +98,7 @@ async fn start_account_login(
 ) -> Result<AccountView, String> {
     state
         .start_account_login(app.clone(), provider, label, account_id)
+        .await
         .map_err(|error| error.to_string())
 }
 

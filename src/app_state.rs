@@ -185,7 +185,7 @@ impl AppState {
     /// placeholder account in an isolated CLI config dir for a brand-new account.
     /// Progress streams via `burnrate-login-progress`; completion/failure arrive
     /// via `burnrate-login-complete` / `burnrate-login-failed`.
-    pub(crate) fn start_account_login(
+    pub(crate) async fn start_account_login(
         &self,
         app: AppHandle,
         provider: ProviderKind,
@@ -197,6 +197,7 @@ impl AppState {
                 "Interactive sign-in is only available for Claude Code and Codex."
             ));
         }
+        login::ensure_provider_login_supported(provider).await?;
 
         let is_reauth = reauth_id.is_some();
         let (id, config_dir, email_hint, view) = match reauth_id {

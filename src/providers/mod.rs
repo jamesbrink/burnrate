@@ -700,16 +700,7 @@ fn find_in_dirs(name: &str, dirs: &[std::path::PathBuf]) -> Option<std::path::Pa
 #[cfg(unix)]
 fn common_bin_dirs() -> Vec<std::path::PathBuf> {
     use std::path::PathBuf;
-    let mut dirs = vec![
-        PathBuf::from("/opt/homebrew/bin"),
-        PathBuf::from("/opt/homebrew/sbin"),
-        PathBuf::from("/usr/local/bin"),
-        PathBuf::from("/usr/local/sbin"),
-        PathBuf::from("/run/current-system/sw/bin"),
-        PathBuf::from("/nix/var/nix/profiles/default/bin"),
-        PathBuf::from("/usr/bin"),
-        PathBuf::from("/bin"),
-    ];
+    let mut dirs = Vec::new();
     if let Some(home) = dirs::home_dir() {
         for rel in [
             ".nix-profile/bin",
@@ -728,6 +719,16 @@ fn common_bin_dirs() -> Vec<std::path::PathBuf> {
             dirs.push(home.join(rel));
         }
     }
+    dirs.extend([
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/opt/homebrew/sbin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/usr/local/sbin"),
+        PathBuf::from("/run/current-system/sw/bin"),
+        PathBuf::from("/nix/var/nix/profiles/default/bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+    ]);
     if let Some(user) = std::env::var_os("USER") {
         let mut per_user = PathBuf::from("/etc/profiles/per-user");
         per_user.push(user);
@@ -810,6 +811,23 @@ mod tests {
     fn find_in_dirs_returns_none_when_absent() {
         let dir = tempdir().expect("dir");
         assert_eq!(find_in_dirs("codex", &[dir.path().to_path_buf()]), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn common_bin_dirs_prefers_user_bins_before_homebrew_fallbacks() {
+        let bins = common_bin_dirs();
+        let home = dirs::home_dir().expect("home dir");
+        let local = bins
+            .iter()
+            .position(|dir| dir == &home.join(".local/bin"))
+            .expect("user local bin");
+        let homebrew = bins
+            .iter()
+            .position(|dir| dir == &std::path::PathBuf::from("/opt/homebrew/bin"))
+            .expect("homebrew bin");
+
+        assert!(local < homebrew);
     }
 
     fn account() -> AccountConfig {

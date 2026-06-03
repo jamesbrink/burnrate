@@ -49,6 +49,16 @@ pub(crate) struct LoginOutcome {
     pub email: Option<String>,
 }
 
+pub(crate) async fn ensure_provider_login_supported(provider: ProviderKind) -> Result<()> {
+    match provider {
+        ProviderKind::ClaudeCode => claude::ensure_login_supported().await,
+        ProviderKind::Codex => Ok(()),
+        _ => Err(anyhow!(
+            "Interactive sign-in is only available for Claude Code and Codex."
+        )),
+    }
+}
+
 /// Single-flight guard for interactive logins. Only one browser flow runs at a
 /// time (two would fight over the localhost callback port), and the held
 /// [`AbortHandle`] lets a cancel request kill the spawned task — which drops the
@@ -283,11 +293,25 @@ async fn run_login_inner(
 
     if !status.success() {
         return Err(anyhow!(
-            "Sign-in did not complete: {}",
-            last_status.unwrap_or_else(|| "the CLI exited before authenticating".to_string())
+            "{}",
+            format_login_exit_error(last_status.as_deref())
         ));
     }
     Ok(())
+}
+
+fn format_login_exit_error(last_status: Option<&str>) -> String {
+    let detail = last_status
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("the CLI exited before authenticating");
+    let detail = detail.strip_prefix("error: ").unwrap_or(detail).trim();
+    if detail.starts_with("unknown option") || detail.starts_with("unknown command") {
+        return format!(
+            "Sign-in failed because the CLI rejected the login command: {detail}. Update the provider CLI or set BURNRATE_CLAUDE_BIN / BURNRATE_CODEX_BIN to a compatible binary."
+        );
+    }
+    format!("Sign-in did not complete: {detail}")
 }
 
 fn login_command(
@@ -453,7 +477,16 @@ mod tests {
         assert_eq!(env_key, "CODEX_HOME");
         let (_, args, env_key) = login_command(ProviderKind::ClaudeCode, Some("a@b.com")).unwrap();
         assert_eq!(env_key, "CLAUDE_CONFIG_DIR");
-        assert!(args.contains(&"--claudeai".to_string()));
+        assert_eq!(args, vec!["auth", "login", "--email", "a@b.com"]);
+    }
+
+    #[test]
+    fn formats_cli_usage_failures_without_nested_error_prefix() {
+        let error = format_login_exit_error(Some("error: unknown option '--claudeai'"));
+
+        assert!(!error.contains("Sign-in did not complete: error:"));
+        assert!(error.contains("unknown option '--claudeai'"));
+        assert!(error.contains("set BURNRATE_CLAUDE_BIN"));
     }
 
     #[cfg(unix)]
