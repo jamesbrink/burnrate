@@ -18,7 +18,7 @@ import {
   formatNumber,
   formatReset,
 } from "./format";
-import { TrayPanel } from "./TrayPanel";
+import { orderTrayAccountsFromUsageSubset, TrayPanel } from "./TrayPanel";
 import type { AccountView, DashboardState, UsageSnapshot } from "./types";
 
 const api = vi.hoisted(() => ({
@@ -682,6 +682,25 @@ test("auto-sizes the tray window to its measured content", async () => {
     configurable: true,
     get: () => 36,
   });
+  const fonts = Object.getOwnPropertyDescriptor(document, "fonts");
+  Object.defineProperty(document, "fonts", {
+    configurable: true,
+    value: { ready: Promise.resolve() },
+  });
+  const resizeObserver = Object.getOwnPropertyDescriptor(
+    window,
+    "ResizeObserver",
+  );
+  const observe = vi.fn();
+  const disconnect = vi.fn();
+  class MockResizeObserver {
+    observe = observe;
+    disconnect = disconnect;
+  }
+  Object.defineProperty(window, "ResizeObserver", {
+    configurable: true,
+    value: MockResizeObserver,
+  });
 
   try {
     render(<App />);
@@ -691,6 +710,7 @@ test("auto-sizes the tray window to its measured content", async () => {
         height: expect.any(Number),
       }),
     );
+    expect(observe).toHaveBeenCalled();
   } finally {
     styleSpy.mockRestore();
     if (offsetHeight) {
@@ -699,6 +719,16 @@ test("auto-sizes the tray window to its measured content", async () => {
         "offsetHeight",
         offsetHeight,
       );
+    }
+    if (fonts) {
+      Object.defineProperty(document, "fonts", fonts);
+    } else {
+      Reflect.deleteProperty(document, "fonts");
+    }
+    if (resizeObserver) {
+      Object.defineProperty(window, "ResizeObserver", resizeObserver);
+    } else {
+      Reflect.deleteProperty(window, "ResizeObserver");
     }
   }
 });
@@ -846,6 +876,18 @@ test("keeps many normal-width tray rows compact", async () => {
       );
     }
   }
+});
+
+test("orders tray accounts from reordered usage cards", () => {
+  const accounts = [
+    accountView({ id: "claude" }),
+    accountView({ id: "codex" }),
+    accountView({ id: "aws" }),
+  ];
+
+  expect(orderTrayAccountsFromUsageSubset(accounts, ["aws", "claude"])).toEqual(
+    ["aws", "codex", "claude"],
+  );
 });
 
 test("keeps tray usage and accounts in an internal scroll region", () => {

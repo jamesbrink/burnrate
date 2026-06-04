@@ -106,10 +106,7 @@ export function TrayPanel({
               ariaLabel="Usage order"
               onReorder={(subsetIds) =>
                 onReorderAccounts(
-                  reorderWithinSubset(
-                    accounts.map((account) => account.id),
-                    subsetIds,
-                  ),
+                  orderTrayAccountsFromUsageSubset(accounts, subsetIds),
                 )
               }
               renderItem={(item, handle) => (
@@ -130,6 +127,16 @@ export function TrayPanel({
         ) : null}
       </div>
     </main>
+  );
+}
+
+export function orderTrayAccountsFromUsageSubset(
+  accounts: AccountView[],
+  subsetIds: string[],
+): string[] {
+  return reorderWithinSubset(
+    accounts.map((account) => account.id),
+    subsetIds,
   );
 }
 
