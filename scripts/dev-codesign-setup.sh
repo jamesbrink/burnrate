@@ -42,10 +42,6 @@ if security find-certificate -c "$IDENTITY" "$KEYCHAIN" >/dev/null 2>&1; then
   if [ "$AUTHORIZE_KEY" -eq 1 ]; then
     unlock_codesign_key
     touch "$READY_MARKER" 2>/dev/null || true
-  elif [ "$QUIET" -eq 0 ]; then
-    # The user explicitly ran setup; preserve signing for existing identities
-    # without doing keychain operations that can prompt for a password.
-    touch "$READY_MARKER" 2>/dev/null || true
   fi
   if [ "$QUIET" -eq 0 ]; then
     echo "Code-signing identity '$IDENTITY' already present."
@@ -66,46 +62,28 @@ if [ "$QUIET" -eq 0 ]; then
   echo "Creating self-signed code-signing certificate '$IDENTITY'…"
 fi
 
-if [ "$QUIET" -eq 1 ]; then
-  openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout "$TMP/key.pem" -out "$TMP/cert.pem" -days 3650 \
-    -subj "/CN=${IDENTITY}" \
-    -addext "basicConstraints=critical,CA:FALSE" \
-    -addext "keyUsage=critical,digitalSignature" \
-    -addext "extendedKeyUsage=critical,codeSigning" >/dev/null 2>&1
-else
-  openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout "$TMP/key.pem" -out "$TMP/cert.pem" -days 3650 \
-    -subj "/CN=${IDENTITY}" \
-    -addext "basicConstraints=critical,CA:FALSE" \
-    -addext "keyUsage=critical,digitalSignature" \
-    -addext "extendedKeyUsage=critical,codeSigning"
-fi
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout "$TMP/key.pem" -out "$TMP/cert.pem" -days 3650 \
+  -subj "/CN=${IDENTITY}" \
+  -addext "basicConstraints=critical,CA:FALSE" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=critical,codeSigning"
 
 PKCS12_LEGACY_FLAG=""
 if openssl pkcs12 -help 2>&1 | grep -q -- "-legacy"; then
   PKCS12_LEGACY_FLAG="-legacy"
 fi
-if [ "$QUIET" -eq 1 ]; then
-  openssl pkcs12 $PKCS12_LEGACY_FLAG -export -out "$TMP/identity.p12" \
-    -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
-    -passout pass:"$P12_PASSWORD" >/dev/null 2>&1
-else
-  openssl pkcs12 $PKCS12_LEGACY_FLAG -export -out "$TMP/identity.p12" \
-    -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
-    -passout pass:"$P12_PASSWORD"
-fi
+openssl pkcs12 $PKCS12_LEGACY_FLAG -export -out "$TMP/identity.p12" \
+  -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
+  -passout pass:"$P12_PASSWORD"
 
-# Import the key and grant codesign access. Use -A as well as -T so the default
-# setup path does not need `set-key-partition-list` or a login-keychain password.
-security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -A -T /usr/bin/codesign
-touch "$READY_MARKER" 2>/dev/null || true
+# Import the key and restrict private-key access to codesign. The broader
+# set-key-partition-list authorization can require a keychain password, so it is
+# only attempted when the user explicitly requests --authorize-key.
+security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
 if [ "$AUTHORIZE_KEY" -eq 1 ]; then
   unlock_codesign_key
-fi
-
-if [ "$QUIET" -eq 1 ]; then
-  exit 0
+  touch "$READY_MARKER" 2>/dev/null || true
 fi
 
 echo
