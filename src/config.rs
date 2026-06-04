@@ -219,6 +219,15 @@ pub(crate) fn load_or_recover_from_path(path: &Path) -> Result<(AppConfig, bool)
     match serde_json::from_str(&contents) {
         Ok(config) => Ok((config, false)),
         Err(error) => {
+            if serde_json::from_str::<serde_json::Value>(&contents).is_ok() {
+                return Err(error).with_context(|| {
+                    format!(
+                        "config {} is valid JSON but is incompatible with this Burnrate build; preserving it instead of resetting account data",
+                        path.display()
+                    )
+                });
+            }
+
             let backup = recovered_config_path(path)?;
             fs::rename(path, &backup).with_context(|| {
                 format!(
@@ -440,6 +449,54 @@ mod tests {
         assert!(should_save);
         assert!(!path.exists());
         assert!(fs::read_dir(dir.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("invalid")
+        }));
+    }
+
+    #[test]
+    fn preserves_valid_json_that_fails_schema_deserialization() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        fs::write(
+            &path,
+            r#"{
+              "settings": {"hideFromDock": true},
+              "accounts": [
+                {
+                  "id": "future-provider-main",
+                  "provider": "future-provider",
+                  "label": "Future Provider",
+                  "enabled": true,
+                  "autoDetected": false,
+                  "credentialPath": null,
+                  "endpointOverride": null,
+                  "secretStorage": "keyring",
+                  "keyringAccount": null,
+                  "plaintextSecret": null,
+                  "email": null,
+                  "configDir": null,
+                  "awsProfile": null,
+                  "awsRegion": null,
+                  "awsMonthlyBudgetUsd": null,
+                  "awsCategories": [],
+                  "orderIndex": null,
+                  "createdAt": "2026-06-04T00:00:00Z",
+                  "updatedAt": "2026-06-04T00:00:00Z"
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        let error = load_or_recover_from_path(&path).unwrap_err();
+
+        assert!(path.exists());
+        assert!(error.to_string().contains("valid JSON but is incompatible"));
+        assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| {
             entry
                 .unwrap()
                 .file_name()
