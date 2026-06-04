@@ -401,7 +401,7 @@ fn status_message(
         parts.push(format!("read {pages} Cost Explorer pages"));
     }
     if category_count > 0 {
-        parts.push(format!("{} enabled AWS categories", category_count));
+        parts.push(format!("{category_count} enabled AWS categories"));
     }
     Some(parts.join(" · "))
 }

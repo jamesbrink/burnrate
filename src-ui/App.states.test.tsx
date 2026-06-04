@@ -438,6 +438,39 @@ test("persists the tray content scale preference", async () => {
   );
 });
 
+test("leaves native tray scale unchanged when the slider is already at 100%", async () => {
+  api.guardedFetch.mockResolvedValue(dashboardState());
+
+  render(<App />);
+  await screen.findByRole("heading", { name: "Preferences" });
+
+  fireEvent.change(screen.getByLabelText(/Tray content scale/), {
+    target: { value: "1" },
+  });
+
+  expect(api.saveSettings).not.toHaveBeenCalled();
+});
+
+test("shows update check status in preferences", async () => {
+  api.guardedFetch.mockResolvedValue(dashboardState());
+  api.updaterAvailable.mockResolvedValue(true);
+  let resolveCheck: (value: null) => void = () => {};
+  api.checkForUpdates.mockReturnValue(
+    new Promise<null>((resolve) => {
+      resolveCheck = resolve;
+    }),
+  );
+
+  render(<App />);
+  await screen.findByRole("heading", { name: "Preferences" });
+
+  fireEvent.click(screen.getByRole("button", { name: /Check for updates/ }));
+  expect(await screen.findByText("Checking…")).toBeInTheDocument();
+
+  await act(async () => resolveCheck(null));
+  expect(await screen.findByText("You're up to date.")).toBeInTheDocument();
+});
+
 test("selecting the already-active channel does not re-save", async () => {
   api.guardedFetch.mockResolvedValue(dashboardState());
 

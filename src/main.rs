@@ -285,17 +285,21 @@ fn resize_tray_to_content(
     let max_tray_height =
         (available_height * TRAY_MAX_HEIGHT_WORK_RATIO).max(TRAY_MIN_HEIGHT.min(available_height));
     let (target_width, target_height) = tray::clamp_tray_size(
-        width,
-        height,
-        chrome_width,
-        chrome_height,
-        work_size.width,
-        work_size.height,
-        TRAY_SCREEN_MARGIN,
-        TRAY_CONTENT_WIDTH,
-        TRAY_MIN_HEIGHT,
-        max_tray_height,
-        TRAY_MAX_CONTENT_WIDTH,
+        tray::TraySizeInput {
+            content_width: width,
+            content_height: height,
+            chrome_width,
+            chrome_height,
+        },
+        tray::TraySizeLimits {
+            work_width: work_size.width,
+            work_height: work_size.height,
+            margin: TRAY_SCREEN_MARGIN,
+            min_content_width: TRAY_CONTENT_WIDTH,
+            min_height: TRAY_MIN_HEIGHT,
+            max_height: max_tray_height,
+            max_content_width: TRAY_MAX_CONTENT_WIDTH,
+        },
     );
 
     window

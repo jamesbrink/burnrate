@@ -92,42 +92,47 @@ pub(crate) fn clamp_tray_height(
     (content_height + chrome).ceil().clamp(lower, available)
 }
 
+pub(crate) struct TraySizeInput {
+    pub(crate) content_width: f64,
+    pub(crate) content_height: f64,
+    pub(crate) chrome_width: f64,
+    pub(crate) chrome_height: f64,
+}
+
+pub(crate) struct TraySizeLimits {
+    pub(crate) work_width: f64,
+    pub(crate) work_height: f64,
+    pub(crate) margin: f64,
+    pub(crate) min_content_width: f64,
+    pub(crate) min_height: f64,
+    pub(crate) max_height: f64,
+    pub(crate) max_content_width: f64,
+}
+
 /// Pure size clamp for the tray content resize (unit-tested): fit reported
 /// content plus native chrome inside the clicked monitor's safe work area while
 /// preserving compact minimums and capping adaptive width to the design maximum.
-pub(crate) fn clamp_tray_size(
-    content_width: f64,
-    content_height: f64,
-    chrome_width: f64,
-    chrome_height: f64,
-    work_width: f64,
-    work_height: f64,
-    margin: f64,
-    min_content_width: f64,
-    min_height: f64,
-    max_height: f64,
-    max_content_width: f64,
-) -> (f64, f64) {
-    let available_width = (work_width - 2.0 * margin).max(1.0);
-    let width_floor = (min_content_width + chrome_width)
+pub(crate) fn clamp_tray_size(input: TraySizeInput, limits: TraySizeLimits) -> (f64, f64) {
+    let available_width = (limits.work_width - 2.0 * limits.margin).max(1.0);
+    let width_floor = (limits.min_content_width + input.chrome_width)
         .ceil()
         .min(available_width);
-    let width_ceiling = (max_content_width + chrome_width)
+    let width_ceiling = (limits.max_content_width + input.chrome_width)
         .ceil()
         .min(available_width)
         .max(width_floor);
-    let width = (content_width + chrome_width)
+    let width = (input.content_width + input.chrome_width)
         .ceil()
         .clamp(width_floor, width_ceiling);
-    let available_height = (work_height - 2.0 * margin).max(1.0);
-    let height_floor = min_height.min(available_height);
-    let height_ceiling = max_height.min(available_height).max(height_floor);
+    let available_height = (limits.work_height - 2.0 * limits.margin).max(1.0);
+    let height_floor = limits.min_height.min(available_height);
+    let height_ceiling = limits.max_height.min(available_height).max(height_floor);
     let height = clamp_tray_height(
-        content_height,
-        chrome_height,
-        work_height,
-        margin,
-        min_height,
+        input.content_height,
+        input.chrome_height,
+        limits.work_height,
+        limits.margin,
+        limits.min_height,
     )
     .clamp(height_floor, height_ceiling);
     (width, height)
@@ -667,34 +672,75 @@ mod tests {
 
     #[test]
     fn clamp_tray_size_adapts_width_and_height_to_work_area() {
-        let margin = 8.0;
+        let size = |input: TraySizeInput, work_width: f64, work_height: f64| {
+            clamp_tray_size(
+                input,
+                TraySizeLimits {
+                    work_width,
+                    work_height,
+                    margin: 8.0,
+                    min_content_width: 360.0,
+                    min_height: 200.0,
+                    max_height: 760.0,
+                    max_content_width: 360.0,
+                },
+            )
+        };
 
         // Compact content keeps the menu-sized width and minimum height.
         assert_eq!(
-            clamp_tray_size(
-                320.0, 80.0, 0.0, 0.0, 1440.0, 900.0, margin, 360.0, 200.0, 760.0, 360.0
+            size(
+                TraySizeInput {
+                    content_width: 320.0,
+                    content_height: 80.0,
+                    chrome_width: 0.0,
+                    chrome_height: 0.0,
+                },
+                1440.0,
+                900.0,
             ),
             (360.0, 200.0)
         );
 
         // Wider content is capped to the compact native-menu width.
         assert_eq!(
-            clamp_tray_size(
-                400.2, 500.2, 2.0, 1.0, 1440.0, 900.0, margin, 360.0, 200.0, 760.0, 360.0
+            size(
+                TraySizeInput {
+                    content_width: 400.2,
+                    content_height: 500.2,
+                    chrome_width: 2.0,
+                    chrome_height: 1.0,
+                },
+                1440.0,
+                900.0,
             ),
             (362.0, 502.0)
         );
         assert_eq!(
-            clamp_tray_size(
-                900.0, 1200.0, 0.0, 0.0, 1440.0, 900.0, margin, 360.0, 200.0, 760.0, 360.0
+            size(
+                TraySizeInput {
+                    content_width: 900.0,
+                    content_height: 1200.0,
+                    chrome_width: 0.0,
+                    chrome_height: 0.0,
+                },
+                1440.0,
+                900.0,
             ),
             (360.0, 760.0)
         );
 
         // Tiny work areas win over both minimums so the popover still fits.
         assert_eq!(
-            clamp_tray_size(
-                900.0, 1200.0, 0.0, 0.0, 300.0, 120.0, margin, 360.0, 200.0, 760.0, 360.0
+            size(
+                TraySizeInput {
+                    content_width: 900.0,
+                    content_height: 1200.0,
+                    chrome_width: 0.0,
+                    chrome_height: 0.0,
+                },
+                300.0,
+                120.0,
             ),
             (284.0, 104.0)
         );
