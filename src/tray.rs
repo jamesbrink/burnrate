@@ -122,9 +122,14 @@ pub(crate) fn clamp_tray_size(
     let available_height = (work_height - 2.0 * margin).max(1.0);
     let height_floor = min_height.min(available_height);
     let height_ceiling = max_height.min(available_height).max(height_floor);
-    let height = (content_height + chrome_height)
-        .ceil()
-        .clamp(height_floor, height_ceiling);
+    let height = clamp_tray_height(
+        content_height,
+        chrome_height,
+        work_height,
+        margin,
+        min_height,
+    )
+    .clamp(height_floor, height_ceiling);
     (width, height)
 }
 
