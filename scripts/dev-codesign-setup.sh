@@ -95,9 +95,9 @@ fi
 # Import the key and grant codesign access. Use -A as well as -T so the default
 # setup path does not need `set-key-partition-list` or a login-keychain password.
 security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -A -T /usr/bin/codesign
+touch "$READY_MARKER" 2>/dev/null || true
 if [ "$AUTHORIZE_KEY" -eq 1 ]; then
   unlock_codesign_key
-  touch "$READY_MARKER" 2>/dev/null || true
 fi
 
 if [ "$QUIET" -eq 1 ]; then
