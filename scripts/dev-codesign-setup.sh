@@ -42,6 +42,10 @@ if security find-certificate -c "$IDENTITY" "$KEYCHAIN" >/dev/null 2>&1; then
   if [ "$AUTHORIZE_KEY" -eq 1 ]; then
     unlock_codesign_key
     touch "$READY_MARKER" 2>/dev/null || true
+  elif [ "$QUIET" -eq 0 ]; then
+    # The user explicitly ran setup; preserve signing for existing identities
+    # without doing keychain operations that can prompt for a password.
+    touch "$READY_MARKER" 2>/dev/null || true
   fi
   if [ "$QUIET" -eq 0 ]; then
     echo "Code-signing identity '$IDENTITY' already present."

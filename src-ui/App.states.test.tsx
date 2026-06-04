@@ -670,6 +670,58 @@ test("auto-sizes the tray window to its measured content", async () => {
   }
 });
 
+test("defaults legacy cached tray settings before resizing", async () => {
+  window.history.replaceState({}, "", "/?view=tray");
+  api.readCachedDashboard.mockReturnValue({
+    dashboard: dashboardState({
+      settings: {
+        hideFromDock: false,
+        updateChannel: "stable",
+      } as DashboardState["settings"],
+    }),
+    fetchedAt: 1_000,
+  });
+  api.isStale.mockReturnValue(false);
+
+  const styleSpy = vi.spyOn(window, "getComputedStyle").mockReturnValue({
+    paddingTop: "12px",
+    paddingBottom: "12px",
+    rowGap: "9px",
+    gap: "9px",
+    getPropertyValue: () => "",
+  } as unknown as CSSStyleDeclaration);
+  const offsetHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "offsetHeight",
+  );
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => 36,
+  });
+
+  try {
+    render(<App />);
+    await waitFor(() =>
+      expect(api.resizeTrayToContent).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 360 }),
+      ),
+    );
+    const [{ height }] = api.resizeTrayToContent.mock.calls[0] as [
+      { height: number },
+    ];
+    expect(Number.isNaN(height)).toBe(false);
+  } finally {
+    styleSpy.mockRestore();
+    if (offsetHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "offsetHeight",
+        offsetHeight,
+      );
+    }
+  }
+});
+
 test("keeps very long tray account rows at the compact width", async () => {
   window.history.replaceState({}, "", "/?view=tray");
   const accounts = [

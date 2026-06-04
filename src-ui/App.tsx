@@ -169,10 +169,10 @@ export function App() {
     () => summaryFromBackend(state?.traySummary, snapshots),
     [state?.traySummary, snapshots],
   );
-  const settings: AppSettings = state?.settings ?? {
-    hideFromDock: true,
-    updateChannel: "stable",
-    trayScale: TRAY_MAX_SCALE,
+  const settings: AppSettings = {
+    hideFromDock: state?.settings?.hideFromDock ?? true,
+    updateChannel: state?.settings?.updateChannel ?? "stable",
+    trayScale: state?.settings?.trayScale ?? TRAY_MAX_SCALE,
   };
 
   async function updateSettings(next: AppSettings) {
