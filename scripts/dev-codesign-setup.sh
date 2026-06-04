@@ -15,8 +15,9 @@ set -eu
 
 IDENTITY="burnrate-dev"
 KEYCHAIN="${HOME}/Library/Keychains/login.keychain-db"
-READY_MARKER="${HOME}/.burnrate-dev-codesign-ready"
+READY_MARKER="${HOME}/.burnrate-dev-codesign-authorized"
 P12_PASSWORD="burnrate-dev-local"
+AUTHORIZE_KEY=0
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "This helper is macOS-only." >&2
@@ -24,28 +25,33 @@ if [ "$(uname -s)" != "Darwin" ]; then
 fi
 
 QUIET=0
-if [ "${1:-}" = "--quiet" ]; then
-  QUIET=1
-fi
+for arg in "$@"; do
+  case "$arg" in
+    --quiet) QUIET=1 ;;
+    --authorize-key) AUTHORIZE_KEY=1 ;;
+  esac
+done
 
 unlock_codesign_key() {
-  # Re-apply the partition list even for existing identities. Without it,
-  # codesign can ask for keychain access on every dev rebuild.
+  # This can require the login keychain password. Never run it from `dev`; only
+  # when explicitly requested by `scripts/dev-codesign-setup.sh --authorize-key`.
   security set-key-partition-list -S apple-tool:,apple: -s "$KEYCHAIN" >/dev/null 2>&1 || true
 }
 
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
-  if [ -f "$READY_MARKER" ]; then
-    if [ "$QUIET" -eq 0 ]; then
-      echo "Code-signing identity '$IDENTITY' already present."
-    fi
-    exit 0
+if security find-certificate -c "$IDENTITY" "$KEYCHAIN" >/dev/null 2>&1; then
+  if [ "$AUTHORIZE_KEY" -eq 1 ]; then
+    unlock_codesign_key
+    touch "$READY_MARKER" 2>/dev/null || true
   fi
-  unlock_codesign_key
-  touch "$READY_MARKER" 2>/dev/null || true
   if [ "$QUIET" -eq 0 ]; then
-    echo "Code-signing identity '$IDENTITY' already present and key access is prepared."
+    echo "Code-signing identity '$IDENTITY' already present."
   fi
+  exit 0
+fi
+
+if [ "$QUIET" -eq 1 ]; then
+  # `dev` must never block on keychain password prompts. If the local identity
+  # has not been created yet, skip setup and let the runner no-op.
   exit 0
 fi
 
@@ -86,12 +92,13 @@ else
     -passout pass:"$P12_PASSWORD"
 fi
 
-# Import the key and authorise codesign to use it. -T grants codesign access;
-# set-key-partition-list is the modern requirement to use the key without a
-# prompt (it may ask for your login keychain password once).
-security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
-unlock_codesign_key
-touch "$READY_MARKER" 2>/dev/null || true
+# Import the key and grant codesign access. Use -A as well as -T so the default
+# setup path does not need `set-key-partition-list` or a login-keychain password.
+security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -A -T /usr/bin/codesign
+if [ "$AUTHORIZE_KEY" -eq 1 ]; then
+  unlock_codesign_key
+  touch "$READY_MARKER" 2>/dev/null || true
+fi
 
 if [ "$QUIET" -eq 1 ]; then
   exit 0
@@ -100,5 +107,5 @@ fi
 echo
 echo "Created '$IDENTITY'. Next:"
 echo "  1. Run: npm run dev"
-echo "  2. If macOS asks once for your login keychain password, allow it."
-echo "  3. Rebuilds now keep the grant — no more repeated prompts."
+echo "  2. dev will never ask for your keychain password."
+echo "  3. Optional: run scripts/dev-codesign-setup.sh --authorize-key to enable automatic re-signing."

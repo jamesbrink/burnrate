@@ -7,18 +7,23 @@
 #
 # Safe everywhere: it only touches a binary literally named `burnrate` (test
 # binaries have a hash suffix and are skipped), and it does nothing unless the
-# one-time identity from scripts/dev-codesign-setup.sh exists — so CI and other
-# machines run unaffected.
+# local identity has been explicitly authorized. This keeps `dev` from ever
+# blocking on a keychain password prompt.
 set -eu
 
 BIN="$1"
 shift
 
+READY_MARKER="${HOME}/.burnrate-dev-codesign-authorized"
+
 if [ "$(basename "$BIN")" = "burnrate" ] \
+  && [ -f "$READY_MARKER" ] \
   && command -v codesign >/dev/null 2>&1 \
-  && command -v security >/dev/null 2>&1 \
-  && security find-identity -v -p codesigning 2>/dev/null | grep -q "burnrate-dev"; then
-  codesign --force --sign "burnrate-dev" "$BIN" >/dev/null 2>&1 || true
+  && command -v security >/dev/null 2>&1; then
+  IDENTITY_HASH="$(security find-certificate -a -Z -c burnrate-dev "${HOME}/Library/Keychains/login.keychain-db" 2>/dev/null | awk '/SHA-1/{print $NF; exit}')"
+  if [ -n "$IDENTITY_HASH" ]; then
+    codesign --force --sign "$IDENTITY_HASH" "$BIN" >/dev/null 2>&1 || true
+  fi
 fi
 
 exec "$BIN" "$@"
