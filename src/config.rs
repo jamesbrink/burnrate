@@ -467,9 +467,9 @@ mod tests {
               "settings": {"hideFromDock": true},
               "accounts": [
                 {
-                  "id": "future-provider-main",
-                  "provider": "future-provider",
-                  "label": "Future Provider",
+                  "id": "__unknown__-main",
+                  "provider": "__unknown__",
+                  "label": "Unknown Provider",
                   "enabled": true,
                   "autoDetected": false,
                   "credentialPath": null,
