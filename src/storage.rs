@@ -1,5 +1,7 @@
 use std::{
+    ffi::OsString,
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
@@ -19,6 +21,7 @@ const LATEST_SCHEMA_VERSION: i64 = 1;
 
 pub(crate) struct ConfigStore {
     conn: Mutex<Connection>,
+    db_path: PathBuf,
 }
 
 impl ConfigStore {
@@ -31,10 +34,14 @@ impl ConfigStore {
             config::create_private_dir(parent)?;
         }
 
-        let is_new_database = !db_path.exists();
-        let result = Self::open_at_inner(&db_path, &legacy_json_path, is_new_database);
-        if result.is_err() && is_new_database {
-            let _ = fs::remove_file(&db_path);
+        let created_database = if db_path.exists() {
+            false
+        } else {
+            create_private_database_file(&db_path)?
+        };
+        let result = Self::open_at_inner(&db_path, &legacy_json_path, created_database);
+        if result.is_err() && created_database {
+            cleanup_database_files(&db_path);
         }
         result
     }
@@ -44,12 +51,9 @@ impl ConfigStore {
         legacy_json_path: &Path,
         is_new_database: bool,
     ) -> Result<Self> {
-        if is_new_database {
-            create_private_database_file(db_path)?;
-        }
         let mut conn = Connection::open(db_path)
             .with_context(|| format!("failed to open {}", db_path.display()))?;
-        config::set_private_file_permissions(db_path)?;
+        harden_database_files(db_path)?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -58,9 +62,11 @@ impl ConfigStore {
         if is_new_database && legacy_json_path.exists() {
             import_legacy_json(&mut conn, legacy_json_path)?;
         }
+        harden_database_files(db_path)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
+            db_path: db_path.to_path_buf(),
         })
     }
 
@@ -74,31 +80,70 @@ impl ConfigStore {
         let tx = conn.transaction()?;
         save_config_tx(&tx, config)?;
         tx.commit()?;
+        harden_database_files(&self.db_path)?;
         Ok(())
     }
 }
 
 #[cfg(unix)]
-fn create_private_database_file(path: &Path) -> Result<()> {
+fn create_private_database_file(path: &Path) -> Result<bool> {
     use std::os::unix::fs::OpenOptionsExt;
 
-    fs::OpenOptions::new()
+    match fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .open(path)
-        .with_context(|| format!("failed to create {}", path.display()))?;
-    Ok(())
+    {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(error).with_context(|| format!("failed to create {}", path.display())),
+    }
 }
 
 #[cfg(not(unix))]
-fn create_private_database_file(path: &Path) -> Result<()> {
-    fs::OpenOptions::new()
+fn create_private_database_file(path: &Path) -> Result<bool> {
+    match fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(path)
-        .with_context(|| format!("failed to create {}", path.display()))?;
+    {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(error).with_context(|| format!("failed to create {}", path.display())),
+    }
+}
+
+fn database_sidecar_path(path: &Path, suffix: &str) -> PathBuf {
+    let mut file_name = OsString::from(
+        path.file_name()
+            .expect("database path should include a file name"),
+    );
+    file_name.push(suffix);
+    path.with_file_name(file_name)
+}
+
+fn database_file_paths(path: &Path) -> [PathBuf; 3] {
+    [
+        path.to_path_buf(),
+        database_sidecar_path(path, "-wal"),
+        database_sidecar_path(path, "-shm"),
+    ]
+}
+
+fn harden_database_files(path: &Path) -> Result<()> {
+    for file_path in database_file_paths(path) {
+        if file_path.exists() {
+            config::set_private_file_permissions(&file_path)?;
+        }
+    }
     Ok(())
+}
+
+fn cleanup_database_files(path: &Path) {
+    for file_path in database_file_paths(path) {
+        let _ = fs::remove_file(file_path);
+    }
 }
 
 fn run_migrations(conn: &mut Connection) -> Result<()> {
@@ -689,8 +734,29 @@ mod tests {
         };
 
         assert!(error.to_string().contains("incompatible"));
-        assert!(!db_path.exists());
+        for path in database_file_paths(&db_path) {
+            assert!(!path.exists(), "{} should be removed", path.display());
+        }
         assert!(json_path.exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn hardens_database_and_wal_sidecar_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join(config::DATABASE_FILE);
+        let json_path = dir.path().join(config::CONFIG_FILE);
+        let store = ConfigStore::open_at(db_path.clone(), json_path).unwrap();
+        store.save_config(&AppConfig::default()).unwrap();
+
+        for path in database_file_paths(&db_path) {
+            if path.exists() {
+                let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+                assert_eq!(mode, 0o600, "{} mode", path.display());
+            }
+        }
     }
 
     #[test]

@@ -316,7 +316,7 @@ impl AppState {
         config::create_private_dir(&dir)?;
         let dir_string = dir.display().to_string();
 
-        self.update_config(|config| {
+        let result = self.update_config(|config| {
             let now = Utc::now();
             config.accounts.push(AccountConfig {
                 id: id.to_string(),
@@ -330,7 +330,7 @@ impl AppState {
                 keyring_account: None,
                 plaintext_secret: None,
                 email: None,
-                config_dir: Some(dir_string),
+                config_dir: Some(dir_string.clone()),
                 aws_profile: None,
                 aws_region: None,
                 aws_monthly_budget_usd: None,
@@ -344,7 +344,11 @@ impl AppState {
                 .into_iter()
                 .find(|view| view.id == id)
                 .ok_or_else(|| anyhow!("pending login account vanished"))
-        })
+        });
+        if result.is_err() {
+            cleanup_managed_dir(Some(&dir_string));
+        }
+        result
     }
 
     async fn finalize_login(
@@ -428,7 +432,10 @@ impl AppState {
         outcome: LoginOutcome,
     ) -> Result<AccountView> {
         let email = outcome.email;
-        self.update_config(|config| {
+        let mut cleanup_dirs: Vec<Option<String>> = Vec::new();
+        #[cfg(target_os = "macos")]
+        let mut delete_keychain_dirs: Vec<Option<String>> = Vec::new();
+        let view = self.update_config(|config| {
             let existing_id = email.as_deref().and_then(|email| {
                 config
                     .accounts
@@ -461,19 +468,19 @@ impl AppState {
                         existing.credential_path = pending_dir;
                         #[cfg(target_os = "macos")]
                         if provider == ProviderKind::ClaudeCode {
-                            login::delete_claude_keychain_for_dir(stale.as_deref());
+                            delete_keychain_dirs.push(stale.clone());
                         }
-                        cleanup_managed_dir(stale.as_deref());
+                        cleanup_dirs.push(stale);
                     } else {
                         // The match is the system-default account; keep its creds and
                         // discard the throwaway login dir.
-                        cleanup_managed_dir(pending_dir.as_deref());
+                        cleanup_dirs.push(pending_dir);
                     }
                     existing.email = email;
                     existing.enabled = true;
                     existing.updated_at = Utc::now();
                 } else {
-                    cleanup_managed_dir(pending_dir.as_deref());
+                    cleanup_dirs.push(pending_dir);
                 }
                 existing_id
             } else {
@@ -490,17 +497,29 @@ impl AppState {
                 .into_iter()
                 .find(|view| view.id == final_id)
                 .ok_or_else(|| anyhow!("signed-in account vanished"))
-        })
+        })?;
+        #[cfg(target_os = "macos")]
+        for dir in delete_keychain_dirs {
+            login::delete_claude_keychain_for_dir(dir.as_deref());
+        }
+        for dir in cleanup_dirs {
+            cleanup_managed_dir(dir.as_deref());
+        }
+        Ok(view)
     }
 
     fn discard_pending_login(&self, id: &str) {
-        let _ = self.update_config(|config| {
-            if let Some(removed) = config.remove(id) {
-                cleanup_managed_dir(removed.config_dir.as_deref());
-                let _ = key_store::remove_secret(&removed);
-            }
+        let mut removed = None;
+        let result = self.update_config(|config| {
+            removed = config.remove(id);
             Ok(())
         });
+        if result.is_ok()
+            && let Some(removed) = removed
+        {
+            cleanup_managed_dir(removed.config_dir.as_deref());
+            let _ = key_store::remove_secret(&removed);
+        }
     }
 
     /// Cancel an in-progress sign-in. Returns `(canceled, accounts)` where
@@ -541,14 +560,16 @@ impl AppState {
             .find(|account| account.id == id)
             .cloned();
 
+        let views = self.update_config(|config| {
+            config.remove(id);
+            Ok(config.views())
+        })?;
+
         if let Some(account) = account {
             self.teardown_managed_credentials(&account).await;
         }
 
-        self.update_config(|config| {
-            config.remove(id);
-            Ok(config.views())
-        })
+        Ok(views)
     }
 
     /// Clear an account's credentials. For a managed Claude/Codex dir this runs
