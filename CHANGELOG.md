@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/jamesbrink/burnrate/compare/v0.1.5...v0.1.6) - 2026-06-05
+
+### Added
+
+- *(storage)* migrate config to sqlite
+- *(tray)* adapt popover height to screen space
+
+### Fixed
+
+- *(config)* preserve valid config on schema errors
+
 ## [0.1.5](https://github.com/jamesbrink/burnrate/compare/v0.1.4...v0.1.5) - 2026-06-03
 
 ### Added
