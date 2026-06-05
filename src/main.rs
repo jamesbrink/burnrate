@@ -5,6 +5,7 @@ mod config;
 mod key_store;
 mod models;
 mod providers;
+mod storage;
 mod tray;
 mod updater;
 

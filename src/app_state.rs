@@ -1,4 +1,4 @@
-use std::{fs, path::Path, path::PathBuf, sync::Mutex};
+use std::{fs, path::Path, sync::Mutex};
 
 use anyhow::{Result, anyhow};
 use chrono::Utc;
@@ -16,11 +16,12 @@ use crate::{
         self, ProviderClient,
         login::{self, LoginManager, LoginOutcome},
     },
+    storage::ConfigStore,
     tray,
 };
 
 pub(crate) struct AppState {
-    config_path: PathBuf,
+    config_store: ConfigStore,
     config: Mutex<AppConfig>,
     provider_client: ProviderClient,
     login_manager: LoginManager,
@@ -28,15 +29,15 @@ pub(crate) struct AppState {
 
 impl AppState {
     pub(crate) fn load() -> Result<Self> {
-        let config_path = config::config_path()?;
-        let (mut config, should_save) = config::load_or_recover_from_path(&config_path)?;
+        let config_store = ConfigStore::open()?;
+        let mut config = config_store.load_config()?;
         let detected_changed = config.merge_detected(providers::detect_accounts());
-        if should_save || detected_changed {
-            config::save_to_path(&config_path, &config)?;
+        if detected_changed {
+            config_store.save_config(&config)?;
         }
 
         Ok(Self {
-            config_path,
+            config_store,
             config: Mutex::new(config),
             provider_client: ProviderClient::new(),
             login_manager: LoginManager::new(),
@@ -52,48 +53,75 @@ impl AppState {
     }
 
     pub(crate) fn save_settings(&self, settings: AppSettings) -> Result<AppSettings> {
-        let mut config = self.config.lock().expect("config lock");
-        config.settings = settings;
-        config::save_to_path(&self.config_path, &config)?;
-        Ok(config.settings.clone())
+        self.update_config(|config| {
+            config.settings = settings;
+            Ok(config.settings.clone())
+        })
+    }
+
+    fn update_config<R>(&self, update: impl FnOnce(&mut AppConfig) -> Result<R>) -> Result<R> {
+        let mut current = self.config.lock().expect("config lock");
+        let mut next = current.clone();
+        let result = update(&mut next)?;
+        self.config_store.save_config(&next)?;
+        *current = next;
+        Ok(result)
+    }
+
+    fn update_config_if_changed(
+        &self,
+        update: impl FnOnce(&mut AppConfig) -> Result<bool>,
+    ) -> Result<()> {
+        let mut current = self.config.lock().expect("config lock");
+        let mut next = current.clone();
+        if update(&mut next)? {
+            self.config_store.save_config(&next)?;
+            *current = next;
+        }
+        Ok(())
     }
 
     pub(crate) fn save_account(&self, input: AccountInput) -> Result<Vec<AccountView>> {
-        let mut config = self.config.lock().expect("config lock");
-        let previous = input.id.as_ref().and_then(|id| {
-            config
+        self.update_config(|config| {
+            let previous = input.id.as_ref().and_then(|id| {
+                config
+                    .accounts
+                    .iter()
+                    .find(|account| &account.id == id)
+                    .cloned()
+            });
+            let account = config.upsert_manual(input.clone());
+
+            let account = config
                 .accounts
-                .iter()
-                .find(|account| &account.id == id)
-                .cloned()
-        });
-        let account = config.upsert_manual(input.clone());
+                .iter_mut()
+                .find(|item| item.id == account.id)
+                .expect("upserted account exists");
 
-        let account = config
-            .accounts
-            .iter_mut()
-            .find(|item| item.id == account.id)
-            .expect("upserted account exists");
+            if account.provider == ProviderKind::Aws {
+                key_store::clear_secret(account)?;
+            } else if let Some(secret) = input.secret {
+                key_store::set_secret(account, Some(secret))?;
+                key_store::validate_plaintext_mode(account)?;
+            } else if let Some(previous) = previous {
+                key_store::migrate_secret(&previous, account)?;
+            }
 
-        if account.provider == ProviderKind::Aws {
-            key_store::clear_secret(account)?;
-        } else if let Some(secret) = input.secret {
-            key_store::set_secret(account, Some(secret))?;
-            key_store::validate_plaintext_mode(account)?;
-        } else if let Some(previous) = previous {
-            key_store::migrate_secret(&previous, account)?;
-        }
-
-        config::save_to_path(&self.config_path, &config)?;
-        Ok(config.views())
+            Ok(config.views())
+        })
     }
 
     pub(crate) fn detect_accounts(&self) -> Result<Vec<AccountView>> {
-        let mut config = self.config.lock().expect("config lock");
-        if config.merge_detected(providers::detect_accounts()) {
-            config::save_to_path(&self.config_path, &config)?;
+        let mut current = self.config.lock().expect("config lock");
+        let mut next = current.clone();
+        if next.merge_detected(providers::detect_accounts()) {
+            let views = next.views();
+            self.config_store.save_config(&next)?;
+            *current = next;
+            Ok(views)
+        } else {
+            Ok(current.views())
         }
-        Ok(config.views())
     }
 
     pub(crate) async fn snapshots(&self) -> Vec<UsageSnapshot> {
@@ -139,23 +167,22 @@ impl AppState {
     /// only when something changed, to avoid disk churn. Holds no lock across an
     /// await (called after the fan-out completes).
     fn persist_discovered_emails(&self, snapshots: &[UsageSnapshot]) {
-        let mut config = self.config.lock().expect("config lock");
-        let mut changed = false;
-        for snapshot in snapshots {
-            if let Some(email) = snapshot.email.as_deref()
-                && let Some(account) = config
-                    .accounts
-                    .iter_mut()
-                    .find(|account| account.id == snapshot.account_id)
-                && account.email.as_deref() != Some(email)
-            {
-                account.email = Some(email.to_string());
-                changed = true;
+        let _ = self.update_config_if_changed(|config| {
+            let mut changed = false;
+            for snapshot in snapshots {
+                if let Some(email) = snapshot.email.as_deref()
+                    && let Some(account) = config
+                        .accounts
+                        .iter_mut()
+                        .find(|account| account.id == snapshot.account_id)
+                    && account.email.as_deref() != Some(email)
+                {
+                    account.email = Some(email.to_string());
+                    changed = true;
+                }
             }
-        }
-        if changed {
-            let _ = config::save_to_path(&self.config_path, &config);
-        }
+            Ok(changed)
+        });
     }
 
     pub(crate) async fn dashboard(&self) -> Result<DashboardState> {
@@ -174,10 +201,10 @@ impl AppState {
     }
 
     pub(crate) fn reorder_accounts(&self, ids: &[String]) -> Result<Vec<AccountView>> {
-        let mut config = self.config.lock().expect("config lock");
-        config.reorder(ids);
-        config::save_to_path(&self.config_path, &config)?;
-        Ok(config.views())
+        self.update_config(|config| {
+            config.reorder(ids);
+            Ok(config.views())
+        })
     }
 
     /// Begin an interactive sign-in. When `reauth_id` is `Some`, re-authenticate
@@ -289,35 +316,35 @@ impl AppState {
         config::create_private_dir(&dir)?;
         let dir_string = dir.display().to_string();
 
-        let mut config = self.config.lock().expect("config lock");
-        let now = Utc::now();
-        config.accounts.push(AccountConfig {
-            id: id.to_string(),
-            provider,
-            label,
-            enabled: false,
-            auto_detected: false,
-            credential_path: Some(dir_string.clone()),
-            endpoint_override: None,
-            secret_storage: SecretStorageMode::Keyring,
-            keyring_account: None,
-            plaintext_secret: None,
-            email: None,
-            config_dir: Some(dir_string),
-            aws_profile: None,
-            aws_region: None,
-            aws_monthly_budget_usd: None,
-            aws_categories: Vec::new(),
-            order_index: None,
-            created_at: now,
-            updated_at: now,
-        });
-        config::save_to_path(&self.config_path, &config)?;
-        config
-            .views()
-            .into_iter()
-            .find(|view| view.id == id)
-            .ok_or_else(|| anyhow!("pending login account vanished"))
+        self.update_config(|config| {
+            let now = Utc::now();
+            config.accounts.push(AccountConfig {
+                id: id.to_string(),
+                provider,
+                label,
+                enabled: false,
+                auto_detected: false,
+                credential_path: Some(dir_string.clone()),
+                endpoint_override: None,
+                secret_storage: SecretStorageMode::Keyring,
+                keyring_account: None,
+                plaintext_secret: None,
+                email: None,
+                config_dir: Some(dir_string),
+                aws_profile: None,
+                aws_region: None,
+                aws_monthly_budget_usd: None,
+                aws_categories: Vec::new(),
+                order_index: None,
+                created_at: now,
+                updated_at: now,
+            });
+            config
+                .views()
+                .into_iter()
+                .find(|view| view.id == id)
+                .ok_or_else(|| anyhow!("pending login account vanished"))
+        })
     }
 
     async fn finalize_login(
@@ -372,23 +399,23 @@ impl AppState {
     /// Refresh an existing account after a successful in-place re-auth: its
     /// credentials were rewritten at its own location, so only metadata changes.
     fn refresh_signed_in_account(&self, id: &str, outcome: LoginOutcome) -> Result<AccountView> {
-        let mut config = self.config.lock().expect("config lock");
-        let account = config
-            .accounts
-            .iter_mut()
-            .find(|account| account.id == id)
-            .ok_or_else(|| anyhow!("account no longer exists"))?;
-        if let Some(email) = outcome.email {
-            account.email = Some(email);
-        }
-        account.enabled = true;
-        account.updated_at = Utc::now();
-        config::save_to_path(&self.config_path, &config)?;
-        config
-            .views()
-            .into_iter()
-            .find(|view| view.id == id)
-            .ok_or_else(|| anyhow!("account no longer exists"))
+        self.update_config(|config| {
+            let account = config
+                .accounts
+                .iter_mut()
+                .find(|account| account.id == id)
+                .ok_or_else(|| anyhow!("account no longer exists"))?;
+            if let Some(email) = outcome.email {
+                account.email = Some(email);
+            }
+            account.enabled = true;
+            account.updated_at = Utc::now();
+            config
+                .views()
+                .into_iter()
+                .find(|view| view.id == id)
+                .ok_or_else(|| anyhow!("account no longer exists"))
+        })
     }
 
     /// Promote a completed login to an enabled account, or — when the email
@@ -401,79 +428,79 @@ impl AppState {
         outcome: LoginOutcome,
     ) -> Result<AccountView> {
         let email = outcome.email;
-        let mut config = self.config.lock().expect("config lock");
+        self.update_config(|config| {
+            let existing_id = email.as_deref().and_then(|email| {
+                config
+                    .accounts
+                    .iter()
+                    .find(|account| {
+                        account.provider == provider
+                            && account.id != id
+                            && account.email.as_deref() == Some(email)
+                    })
+                    .map(|account| account.id.clone())
+            });
 
-        let existing_id = email.as_deref().and_then(|email| {
-            config
-                .accounts
-                .iter()
-                .find(|account| {
-                    account.provider == provider
-                        && account.id != id
-                        && account.email.as_deref() == Some(email)
-                })
-                .map(|account| account.id.clone())
-        });
-
-        let final_id = if let Some(existing_id) = existing_id {
-            let pending_dir = config.remove(id).and_then(|account| account.config_dir);
-            if let Some(existing) = config
-                .accounts
-                .iter_mut()
-                .find(|account| account.id == existing_id)
-            {
-                let existing_managed = existing
-                    .config_dir
-                    .as_deref()
-                    .is_some_and(|dir| config::is_managed_cli_dir(Path::new(dir)));
-                if existing_managed {
-                    // Adopt the freshly authenticated dir; drop the stale one
-                    // (including its macOS Keychain credential, which is keyed by
-                    // the dir and would otherwise be orphaned).
-                    let stale = existing.config_dir.take();
-                    existing.config_dir = pending_dir.clone();
-                    existing.credential_path = pending_dir;
-                    #[cfg(target_os = "macos")]
-                    if provider == ProviderKind::ClaudeCode {
-                        login::delete_claude_keychain_for_dir(stale.as_deref());
+            let final_id = if let Some(existing_id) = existing_id {
+                let pending_dir = config.remove(id).and_then(|account| account.config_dir);
+                if let Some(existing) = config
+                    .accounts
+                    .iter_mut()
+                    .find(|account| account.id == existing_id)
+                {
+                    let existing_managed = existing
+                        .config_dir
+                        .as_deref()
+                        .is_some_and(|dir| config::is_managed_cli_dir(Path::new(dir)));
+                    if existing_managed {
+                        // Adopt the freshly authenticated dir; drop the stale one
+                        // (including its macOS Keychain credential, which is keyed by
+                        // the dir and would otherwise be orphaned).
+                        let stale = existing.config_dir.take();
+                        existing.config_dir = pending_dir.clone();
+                        existing.credential_path = pending_dir;
+                        #[cfg(target_os = "macos")]
+                        if provider == ProviderKind::ClaudeCode {
+                            login::delete_claude_keychain_for_dir(stale.as_deref());
+                        }
+                        cleanup_managed_dir(stale.as_deref());
+                    } else {
+                        // The match is the system-default account; keep its creds and
+                        // discard the throwaway login dir.
+                        cleanup_managed_dir(pending_dir.as_deref());
                     }
-                    cleanup_managed_dir(stale.as_deref());
+                    existing.email = email;
+                    existing.enabled = true;
+                    existing.updated_at = Utc::now();
                 } else {
-                    // The match is the system-default account; keep its creds and
-                    // discard the throwaway login dir.
                     cleanup_managed_dir(pending_dir.as_deref());
                 }
-                existing.email = email;
-                existing.enabled = true;
-                existing.updated_at = Utc::now();
+                existing_id
             } else {
-                cleanup_managed_dir(pending_dir.as_deref());
-            }
-            existing_id
-        } else {
-            if let Some(pending) = config.accounts.iter_mut().find(|account| account.id == id) {
-                pending.email = email;
-                pending.enabled = true;
-                pending.updated_at = Utc::now();
-            }
-            id.to_string()
-        };
+                if let Some(pending) = config.accounts.iter_mut().find(|account| account.id == id) {
+                    pending.email = email;
+                    pending.enabled = true;
+                    pending.updated_at = Utc::now();
+                }
+                id.to_string()
+            };
 
-        config::save_to_path(&self.config_path, &config)?;
-        config
-            .views()
-            .into_iter()
-            .find(|view| view.id == final_id)
-            .ok_or_else(|| anyhow!("signed-in account vanished"))
+            config
+                .views()
+                .into_iter()
+                .find(|view| view.id == final_id)
+                .ok_or_else(|| anyhow!("signed-in account vanished"))
+        })
     }
 
     fn discard_pending_login(&self, id: &str) {
-        let mut config = self.config.lock().expect("config lock");
-        if let Some(removed) = config.remove(id) {
-            cleanup_managed_dir(removed.config_dir.as_deref());
-            let _ = key_store::remove_secret(&removed);
-        }
-        let _ = config::save_to_path(&self.config_path, &config);
+        let _ = self.update_config(|config| {
+            if let Some(removed) = config.remove(id) {
+                cleanup_managed_dir(removed.config_dir.as_deref());
+                let _ = key_store::remove_secret(&removed);
+            }
+            Ok(())
+        });
     }
 
     /// Cancel an in-progress sign-in. Returns `(canceled, accounts)` where
@@ -518,10 +545,10 @@ impl AppState {
             self.teardown_managed_credentials(&account).await;
         }
 
-        let mut config = self.config.lock().expect("config lock");
-        config.remove(id);
-        config::save_to_path(&self.config_path, &config)?;
-        Ok(config.views())
+        self.update_config(|config| {
+            config.remove(id);
+            Ok(config.views())
+        })
     }
 
     /// Clear an account's credentials. For a managed Claude/Codex dir this runs

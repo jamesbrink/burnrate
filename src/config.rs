@@ -1,6 +1,5 @@
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -14,7 +13,8 @@ use crate::models::{
     AccountConfig, AccountInput, AccountView, AppSettings, ProviderKind, SecretStorageMode,
 };
 
-const CONFIG_FILE: &str = "accounts.json";
+pub(crate) const CONFIG_FILE: &str = "accounts.json";
+pub(crate) const DATABASE_FILE: &str = "burnrate.sqlite";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -198,6 +198,10 @@ pub(crate) fn config_path() -> Result<PathBuf> {
     Ok(config_dir()?.join(CONFIG_FILE))
 }
 
+pub(crate) fn database_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join(DATABASE_FILE))
+}
+
 #[cfg(test)]
 pub(crate) fn load_from_path(path: &Path) -> Result<AppConfig> {
     if !path.exists() {
@@ -246,19 +250,17 @@ pub(crate) fn load_or_recover_from_path(path: &Path) -> Result<(AppConfig, bool)
     }
 }
 
+#[cfg(test)]
 pub(crate) fn save_to_path(path: &Path, config: &AppConfig) -> Result<()> {
     if let Some(parent) = path.parent() {
-        let parent_existed = parent.exists();
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
-        set_private_dir_permissions(parent, parent_existed)?;
+        create_private_dir(parent)?;
     }
 
     let contents = serde_json::to_string_pretty(config)?;
     write_private_file(path, &contents)
 }
 
-fn recovered_config_path(path: &Path) -> Result<PathBuf> {
+pub(crate) fn recovered_config_path(path: &Path) -> Result<PathBuf> {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("system clock is before UNIX epoch")?
@@ -266,7 +268,10 @@ fn recovered_config_path(path: &Path) -> Result<PathBuf> {
     Ok(path.with_extension(format!("json.invalid-{nonce}")))
 }
 
+#[cfg(test)]
 fn write_private_file(path: &Path, contents: &str) -> Result<()> {
+    use std::io::Write;
+
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("system clock is before UNIX epoch")?
@@ -275,7 +280,7 @@ fn write_private_file(path: &Path, contents: &str) -> Result<()> {
         ".{}.tmp-{}-{nonce}",
         path.file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("accounts.json"),
+            .unwrap_or(CONFIG_FILE),
         std::process::id()
     ));
 
@@ -304,24 +309,24 @@ fn write_private_file(path: &Path, contents: &str) -> Result<()> {
     result
 }
 
-#[cfg(unix)]
+#[cfg(all(test, unix))]
 fn set_private_file_mode(options: &mut fs::OpenOptions) {
     use std::os::unix::fs::OpenOptionsExt;
     options.mode(0o600);
 }
 
-#[cfg(not(unix))]
+#[cfg(all(test, not(unix)))]
 fn set_private_file_mode(_options: &mut fs::OpenOptions) {}
 
 #[cfg(unix)]
-fn set_private_file_permissions(path: &Path) -> Result<()> {
+pub(crate) fn set_private_file_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))
         .with_context(|| format!("failed to set private permissions on {}", path.display()))
 }
 
 #[cfg(not(unix))]
-fn set_private_file_permissions(_path: &Path) -> Result<()> {
+pub(crate) fn set_private_file_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 

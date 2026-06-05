@@ -90,7 +90,7 @@ Cost Explorer data is not real time. Current-month data can be delayed and AWS m
 
 Optional future AWS features may require additional permissions only when enabled: service discovery/autocomplete (`ce:GetDimensionValues`), Budgets (`budgets:DescribeBudget`, `budgets:DescribeBudgets`), Free Tier (`freetier:GetFreeTierUsage`), and Bedrock operational CloudWatch metrics (`cloudwatch:GetMetricData`, `cloudwatch:ListMetrics`).
 
-Only non-secret account configuration is stored on disk. On macOS the default path is `~/Library/Application Support/burnrate/accounts.json`; set `BURNRATE_CONFIG_DIR` to override. Manual secrets live in the OS keyring unless plaintext storage is explicitly selected for that account.
+Only non-secret account configuration is stored on disk. On macOS the default path is `~/Library/Application Support/burnrate/burnrate.sqlite`; set `BURNRATE_CONFIG_DIR` to override. Legacy `accounts.json` files are imported once, then renamed to `accounts.json.migrated-<timestamp>`. Manual secrets live in the OS keyring unless plaintext storage is explicitly selected for that account.
 
 ## Troubleshooting (macOS)
 
