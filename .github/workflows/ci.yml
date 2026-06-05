@@ -45,6 +45,10 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+            fallback = true
+            download-attempts = 5
+            connect-timeout = 10
+            stalled-download-timeout = 90
       - run: nix flake check
       - run: nix build .#burnrate --no-link
 
