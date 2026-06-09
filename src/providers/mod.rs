@@ -676,6 +676,36 @@ pub(crate) fn augmented_path() -> std::ffi::OsString {
         .unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
 }
 
+/// Credential-override env vars that make the provider CLIs bypass their
+/// on-disk / Keychain credential stores entirely. Burnrate's account model
+/// keys credentials to a config dir (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`); an
+/// inherited token — e.g. an AI-agent terminal such as cmux exporting
+/// `CLAUDE_CODE_OAUTH_TOKEN` into every surface — makes `claude auth status`
+/// report env auth with no subscription or email, silently breaking sign-in
+/// verification, usage fetch, and account detection. Spawned provider CLIs
+/// must never see these.
+pub(crate) const CREDENTIAL_ENV_OVERRIDES: &[&str] = &[
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "OPENAI_API_KEY",
+    "CODEX_API_KEY",
+];
+
+/// Remove the [`CREDENTIAL_ENV_OVERRIDES`] from a spawned provider CLI's env.
+pub(crate) fn strip_credential_env(command: &mut tokio::process::Command) {
+    for key in CREDENTIAL_ENV_OVERRIDES {
+        command.env_remove(key);
+    }
+}
+
+/// [`strip_credential_env`] for non-async commands.
+pub(crate) fn strip_credential_env_std(command: &mut std::process::Command) {
+    for key in CREDENTIAL_ENV_OVERRIDES {
+        command.env_remove(key);
+    }
+}
+
 fn cli_search_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs: Vec<std::path::PathBuf> = Vec::new();
     let push = |dir: std::path::PathBuf, dirs: &mut Vec<std::path::PathBuf>| {
@@ -771,6 +801,43 @@ mod tests {
 
     use super::*;
     use crate::models::SecretStorageMode;
+
+    #[test]
+    fn strip_credential_env_removes_token_overrides_from_spawns() {
+        let mut tokio_command = tokio::process::Command::new("true");
+        strip_credential_env(&mut tokio_command);
+        let mut std_command = std::process::Command::new("true");
+        strip_credential_env_std(&mut std_command);
+
+        for (label, removed) in [
+            (
+                "tokio",
+                tokio_command
+                    .as_std()
+                    .get_envs()
+                    .filter(|(_, value)| value.is_none())
+                    .map(|(key, _)| key.to_os_string())
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "std",
+                std_command
+                    .get_envs()
+                    .filter(|(_, value)| value.is_none())
+                    .map(|(key, _)| key.to_os_string())
+                    .collect::<Vec<_>>(),
+            ),
+        ] {
+            for key in CREDENTIAL_ENV_OVERRIDES {
+                assert!(
+                    removed
+                        .iter()
+                        .any(|entry| entry == std::ffi::OsStr::new(key)),
+                    "{label} command must remove {key} from the child env"
+                );
+            }
+        }
+    }
 
     #[test]
     fn resolve_cli_keeps_explicit_paths() {

@@ -38,13 +38,34 @@ unlock_codesign_key() {
   security set-key-partition-list -S apple-tool:,apple: -s "$KEYCHAIN" >/dev/null 2>&1 || true
 }
 
+authorize_via_probe() {
+  # The cert import ACLs the private key for /usr/bin/codesign, which usually
+  # lets signing work with no further authorization. Probe-sign a scratch
+  # binary; when it succeeds, drop the marker that activates the cargo runner.
+  # Without this, the runner stays a silent no-op and keychain prompts persist
+  # even though setup "succeeded". (May show a one-time keychain Allow dialog.)
+  PROBE="$(mktemp)" || return 0
+  cp /bin/ls "$PROBE" 2>/dev/null || { rm -f "$PROBE"; return 0; }
+  HASH="$(security find-certificate -a -Z -c "$IDENTITY" "$KEYCHAIN" 2>/dev/null | awk '/SHA-1/{print $NF; exit}')"
+  if [ -n "$HASH" ] && codesign --force --sign "$HASH" "$PROBE" >/dev/null 2>&1; then
+    touch "$READY_MARKER" 2>/dev/null || true
+  fi
+  rm -f "$PROBE"
+}
+
 if security find-certificate -c "$IDENTITY" "$KEYCHAIN" >/dev/null 2>&1; then
   if [ "$AUTHORIZE_KEY" -eq 1 ]; then
     unlock_codesign_key
     touch "$READY_MARKER" 2>/dev/null || true
+  elif [ "$QUIET" -eq 0 ] && [ ! -f "$READY_MARKER" ]; then
+    authorize_via_probe
   fi
   if [ "$QUIET" -eq 0 ]; then
-    echo "Code-signing identity '$IDENTITY' already present."
+    if [ -f "$READY_MARKER" ]; then
+      echo "Code-signing identity '$IDENTITY' already present and authorized."
+    else
+      echo "Code-signing identity '$IDENTITY' present but not authorized; run with --authorize-key."
+    fi
   fi
   exit 0
 fi
@@ -84,10 +105,14 @@ security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bi
 if [ "$AUTHORIZE_KEY" -eq 1 ]; then
   unlock_codesign_key
   touch "$READY_MARKER" 2>/dev/null || true
+else
+  authorize_via_probe
 fi
 
 echo
 echo "Created '$IDENTITY'. Next:"
 echo "  1. Run: npm run dev"
 echo "  2. dev will never ask for your keychain password."
-echo "  3. Optional: run scripts/dev-codesign-setup.sh --authorize-key to enable automatic re-signing."
+if [ ! -f "$READY_MARKER" ]; then
+  echo "  3. Signing is not yet authorized — run scripts/dev-codesign-setup.sh --authorize-key once."
+fi

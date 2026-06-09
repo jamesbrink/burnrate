@@ -80,7 +80,11 @@ burnrate`).
   / `augmented_path` locate provider CLIs (`codex`, `claude`) across Homebrew,
   Nix, Cargo, and JS-toolchain dirs, because a Finder-launched `.app` inherits
   only a minimal `PATH`; overridable via `BURNRATE_CODEX_BIN`/`CODEX_BIN` and
-  `BURNRATE_CLAUDE_BIN`/`CLAUDE_BIN`.
+  `BURNRATE_CLAUDE_BIN`/`CLAUDE_BIN`. Every spawned provider CLI gets
+  `CREDENTIAL_ENV_OVERRIDES` (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`,
+  `OPENAI_API_KEY`, …) stripped via `strip_credential_env` — an inherited agent
+  token (e.g. from a cmux surface) otherwise makes `claude auth status` report
+  env auth with no subscription/email, breaking verify, fetch, and detection.
 - `providers/{claude,codex,openrouter}.rs` — each implements `fetch()`, and
   claude/codex also implement `detect()`. claude reads `~/.claude` creds +
   macOS Keychain (service name derived per account via
@@ -202,7 +206,11 @@ npx vitest run src-ui/api.test.ts        # single UI test file
 npx vitest run -t "summary promotes"     # single UI test by name
 
 npm run coverage       # UI + Rust coverage; both gated at 80%
-                       # (Rust gate ignores main.rs/app_state.rs/tray.rs/updater.rs — Tauri glue)
+                       # (Rust gate ignores main.rs/app_state.rs/tray.rs/updater.rs/debug.rs — glue)
+
+./target/debug/burnrate debug <env|detect|load|snapshot>
+                       # headless diagnostics: real provider/config code paths
+                       # without the GUI (see .claude/skills/burnrate-debug)
 
 ./scripts/build-app    # npm run build + cargo build --release (embeds dist/ via default custom-protocol)
 ./scripts/package-dmg  # macOS .dmg + .app bundle via `tauri build` (real Dock icon; macOS only)
@@ -216,12 +224,16 @@ nix flake check        # when Nix/devshell wiring changes
 An unsigned dev binary gets a new code identity on every recompile, so the
 keychain "Always Allow" grant is invalidated and macOS re-prompts each launch.
 `scripts/dev-codesign-setup.sh` creates a persistent self-signed `burnrate-dev`
-identity (one-time); the cargo `runner` in `.cargo/config.toml`
-(`scripts/dev-codesign-run.sh`) then re-signs the `burnrate` binary on every
-`cargo run` / `tauri dev` so the signature — and the grant — stays stable. The
-runner is a no-op until the identity exists and only signs the `burnrate` binary
-(not test binaries), so CI (Linux), the Nix build, and `cargo install` are
-unaffected, and neither script is in the crate's `include` list.
+identity (one-time) and probe-signs to create the
+`~/.burnrate-dev-codesign-authorized` marker; the cargo `runner` in
+`.cargo/config.toml` (`scripts/dev-codesign-run.sh`) then re-signs the
+`burnrate` binary on every `cargo run` / `tauri dev` so the signature — and the
+grant — stays stable. The runner only signs when that marker exists (if the
+probe couldn't authorize the key, run `dev-codesign-setup.sh --authorize-key`
+once — it may ask for the login keychain password) and only signs the
+`burnrate` binary (not test binaries), so CI (Linux), the Nix build, and
+`cargo install` are unaffected, and neither script is in the crate's `include`
+list.
 
 ## Git
 

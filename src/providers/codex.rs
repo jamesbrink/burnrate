@@ -156,6 +156,9 @@ async fn read_codex_app_server_rate_limits_with_binary(
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
+        // An inherited OPENAI_API_KEY would switch the app server to API-key
+        // auth instead of the account's ChatGPT OAuth store.
+        super::strip_credential_env(&mut command);
         if let Some(home) = codex_home.as_deref() {
             command.env("CODEX_HOME", home);
         }

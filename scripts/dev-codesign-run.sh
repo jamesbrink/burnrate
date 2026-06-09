@@ -22,7 +22,11 @@ if [ "$(basename "$BIN")" = "burnrate" ] \
   && command -v security >/dev/null 2>&1; then
   IDENTITY_HASH="$(security find-certificate -a -Z -c burnrate-dev "${HOME}/Library/Keychains/login.keychain-db" 2>/dev/null | awk '/SHA-1/{print $NF; exit}')"
   if [ -n "$IDENTITY_HASH" ]; then
-    codesign --force --sign "$IDENTITY_HASH" "$BIN" >/dev/null 2>&1 || true
+    if ! codesign --force --sign "$IDENTITY_HASH" "$BIN" >/dev/null 2>&1; then
+      # A silently-inert runner means keychain prompts return on every rebuild —
+      # surface the failure instead of hiding it.
+      echo "burnrate dev: re-signing with burnrate-dev failed; keychain prompts may recur (run scripts/dev-codesign-setup.sh --authorize-key)" >&2
+    fi
   fi
 fi
 

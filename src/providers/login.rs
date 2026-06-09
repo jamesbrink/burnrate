@@ -233,6 +233,9 @@ pub(crate) async fn run_logout(provider: ProviderKind, config_dir: Option<&str>)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    // Inherited token env vars would make the CLI sign out the wrong session
+    // (or believe it is signed in via env auth).
+    super::strip_credential_env(&mut command);
     if let Some(dir) = config_dir.map(str::trim).filter(|dir| !dir.is_empty()) {
         command.env(env_key, dir);
     }

@@ -2,6 +2,7 @@
 
 mod app_state;
 mod config;
+mod debug;
 mod key_store;
 mod models;
 mod providers;
@@ -423,6 +424,13 @@ fn build_app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
 }
 
 fn main() {
+    // Headless diagnostics: `burnrate debug <env|detect|load|snapshot>` runs the
+    // real provider/config code paths and exits without starting the GUI.
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("debug") {
+        std::process::exit(debug::run(&args[2..]));
+    }
+
     let state = AppState::load().expect("failed to initialize Burnrate state");
 
     tauri::Builder::default()
