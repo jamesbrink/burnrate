@@ -270,6 +270,10 @@ async fn run_login_inner(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // An inherited CLAUDE_CODE_OAUTH_TOKEN/OPENAI_API_KEY would make the CLI
+    // treat itself as already authenticated via env and skip the real browser
+    // flow, so the sign-in writes nothing to the account's credential store.
+    super::strip_credential_env(&mut command);
     // `None` means the system-default location (e.g. re-authenticating the
     // auto-detected account refreshes `~/.claude` / `~/.codex` directly).
     if let Some(dir) = config_dir.filter(|dir| !dir.trim().is_empty()) {

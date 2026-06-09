@@ -22,6 +22,18 @@ impl ProviderKind {
             ProviderKind::Aws => "aws",
         }
     }
+
+    /// Human-facing provider name for user-visible messages (the wire id from
+    /// [`Self::as_str`] mirrors `src-ui/constants.ts` `providerLabels`).
+    pub(crate) fn display_name(self) -> &'static str {
+        match self {
+            ProviderKind::ClaudeCode => "Claude Code",
+            ProviderKind::Codex => "Codex",
+            ProviderKind::OpenRouter => "OpenRouter",
+            ProviderKind::Runpod => "Runpod",
+            ProviderKind::Aws => "AWS",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

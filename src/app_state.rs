@@ -263,7 +263,7 @@ impl AppState {
                 if account.config_dir.is_none() && !account.auto_detected {
                     return Err(anyhow!(
                         "This account has no isolated CLI home, so a browser sign-in would overwrite your system-default {} session. Remove it and add it again via browser sign-in to get an isolated home.",
-                        provider.as_str()
+                        provider.display_name()
                     ));
                 }
                 self.login_manager

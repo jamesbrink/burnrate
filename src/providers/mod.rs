@@ -692,6 +692,18 @@ pub(crate) const CREDENTIAL_ENV_OVERRIDES: &[&str] = &[
     "CODEX_API_KEY",
 ];
 
+/// The `claude` binary name/path the provider code actually runs, honoring the
+/// `BURNRATE_CLAUDE_BIN`/`CLAUDE_BIN` overrides. Exposed for diagnostics.
+pub(crate) fn claude_binary_name() -> String {
+    claude::claude_binary()
+}
+
+/// The `codex` binary name/path the provider code actually runs, honoring the
+/// `BURNRATE_CODEX_BIN`/`CODEX_BIN` overrides. Exposed for diagnostics.
+pub(crate) fn codex_binary_name() -> String {
+    codex::codex_binary()
+}
+
 /// Remove the [`CREDENTIAL_ENV_OVERRIDES`] from a spawned provider CLI's env.
 pub(crate) fn strip_credential_env(command: &mut tokio::process::Command) {
     for key in CREDENTIAL_ENV_OVERRIDES {

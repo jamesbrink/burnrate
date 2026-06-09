@@ -58,6 +58,13 @@ impl ConfigStore {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
+        // A pre-existing but schema-less file (0-byte or truncated restore)
+        // is just as "new" as a created one: migrations will build the schema
+        // from scratch, so legacy import must run and destructive startup
+        // reconciliation must be skipped, exactly as for a fresh file.
+        let schema_version: i64 =
+            conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        let is_new_database = is_new_database || schema_version < 1;
         run_migrations(&mut conn)?;
 
         if is_new_database && legacy_json_path.exists() {
@@ -696,6 +703,24 @@ mod tests {
                 .to_string_lossy()
                 .starts_with("accounts.json.migrated-")
         }));
+    }
+
+    #[test]
+    fn treats_schemaless_existing_database_file_as_created() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join(config::DATABASE_FILE);
+        // A 0-byte file (e.g. a truncated restore) exists but holds no schema;
+        // migrations build it from scratch, so the store must report it as
+        // created — callers skip destructive startup reconciliation on it.
+        fs::write(&db_path, b"").unwrap();
+
+        let store =
+            ConfigStore::open_at(db_path.clone(), dir.path().join(config::CONFIG_FILE)).unwrap();
+        assert!(store.created_database());
+
+        drop(store);
+        let reopened = ConfigStore::open_at(db_path, dir.path().join(config::CONFIG_FILE)).unwrap();
+        assert!(!reopened.created_database());
     }
 
     #[test]

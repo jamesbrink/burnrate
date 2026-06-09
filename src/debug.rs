@@ -50,8 +50,12 @@ fn env_report() -> i32 {
     let report = json!({
         "credentialOverrides": overrides,
         "homeOverrides": homes,
-        "claudeBinary": providers::resolve_cli("claude").display().to_string(),
-        "codexBinary": providers::resolve_cli("codex").display().to_string(),
+        "claudeBinary": providers::resolve_cli(&providers::claude_binary_name())
+            .display()
+            .to_string(),
+        "codexBinary": providers::resolve_cli(&providers::codex_binary_name())
+            .display()
+            .to_string(),
     });
     println!(
         "{}",
