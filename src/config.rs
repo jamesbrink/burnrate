@@ -397,6 +397,39 @@ pub(crate) fn is_managed_cli_dir(path: &Path) -> bool {
     path.starts_with(&cli_root) && path != cli_root
 }
 
+/// Every per-account CLI dir currently present on disk under the managed
+/// `<config_dir>/cli/<provider>/*` tree. Used by startup orphan GC to find dirs
+/// that no account references anymore.
+pub(crate) fn existing_managed_cli_dirs() -> Vec<PathBuf> {
+    match config_dir() {
+        Ok(root) => managed_cli_dirs_under(&root.join("cli")),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Pure scan of the `cli/<provider>/<account>` leaf dirs under `cli_root`,
+/// separated from [`config_dir`] so it is testable against a temp tree. A missing
+/// tree or unreadable entries yield an empty list rather than an error (GC is
+/// best-effort and must never fail startup).
+fn managed_cli_dirs_under(cli_root: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    let Ok(providers) = fs::read_dir(cli_root) else {
+        return dirs;
+    };
+    for provider in providers.flatten() {
+        let Ok(accounts) = fs::read_dir(provider.path()) else {
+            continue;
+        };
+        for account in accounts.flatten() {
+            let path = account.path();
+            if path.is_dir() {
+                dirs.push(path);
+            }
+        }
+    }
+    dirs
+}
+
 #[cfg(test)]
 mod tests {
     use tempfile::tempdir;
@@ -795,5 +828,26 @@ mod tests {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
         assert!(!is_managed_cli_dir(&home.join(".claude")));
         assert!(!is_managed_cli_dir(&home.join(".codex")));
+    }
+
+    #[test]
+    fn managed_cli_dirs_under_lists_account_leaves() {
+        let dir = tempdir().unwrap();
+        let cli_root = dir.path().join("cli");
+        let claude = cli_root.join("claude-code").join("acct-a");
+        let codex = cli_root.join("codex").join("acct-b");
+        fs::create_dir_all(&claude).unwrap();
+        fs::create_dir_all(&codex).unwrap();
+        // A stray file under a provider dir is not an account leaf and is ignored.
+        fs::write(cli_root.join("codex").join("stray.txt"), "x").unwrap();
+
+        let mut found = managed_cli_dirs_under(&cli_root);
+        found.sort();
+        let mut expected = vec![claude, codex];
+        expected.sort();
+        assert_eq!(found, expected);
+
+        // A missing tree yields an empty list rather than an error.
+        assert!(managed_cli_dirs_under(&dir.path().join("absent")).is_empty());
     }
 }

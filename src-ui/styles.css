@@ -1491,6 +1491,25 @@ html[data-view="tray"] .tray-empty {
   color: var(--crit);
 }
 
+.login-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--fg-soft);
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.login-note svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--warn, var(--accent));
+}
+
 .login-actions {
   display: flex;
   align-items: center;
