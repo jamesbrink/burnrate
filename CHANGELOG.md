@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/jamesbrink/burnrate/compare/v0.1.6...v0.1.7) - 2026-06-09
+
+### Fixed
+
+- *(auth)* isolate secondary sign-ins, harden credential teardown, and strip inherited credential env vars ([#28](https://github.com/jamesbrink/burnrate/pull/28))
+
 ## [0.1.6](https://github.com/jamesbrink/burnrate/compare/v0.1.5...v0.1.6) - 2026-06-05
 
 ### Added
