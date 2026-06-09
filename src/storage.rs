@@ -22,6 +22,7 @@ const LATEST_SCHEMA_VERSION: i64 = 1;
 pub(crate) struct ConfigStore {
     conn: Mutex<Connection>,
     db_path: PathBuf,
+    created_database: bool,
 }
 
 impl ConfigStore {
@@ -67,7 +68,15 @@ impl ConfigStore {
         Ok(Self {
             conn: Mutex::new(conn),
             db_path: db_path.to_path_buf(),
+            created_database: is_new_database,
         })
+    }
+
+    /// True when this open created the database file (first launch, a deleted
+    /// `burnrate.sqlite`, or a partial backup restore). Callers use it to skip
+    /// destructive reconciliation that assumes an established account list.
+    pub(crate) fn created_database(&self) -> bool {
+        self.created_database
     }
 
     pub(crate) fn load_config(&self) -> Result<AppConfig> {

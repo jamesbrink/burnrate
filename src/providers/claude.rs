@@ -408,10 +408,20 @@ pub(crate) fn delete_keychain_credentials(account: &AccountConfig) {
 /// Like [`delete_keychain_credentials`] but keyed directly by a config dir, for
 /// clearing the credential of a *stale* dir that is about to be discarded (e.g.
 /// when the reuse policy adopts a freshly authenticated dir into an account).
+///
+/// Fails closed: a `None`/empty/unmanaged dir derives the *system-default*
+/// service name (`Claude Code-credentials`) — the user's terminal session —
+/// which Burnrate never creates and must never delete, so such calls are no-ops.
 #[cfg(target_os = "macos")]
 pub(crate) fn delete_keychain_credentials_for_dir(config_dir: Option<&str>) {
+    let Some(dir) = config_dir.filter(|dir| !dir.trim().is_empty()) else {
+        return;
+    };
+    if !crate::config::is_managed_cli_dir(std::path::Path::new(dir)) {
+        return;
+    }
     let user = keychain_username();
-    let service_name = keychain_service_name_for(config_dir, oauth_file_suffix());
+    let service_name = keychain_service_name_for(Some(dir), oauth_file_suffix());
     let _ = Command::new("security")
         .args(["delete-generic-password", "-s", &service_name, "-a", &user])
         .output();

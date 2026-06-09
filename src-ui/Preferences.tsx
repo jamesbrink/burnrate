@@ -132,6 +132,13 @@ export function Preferences({
   updates: UpdatesPanelProps;
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  // Mirrors the backend re-auth guard: browser sign-in is only safe for the
+  // auto-detected system-default account or one with an isolated config dir.
+  const activeAccount = accounts.find((account) => account.id === activeId);
+  const canReauth =
+    !activeAccount ||
+    activeAccount.autoDetected ||
+    Boolean(activeAccount.configDir);
 
   return (
     <main className="prefs-shell">
@@ -250,6 +257,7 @@ export function Preferences({
             }}
             onStartLogin={onStartLogin}
             onLogout={onLogout}
+            canReauth={canReauth}
           />
 
           <TraySettings {...settings} />

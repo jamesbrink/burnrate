@@ -31,6 +31,7 @@ export function AccountForm({
   onReset,
   onStartLogin,
   onLogout,
+  canReauth = true,
 }: {
   form: AccountInput;
   setForm: Dispatch<SetStateAction<AccountInput>>;
@@ -40,6 +41,12 @@ export function AccountForm({
   onReset: () => void;
   onStartLogin?: (provider: ProviderKind, accountId?: string) => void;
   onLogout?: (id: string) => void;
+  /**
+   * Mirrors the backend re-auth guard: a CLI account with no isolated config
+   * dir that was not auto-detected (e.g. manual token entry) is always
+   * rejected by `start_account_login`, so offering the button is a dead end.
+   */
+  canReauth?: boolean;
 }) {
   const isCliProvider = CLI_PROVIDERS.includes(form.provider);
   const isAwsProvider = form.provider === "aws";
@@ -63,13 +70,17 @@ export function AccountForm({
 
       {showSignInControls ? (
         <div className="account-auth-actions">
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => onStartLogin?.(form.provider, activeId ?? undefined)}
-          >
-            <LogIn size={15} /> Sign in again
-          </button>
+          {canReauth ? (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() =>
+                onStartLogin?.(form.provider, activeId ?? undefined)
+              }
+            >
+              <LogIn size={15} /> Sign in again
+            </button>
+          ) : null}
           {activeId ? (
             <button
               type="button"

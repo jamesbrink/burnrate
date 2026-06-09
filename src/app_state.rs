@@ -37,7 +37,14 @@ impl AppState {
         let config_store = ConfigStore::open()?;
         let mut config = config_store.load_config()?;
         let detected_changed = config.merge_detected(providers::detect_accounts());
-        gc_orphaned_cli_dirs(&config);
+        // Skip orphan GC when the database was just created (first launch, a
+        // deleted `burnrate.sqlite`, a partial backup restore, or a recovered
+        // malformed legacy config): an empty/fresh account list would classify
+        // every managed dir — including live secondary-account credentials — as
+        // orphaned. Collection resumes on the next launch with an established DB.
+        if !config_store.created_database() {
+            gc_orphaned_cli_dirs(&config);
+        }
         if detected_changed {
             config_store.save_config(&config)?;
         }
@@ -467,7 +474,17 @@ impl AppState {
             });
 
             let final_id = if let Some(existing_id) = existing_id {
-                let pending_dir = config.remove(id).and_then(|account| account.config_dir);
+                // The placeholder vanishing mid-flight (the user removed it while
+                // the browser flow was open) aborts the merge: adopting or
+                // discarding state for an account that no longer exists would at
+                // best corrupt the existing account's dir binding — and a `None`
+                // pending dir would key the *system-default* Keychain credential.
+                // `update_config` rolls back on error; any dir the CLI re-created
+                // on disk is collected by the next startup GC.
+                let pending = config.remove(id).ok_or_else(|| {
+                    anyhow!("sign-in discarded because the account was removed during login")
+                })?;
+                let pending_dir = pending.config_dir;
                 if let Some(existing) = config
                     .accounts
                     .iter_mut()
@@ -644,14 +661,27 @@ fn provider_supports_login(provider: ProviderKind) -> bool {
 /// credential). Guarded by `is_managed_cli_dir`, so the system defaults
 /// (`~/.claude` / `~/.codex`) can never be touched.
 fn gc_orphaned_cli_dirs(config: &AppConfig) {
-    let referenced: HashSet<PathBuf> = config
+    // Compare both the recorded spelling and the canonicalized path: the
+    // persisted `config_dir` strings may differ from this run's scan through a
+    // symlink (`/var` vs `/private/var`) or a respelled `BURNRATE_CONFIG_DIR`,
+    // and a false "unreferenced" verdict here deletes live credentials.
+    let mut referenced: HashSet<PathBuf> = HashSet::new();
+    for dir in config
         .accounts
         .iter()
         .filter_map(|account| account.config_dir.as_deref())
-        .map(PathBuf::from)
-        .collect();
+    {
+        if let Ok(canonical) = fs::canonicalize(dir) {
+            referenced.insert(canonical);
+        }
+        referenced.insert(PathBuf::from(dir));
+    }
     for dir in config::existing_managed_cli_dirs() {
-        if referenced.contains(&dir) || !config::is_managed_cli_dir(&dir) {
+        let canonical = fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+        if referenced.contains(&dir)
+            || referenced.contains(&canonical)
+            || !config::is_managed_cli_dir(&dir)
+        {
             continue;
         }
         #[cfg(target_os = "macos")]

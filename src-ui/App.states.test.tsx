@@ -1257,7 +1257,16 @@ test("sign in again re-authenticates the existing account in place", async () =>
   const user = userEvent.setup();
   api.guardedFetch.mockResolvedValue(
     dashboardState({
-      accounts: [accountView({ id: "claude-local", label: "Default Claude" })],
+      accounts: [
+        // The system-default account: auto-detected is what makes an in-place
+        // re-auth legitimate (the UI hides Sign in again otherwise, mirroring
+        // the backend guard).
+        accountView({
+          id: "claude-local",
+          label: "Default Claude",
+          autoDetected: true,
+        }),
+      ],
       snapshots: [],
     }),
   );

@@ -126,3 +126,29 @@ test("validates and reports authentication code submission errors", async () => 
   expect(onSubmitCode).toHaveBeenCalledWith("expired-code#state");
   expect(screen.getByText("Error: Code expired.")).toBeInTheDocument();
 });
+
+test("warns before a brand-new sign-in but not during re-auth", () => {
+  const { rerender } = render(
+    <LoginModal
+      session={session()}
+      onCancel={vi.fn()}
+      onRetry={vi.fn()}
+      onSubmitCode={vi.fn()}
+    />,
+  );
+  expect(
+    screen.getByText(/switch accounts in the browser first/i),
+  ).toBeInTheDocument();
+
+  rerender(
+    <LoginModal
+      session={session({ reauthId: "codex-1" })}
+      onCancel={vi.fn()}
+      onRetry={vi.fn()}
+      onSubmitCode={vi.fn()}
+    />,
+  );
+  expect(
+    screen.queryByText(/switch accounts in the browser first/i),
+  ).not.toBeInTheDocument();
+});

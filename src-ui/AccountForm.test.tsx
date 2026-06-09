@@ -1,6 +1,6 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { AccountForm } from "./AccountForm";
 import { cloneDefaultAwsCategories, emptyForm } from "./constants";
@@ -62,21 +62,39 @@ test("AWS fields edit budget and category filters", async () => {
   await user.type(screen.getByLabelText("AWS profile"), "work");
   await user.clear(screen.getByLabelText("Region"));
   await user.type(screen.getByLabelText("Region"), "us-west-2");
-  await user.type(screen.getByLabelText("Monthly budget (USD, optional)"), "125");
+  await user.type(
+    screen.getByLabelText("Monthly budget (USD, optional)"),
+    "125",
+  );
 
-  const bedrockRow = screen.getByDisplayValue("Bedrock").closest(".aws-category-row");
+  const bedrockRow = screen
+    .getByDisplayValue("Bedrock")
+    .closest(".aws-category-row");
   expect(bedrockRow).toBeTruthy();
   await user.click(within(bedrockRow as HTMLElement).getByLabelText("Enabled"));
   await user.clear(within(bedrockRow as HTMLElement).getByLabelText("Label"));
-  await user.type(within(bedrockRow as HTMLElement).getByLabelText("Label"), "Bedrock tokens");
+  await user.type(
+    within(bedrockRow as HTMLElement).getByLabelText("Label"),
+    "Bedrock tokens",
+  );
   await user.selectOptions(
     within(bedrockRow as HTMLElement).getByLabelText("Filter type"),
     "tag",
   );
-  await user.clear(within(bedrockRow as HTMLElement).getByLabelText("Filter key"));
-  await user.type(within(bedrockRow as HTMLElement).getByLabelText("Filter key"), "Team");
-  await user.clear(within(bedrockRow as HTMLElement).getByLabelText("Filter value"));
-  await user.type(within(bedrockRow as HTMLElement).getByLabelText("Filter value"), "ai");
+  await user.clear(
+    within(bedrockRow as HTMLElement).getByLabelText("Filter key"),
+  );
+  await user.type(
+    within(bedrockRow as HTMLElement).getByLabelText("Filter key"),
+    "Team",
+  );
+  await user.clear(
+    within(bedrockRow as HTMLElement).getByLabelText("Filter value"),
+  );
+  await user.type(
+    within(bedrockRow as HTMLElement).getByLabelText("Filter value"),
+    "ai",
+  );
 
   expect(formState()).toMatchObject({
     awsProfile: "work",
@@ -113,9 +131,15 @@ test("custom AWS categories start disabled until configured", async () => {
     .closest(".aws-category-row") as HTMLElement;
   expect(within(customRow).getByLabelText("Enabled")).not.toBeChecked();
 
-  await user.selectOptions(within(customRow).getByLabelText("Filter type"), "costCategory");
+  await user.selectOptions(
+    within(customRow).getByLabelText("Filter type"),
+    "costCategory",
+  );
   await user.clear(within(customRow).getByLabelText("Filter key"));
-  await user.type(within(customRow).getByLabelText("Filter key"), "BusinessUnit");
+  await user.type(
+    within(customRow).getByLabelText("Filter key"),
+    "BusinessUnit",
+  );
   await user.type(within(customRow).getByLabelText("Filter value"), "Platform");
 
   const categories = formState().awsCategories ?? [];
@@ -124,4 +148,29 @@ test("custom AWS categories start disabled until configured", async () => {
     enabled: false,
     filter: { kind: "costCategory", key: "BusinessUnit", values: ["Platform"] },
   });
+});
+
+test("hides Sign in again when the backend would reject a re-auth", () => {
+  const props = {
+    form: { ...emptyForm, provider: "claude-code" as const },
+    setForm: vi.fn(),
+    activeId: "claude-code-manual",
+    busy: false,
+    onSubmit: (event: FormEvent) => event.preventDefault(),
+    onReset: vi.fn(),
+    onStartLogin: vi.fn(),
+    onLogout: vi.fn(),
+  };
+  const { rerender } = render(<AccountForm {...props} />);
+  expect(
+    screen.getByRole("button", { name: /sign in again/i }),
+  ).toBeInTheDocument();
+
+  // A manual-token CLI account (no isolated dir, not auto-detected) fails the
+  // backend guard, so the affordance is withheld; Sign out stays available.
+  rerender(<AccountForm {...props} canReauth={false} />);
+  expect(
+    screen.queryByRole("button", { name: /sign in again/i }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
 });

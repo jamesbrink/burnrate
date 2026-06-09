@@ -87,11 +87,11 @@ export function LoginModal({
               <p className="login-note">
                 <AlertCircle size={16} />
                 <span>
-                  Sign in with the account you want to <em>add</em>. Re-authorizing
-                  an account that’s already signed in elsewhere (such as your
-                  terminal {providerNames[session.provider]}) can sign it out and
-                  force a re-login there. To add a different account, switch
-                  accounts in the browser first.
+                  Sign in with the account you want to <em>add</em>.
+                  Re-authorizing an account that’s already signed in elsewhere
+                  (such as your terminal {providerNames[session.provider]}) can
+                  sign it out and force a re-login there. To add a different
+                  account, switch accounts in the browser first.
                 </span>
               </p>
             ) : null}
