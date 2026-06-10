@@ -173,6 +173,18 @@ burnrate`).
   OpenRouter/Runpod and profile-based AWS setup). `LoginModal` includes the
   paste-the-auth-code step (`needsCode`) that Claude sign-in requires.
 
+### Docs site (`website/`, VitePress)
+
+- `website/` is a self-contained VitePress site (own `package.json` +
+  lockfile — deliberately **not** part of the app's npm tree, so the flake's
+  `npmDepsHash` is unaffected). `docs-dev` / `docs-build` devshell helpers run
+  it; `.github/workflows/docs.yml` builds and deploys it to GitHub Pages
+  (<https://jamesbrink.online/burnrate/>, base `/burnrate/`) on pushes to
+  `main` that touch `website/**`. Theme: forced dark, flat ember palette from
+  `icons/app-icon.svg`, customized in `website/.vitepress/theme/custom.css`.
+  App screenshots live in `website/public/screenshots/` (the README embeds
+  them from there too).
+
 ### Cross-cutting invariants
 
 - **`dist/` (built frontend) is committed.** The crate's `include` list bundles
@@ -243,6 +255,8 @@ npm run coverage       # UI + Rust coverage; both gated at 80%
 ./target/debug/burnrate debug <env|detect|load|snapshot>
                        # headless diagnostics: real provider/config code paths
                        # without the GUI (see .claude/skills/burnrate-debug)
+
+docs-dev               # VitePress dev server for website/ (hot reload); docs-build for static output
 
 ./scripts/build-app    # npm run build + cargo build --release (embeds dist/ via default custom-protocol)
 ./scripts/package-dmg  # macOS .dmg + .app bundle via `tauri build` (real Dock icon; macOS only)

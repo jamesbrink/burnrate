@@ -2,6 +2,9 @@
 /.direnv
 /node_modules
 /coverage
+/website/node_modules
+/website/.vitepress/dist
+/website/.vitepress/cache
 /result
 /result-*
 /.DS_Store

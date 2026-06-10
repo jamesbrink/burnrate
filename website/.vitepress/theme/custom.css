@@ -1,0 +1,283 @@
+/**
+ * Burnrate docs theme — "ember & char".
+ *
+ * Always dark (appearance: force-dark). Palette is lifted from the app
+ * icon (icons/app-icon.svg) — ember #F36C3D family over warm-neutral char
+ * surfaces that the app screenshots sit flush against. Flat colors only:
+ * no gradients, depth comes from borders and shadow.
+ */
+
+:root {
+  --br-ember-1: #ffb13d;
+  --br-ember-2: #f3603d;
+  --br-ember-3: #e3375f;
+  --br-teal-1: #8fe3d1;
+  --br-meter-ok: #3ecf72;
+
+  --vp-font-family-base:
+    "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui,
+    sans-serif;
+  --vp-font-family-mono:
+    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Ember brand, tuned for dark contrast */
+  --vp-c-brand-1: #ff9357;
+  --vp-c-brand-2: #fb7c3e;
+  --vp-c-brand-3: #f3603d;
+  --vp-c-brand-soft: rgba(243, 108, 61, 0.16);
+
+  /* Warm char — neutral enough that the app screenshots sit flush */
+  --vp-c-bg: #161412;
+  --vp-c-bg-alt: #11100e;
+  --vp-c-bg-soft: #1e1b18;
+  --vp-c-bg-elv: #1e1b18;
+  --vp-c-divider: rgba(255, 220, 180, 0.09);
+  --vp-c-gutter: #0d0c0b;
+
+  /* Flat hero: solid ember name, no glow art behind the image */
+  --vp-home-hero-name-color: var(--br-ember-2);
+  --vp-home-hero-image-background-image: none;
+
+  --vp-button-brand-bg: var(--vp-c-brand-3);
+  --vp-button-brand-hover-bg: #e34f2c;
+  --vp-button-brand-active-bg: #cf441f;
+}
+
+/* ── Type ───────────────────────────────────────────────────────────── */
+
+h1,
+h2,
+h3,
+h4,
+.VPHero .name,
+.VPHero .text,
+.VPFeature .title,
+.VPNavBarTitle .title,
+.br-kicker {
+  font-family:
+    "Bricolage Grotesque Variable", "Bricolage Grotesque",
+    var(--vp-font-family-base);
+}
+
+.vp-doc h1,
+.VPHero .name,
+.VPHero .text {
+  letter-spacing: -0.02em;
+}
+
+/* ── Hero ───────────────────────────────────────────────────────────── */
+
+.VPHero .name {
+  font-weight: 800;
+}
+
+.VPHero .text {
+  font-weight: 700;
+}
+
+.VPHero .tagline {
+  max-width: 32em;
+}
+
+/* The tray popover screenshot is tall and narrow — present it like the
+   real popover: rounded, ringed, floating. The default theme sizes
+   .image-container / .VPImage for square logos and clips tall art, so
+   un-fix those dimensions entirely. */
+.VPHero .image-container {
+  width: auto !important;
+  height: auto !important;
+  margin: 0 auto;
+}
+
+.VPHero .image-bg {
+  display: none;
+}
+
+.VPHero .VPImage.image-src {
+  position: relative;
+  top: unset;
+  left: unset;
+  transform: none;
+  max-width: unset !important;
+  max-height: 480px !important;
+  width: auto;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 30px 80px -24px rgba(0, 0, 0, 0.65);
+  animation: br-float 7s ease-in-out infinite;
+}
+
+@keyframes br-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@media (min-width: 640px) {
+  .VPHero .image-container {
+    transform: translate(-8px, -24px);
+  }
+}
+
+/* ── Feature cards ──────────────────────────────────────────────────── */
+
+.VPFeature {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  transition:
+    border-color 0.25s,
+    transform 0.25s,
+    box-shadow 0.25s;
+}
+
+.VPFeature::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--br-ember-2);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.VPFeature:hover {
+  border-color: rgba(243, 108, 61, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 36px -18px rgba(0, 0, 0, 0.5);
+}
+
+.VPFeature:hover::before {
+  opacity: 1;
+}
+
+/* ── Home page sections (below features) ────────────────────────────── */
+
+.br-kicker {
+  display: block;
+  margin: 96px 0 8px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--br-ember-1);
+}
+
+.VPHome .vp-doc h2 {
+  border-top: none;
+  margin: 0 0 16px;
+  padding-top: 0;
+  text-align: center;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+}
+
+.VPHome .vp-doc > div > p {
+  max-width: 560px;
+  margin: 0 auto 16px;
+  text-align: center;
+  color: var(--vp-c-text-2);
+}
+
+/* ── Decorative quota meters ────────────────────────────────────────── */
+
+.br-meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  max-width: 960px;
+  margin: 32px auto 0;
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+}
+
+.br-meter {
+  padding: 14px 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: var(--vp-c-bg-soft);
+}
+
+.br-meter .row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--vp-c-text-2);
+}
+
+.br-meter .val {
+  color: var(--vp-c-text-1);
+  font-weight: 500;
+}
+
+.br-meter .track {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 220, 180, 0.12);
+  overflow: hidden;
+}
+
+.br-meter .fill {
+  display: block;
+  height: 100%;
+  width: var(--w);
+  border-radius: 3px;
+  animation: br-fill 1.1s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: var(--d, 0s);
+}
+
+.br-meter .fill.ok {
+  background: var(--br-meter-ok);
+}
+
+.br-meter .fill.warn {
+  background: var(--br-ember-1);
+}
+
+.br-meter .fill.hot {
+  background: var(--br-ember-3);
+}
+
+@keyframes br-fill {
+  from {
+    width: 0;
+  }
+}
+
+/* ── Framed screenshot ──────────────────────────────────────────────── */
+
+.br-shot {
+  max-width: 880px;
+  margin: 40px auto 8px;
+}
+
+.br-shot img {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 48px 120px -32px rgba(0, 0, 0, 0.6);
+}
+
+.br-shot + p em {
+  display: block;
+  text-align: center;
+  font-size: 13px;
+  color: var(--vp-c-text-3);
+}
+
+/* ── Motion safety ──────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .VPHero .VPImage.image-src,
+  .br-meter .fill {
+    animation: none;
+  }
+}

@@ -328,6 +328,18 @@
                 help = "Verify the crates.io package archive";
                 command = "cargo package \"$@\"";
               }
+              {
+                category = "docs";
+                name = "docs-dev";
+                help = "Start the VitePress dev server for the docs site (hot reload)";
+                command = "cd $PRJ_ROOT/website && npm install && npm run dev \"$@\"";
+              }
+              {
+                category = "docs";
+                name = "docs-build";
+                help = "Build the docs site (static output in website/.vitepress/dist)";
+                command = "cd $PRJ_ROOT/website && npm install && npm run build";
+              }
             ];
           };
 
@@ -342,10 +354,12 @@
               "*.js"
               "*.jsx"
               "*.mjs"
+              "*.mts"
               "*.ts"
               "*.tsx"
               "gen/**"
               "package-lock.json"
+              "website/package-lock.json"
               "node_modules/**"
               "dist/**"
               "coverage/**"
