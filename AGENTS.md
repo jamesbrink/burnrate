@@ -211,6 +211,16 @@ burnrate`).
   `_PASSWORD` on all runners (not just macOS). The public key lives in
   `tauri.conf.json` `plugins.updater.pubkey`; `src/updater.rs` refuses to promise
   updates if it's blank.
+- **Packaged `.cargo/config.toml` pins the darwin linker.** rustc links via
+  plain `cc` from PATH; a non-Apple cc (Homebrew/Nix GCC) can't resolve the
+  macOS SDK's `-liconv` stub (linked by the `libc` crate on Apple targets), so
+  `cargo install burnrate` would fail on such Macs. The crate therefore ships
+  `.cargo/config.toml` (in the `include` list) pinning
+  `linker = "/usr/bin/cc"` for both apple-darwin targets — `cargo install`
+  honors packaged config. The Nix package and devshell override it via
+  `CARGO_TARGET_*_LINKER` env vars (env beats file). Never add dev-only
+  entries (like the codesign `runner`) to that file — it ships to users; the
+  runner lives in devshell env instead.
 - **IPC command sync.** Adding a `#[tauri::command]` requires touching three
   places in lockstep: register it in `main.rs`, wrap it in `src-ui/api.ts`, and
   add it to the `vi.hoisted` mock in `App.states.test.tsx` (an unmocked export
@@ -271,15 +281,17 @@ An unsigned dev binary gets a new code identity on every recompile, so the
 keychain "Always Allow" grant is invalidated and macOS re-prompts each launch.
 `scripts/dev-codesign-setup.sh` creates a persistent self-signed `burnrate-dev`
 identity (one-time) and probe-signs to create the
-`~/.burnrate-dev-codesign-authorized` marker; the cargo `runner` in
-`.cargo/config.toml` (`scripts/dev-codesign-run.sh`) then re-signs the
+`~/.burnrate-dev-codesign-authorized` marker; the cargo runner
+(`scripts/dev-codesign-run.sh`, wired as `CARGO_TARGET_*_RUNNER` env vars by
+the **devshell** — deliberately not in `.cargo/config.toml`, which ships in
+the crate) then re-signs the
 `burnrate` binary on every `cargo run` / `tauri dev` so the signature — and the
 grant — stays stable. The runner only signs when that marker exists (if the
 probe couldn't authorize the key, run `dev-codesign-setup.sh --authorize-key`
 once — it may ask for the login keychain password) and only signs the
 `burnrate` binary (not test binaries), so CI (Linux), the Nix build, and
 `cargo install` are unaffected, and neither script is in the crate's `include`
-list.
+list. Outside the devshell the runner simply isn't active.
 
 ## Git
 

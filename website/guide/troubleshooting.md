@@ -1,5 +1,24 @@
 # Troubleshooting
 
+## `cargo install` fails: `ld: library not found for -liconv`
+
+**macOS.** This happens when something other than Apple's compiler is first
+in `PATH` as `cc` (a Homebrew or Nix GCC — the telltale is `collect2:` in
+the error output). rustc links through plain `cc`, and a non-Apple driver
+doesn't search the macOS SDK's stub libraries, where `libiconv` has lived
+since Big Sur.
+
+Burnrate **0.1.8+** ships a packaged cargo config that pins Apple's
+`/usr/bin/cc` as the linker for macOS targets, so plain `cargo install
+burnrate` works regardless of `PATH`. On older versions, work around it
+with:
+
+```sh
+CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc cargo install burnrate
+```
+
+(use `CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER` on Intel Macs).
+
 ## Keychain re-prompts on every launch
 
 **macOS.** The keychain binds an "Always Allow" grant to the requesting

@@ -1,11 +1,24 @@
-# Local macOS dev convenience: re-sign the `burnrate` binary with a persistent
-# self-signed identity before `cargo run` / `tauri dev` launches it, so the macOS
-# keychain "Always Allow" grant survives rebuilds instead of re-prompting after
-# every recompile. The runner is a no-op until you run
-# scripts/dev-codesign-setup.sh once, and only signs the `burnrate` binary (not
-# test binaries) — so CI, the Nix build, and other platforms are unaffected.
+# Pin Apple's cc as the linker driver for macOS targets.
+#
+# rustc invokes plain `cc` from PATH as its linker driver by default. On Macs
+# where PATH puts a non-Apple compiler first (a Homebrew or Nix GCC), that
+# driver does not search the macOS SDK stub libraries, so the very first
+# binary to link fails with "ld: library not found for -liconv" (the `libc`
+# crate links iconv on Apple targets, and since Big Sur libiconv exists only
+# as an SDK .tbd stub that Apple cc resolves via -syslibroot).
+#
+# This file is shipped in the crates.io package (see Cargo.toml `include`) —
+# `cargo install` honors the packaged config, so installs work regardless of
+# what `cc` is on PATH. The Nix package build overrides the pin with
+# CARGO_TARGET_*_LINKER environment variables (env takes precedence over this
+# file) to keep sandboxed builds on the Nix toolchain.
+#
+# The local dev codesign runner (scripts/dev-codesign-run.sh) is wired via
+# CARGO_TARGET_*_RUNNER env vars in the devshell, NOT here — this file is
+# packaged, and the runner script is deliberately not.
+
 [target.aarch64-apple-darwin]
-runner = "scripts/dev-codesign-run.sh"
+linker = "/usr/bin/cc"
 
 [target.x86_64-apple-darwin]
-runner = "scripts/dev-codesign-run.sh"
+linker = "/usr/bin/cc"

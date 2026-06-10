@@ -143,6 +143,15 @@
                   --replace-fail '"createUpdaterArtifacts": true' '"createUpdaterArtifacts": false'
               '';
 
+              # .cargo/config.toml pins /usr/bin/cc as the darwin linker so
+              # `cargo install` survives a non-Apple cc on PATH; inside the
+              # Nix sandbox that path is unavailable, so point cargo back at
+              # the stdenv toolchain (env vars take precedence over the file).
+              env = lib.optionalAttrs pkgs.stdenv.isDarwin {
+                CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${pkgs.stdenv.cc}/bin/cc";
+                CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "${pkgs.stdenv.cc}/bin/cc";
+              };
+
               npmRoot = ".";
               npmDeps = pkgs.fetchNpmDeps {
                 name = "${finalAttrs.pname}-${finalAttrs.version}-npm-deps";
@@ -252,6 +261,17 @@
               {
                 name = "CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER";
                 value = "/usr/bin/cc";
+              }
+              # The dev codesign runner lives here (not in .cargo/config.toml)
+              # because that file ships in the crates.io package and the
+              # runner script deliberately does not.
+              {
+                name = "CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER";
+                eval = "$PRJ_ROOT/scripts/dev-codesign-run.sh";
+              }
+              {
+                name = "CARGO_TARGET_X86_64_APPLE_DARWIN_RUNNER";
+                eval = "$PRJ_ROOT/scripts/dev-codesign-run.sh";
               }
             ]
             ++ lib.optionals pkgs.stdenv.isLinux [

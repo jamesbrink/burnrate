@@ -12,6 +12,7 @@ categories = ["command-line-utilities", "gui"]
 include = [
   "src/**",
   "dist/**",
+  ".cargo/config.toml",
   "Cargo.toml",
   "Cargo.lock",
   "build.rs",
