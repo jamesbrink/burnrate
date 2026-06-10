@@ -47,7 +47,7 @@ Download the native bundle for your platform from [GitHub Releases](https://gith
 cargo install burnrate
 ```
 
-See the [installation guide](https://jamesbrink.online/burnrate/guide/installation) for Nix, update channels, and signed macOS builds.
+See the [installation guide](https://jamesbrink.online/burnrate/guide/installation) for Nix, update channels, and signed macOS builds. If `cargo install` fails with `ld: library not found for -liconv` (a non-Apple `cc` first in `PATH`), see [the fix](https://jamesbrink.online/burnrate/guide/troubleshooting#cargo-install-fails-ld-library-not-found-for-liconv).
 
 ## Documentation
 

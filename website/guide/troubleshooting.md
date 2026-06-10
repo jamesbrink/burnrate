@@ -6,18 +6,34 @@
 in `PATH` as `cc` (a Homebrew or Nix GCC — the telltale is `collect2:` in
 the error output). rustc links through plain `cc`, and a non-Apple driver
 doesn't search the macOS SDK's stub libraries, where `libiconv` has lived
-since Big Sur.
+since Big Sur. The `libc` crate links `iconv` on Apple targets, so on such
+a machine **every** `cargo install` of any Rust binary fails the same way —
+not just Burnrate.
 
-Burnrate **0.1.8+** ships a packaged cargo config that pins Apple's
-`/usr/bin/cc` as the linker for macOS targets, so plain `cargo install
-burnrate` works regardless of `PATH`. On older versions, work around it
-with:
+`cargo install` reads config only from `$CARGO_HOME` (usually `~/.cargo/`)
+and the environment — it ignores both the published crate's config and the
+directory you run it from, so a crate cannot fix this for you. The fix is
+one line of user config. Permanent — add to `~/.cargo/config.toml`:
+
+```toml
+[target.aarch64-apple-darwin]
+linker = "/usr/bin/cc"
+
+[target.x86_64-apple-darwin]
+linker = "/usr/bin/cc"
+```
+
+Or as a one-off:
 
 ```sh
 CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc cargo install burnrate
 ```
 
-(use `CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER` on Intel Macs).
+(use `CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER` on Intel Macs). Burnrate
+0.1.8+ also ships this pin inside the crate, which covers
+`cargo install --git`/`--path` builds; cargo ignores packaged config for
+plain registry installs. The native bundles and `nix run` are unaffected
+either way.
 
 ## Keychain re-prompts on every launch
 

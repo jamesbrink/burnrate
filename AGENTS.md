@@ -211,16 +211,21 @@ burnrate`).
   `_PASSWORD` on all runners (not just macOS). The public key lives in
   `tauri.conf.json` `plugins.updater.pubkey`; `src/updater.rs` refuses to promise
   updates if it's blank.
-- **Packaged `.cargo/config.toml` pins the darwin linker.** rustc links via
-  plain `cc` from PATH; a non-Apple cc (Homebrew/Nix GCC) can't resolve the
-  macOS SDK's `-liconv` stub (linked by the `libc` crate on Apple targets), so
-  `cargo install burnrate` would fail on such Macs. The crate therefore ships
-  `.cargo/config.toml` (in the `include` list) pinning
-  `linker = "/usr/bin/cc"` for both apple-darwin targets — `cargo install`
-  honors packaged config. The Nix package and devshell override it via
-  `CARGO_TARGET_*_LINKER` env vars (env beats file). Never add dev-only
-  entries (like the codesign `runner`) to that file — it ships to users; the
-  runner lives in devshell env instead.
+- **Packaged `.cargo/config.toml` pins the darwin linker — with limits.**
+  rustc links via plain `cc` from PATH; a non-Apple cc (Homebrew/Nix GCC)
+  can't resolve the macOS SDK's `-liconv` stub (linked by the `libc` crate on
+  Apple targets), so `cargo install` of any Rust binary fails on such Macs.
+  The crate ships `.cargo/config.toml` (in the `include` list) pinning
+  `linker = "/usr/bin/cc"` for both apple-darwin targets. **Caveat
+  (empirically verified):** cargo honors packaged config for `--path`/`--git`
+  installs, but plain registry installs read config ONLY from `$CARGO_HOME`
+  and the environment — packaged and cwd config are both ignored, so there is
+  no crate-side lever; affected users need the pin in their own
+  `~/.cargo/config.toml` (documented in the website troubleshooting page).
+  The Nix package and devshell override the pin via `CARGO_TARGET_*_LINKER`
+  env vars (env beats file). Never add dev-only entries (like the codesign
+  `runner`) to that file — it ships to users; the runner lives in devshell
+  env instead.
 - **IPC command sync.** Adding a `#[tauri::command]` requires touching three
   places in lockstep: register it in `main.rs`, wrap it in `src-ui/api.ts`, and
   add it to the `vi.hoisted` mock in `App.states.test.tsx` (an unmocked export

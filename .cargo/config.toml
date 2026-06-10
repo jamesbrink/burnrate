@@ -7,11 +7,13 @@
 # crate links iconv on Apple targets, and since Big Sur libiconv exists only
 # as an SDK .tbd stub that Apple cc resolves via -syslibroot).
 #
-# This file is shipped in the crates.io package (see Cargo.toml `include`) —
-# `cargo install` honors the packaged config, so installs work regardless of
-# what `cc` is on PATH. The Nix package build overrides the pin with
-# CARGO_TARGET_*_LINKER environment variables (env takes precedence over this
-# file) to keep sandboxed builds on the Nix toolchain.
+# This file is shipped in the crates.io package (see Cargo.toml `include`).
+# Cargo honors it for `cargo install --path`/`--git` and in-tree builds, but
+# IGNORES packaged config for plain registry installs — users hitting the
+# iconv error there need this same pin in their own ~/.cargo/config.toml
+# (see the website troubleshooting page). The Nix package build overrides
+# the pin with CARGO_TARGET_*_LINKER environment variables (env takes
+# precedence over this file) to keep sandboxed builds on the Nix toolchain.
 #
 # The local dev codesign runner (scripts/dev-codesign-run.sh) is wired via
 # CARGO_TARGET_*_RUNNER env vars in the devshell, NOT here — this file is
