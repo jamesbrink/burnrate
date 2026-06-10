@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/jamesbrink/burnrate/compare/v0.1.7...v0.1.8) - 2026-06-10
+
+### Fixed
+
+- *(install)* ship cargo config pinning Apple cc so cargo install works with non-Apple cc in PATH ([#32](https://github.com/jamesbrink/burnrate/pull/32))
+
+### Other
+
+- VitePress docs site on GitHub Pages, README cleanup, AGENTS.md sync ([#30](https://github.com/jamesbrink/burnrate/pull/30))
+
 ## [0.1.7](https://github.com/jamesbrink/burnrate/compare/v0.1.6...v0.1.7) - 2026-06-09
 
 ### Fixed
