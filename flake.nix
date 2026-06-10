@@ -338,7 +338,7 @@
                 category = "docs";
                 name = "docs-build";
                 help = "Build the docs site (static output in website/.vitepress/dist)";
-                command = "cd $PRJ_ROOT/website && npm install && npm run build";
+                command = "cd $PRJ_ROOT/website && npm ci && npm run build";
               }
             ];
           };
