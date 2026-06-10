@@ -6,8 +6,9 @@
 ## Overview
 
 Burnrate is a macOS-first menu-bar app that monitors remaining quota/credits
-across Claude Code, Codex, OpenRouter, and Runpod (with multiple accounts per
-provider for Claude Code and Codex). It is a **Tauri 2** app: a Rust
+across Claude Code, Codex, OpenRouter, Runpod, and AWS Cost Explorer spend
+(with multiple accounts per provider for Claude Code and Codex). It is a
+**Tauri 2** app: a Rust
 backend (`src/`) plus a React + TypeScript frontend (`src-ui/`), shipped both as
 native bundles (GitHub Releases) and as a binary crate (`cargo install
 burnrate`).
@@ -19,7 +20,7 @@ burnrate`).
 - `main.rs` — Tauri entrypoint. Declares the `#[tauri::command]` IPC handlers
   (`dashboard`, `list_accounts`, `save_account`, `remove_account`,
   `detect_accounts`, `reorder_accounts`, `start_account_login`,
-  `cancel_account_login`, `logout_account`, `save_settings`,
+  `submit_account_login_code`, `cancel_account_login`, `logout_account`, `save_settings`,
   `refresh_snapshots`, `resize_preferences_to_content`,
   `resize_tray_to_content`, `close_preferences`, `open_preferences`,
   `updater_available`, `check_for_updates`, `install_pending_update`),
@@ -34,8 +35,12 @@ burnrate`).
   installs (emitting `burnrate-update-progress`) and restarts. `updater_available`
   gates the UI on a configured pubkey so unsigned dev builds stay quiet. Pure
   parsing/endpoint helpers are unit-tested.
-- `app_state.rs` — `AppState` is the managed Tauri state: a `Mutex<AppConfig>`,
-  the `ProviderClient`, and a `LoginManager`. `dashboard()` fans out one snapshot
+- `app_state.rs` — `AppState` is the managed Tauri state: the `ConfigStore`
+  (sqlite), a `Mutex<AppConfig>` (in-memory copy), the `ProviderClient`, and a
+  `LoginManager`. `load()` opens the store, merges auto-detected accounts, and
+  garbage-collects orphaned managed CLI dirs — but skips GC when the database
+  was just created (fresh/restored DB would classify live secondary-account
+  credentials as orphans). `dashboard()` fans out one snapshot
   fetch per enabled account concurrently (`tokio::spawn`) in display order, rolls
   the results into a `TraySummary`, and persists any newly discovered account
   emails. Hosts the login orchestration: `start_account_login` either
@@ -44,25 +49,37 @@ burnrate`).
   isolated, disabled placeholder account + per-account CLI dir for a brand-new
   account, then spawns the sign-in; on completion it reuses/refreshes an existing
   account when the email already matches, else enables the new one, emitting
-  `burnrate-login-complete` / `-failed`. `cancel_account_login` only tears down a
+  `burnrate-login-complete` / `-failed`. `submit_account_login_code` forwards
+  the user-pasted browser auth code to the active sign-in (Claude's login
+  requires it). `cancel_account_login` only tears down a
   placeholder when it actually canceled an active brand-new sign-in (the
   `LoginManager` is reauth-aware and single-flight). `logout_account` and
   `remove_account` share one teardown that, for managed dirs only (never the
   system default), runs the CLI sign-out, deletes the orphan-prone macOS Keychain
   entry as a fallback, and removes the dir. All persistence flows through here.
-- `config.rs` — `AppConfig` (settings + accounts) persisted to `accounts.json`.
-  Writes are atomic (temp file + rename) with `0600` file / `0700` dir perms on
-  unix; a malformed file is moved aside (`.json.invalid-<nonce>`) and replaced
-  with defaults. `views()` strips secrets and exposes only `hasSecret`, returning
+- `config.rs` — the **in-memory** `AppConfig` (settings + accounts) and path
+  helpers; persistence lives in `storage.rs`. `views()` strips secrets and
+  exposes only `hasSecret`, returning
   accounts in `order_index` order; `reorder()` persists a user-defined global
   order (without bumping `updated_at`, which keys the provider cache);
   `merge_detected` reconciles auto-detected accounts. `account_cli_dir()` /
   `is_managed_cli_dir()` / `create_private_dir()` manage the isolated per-account
   CLI homes (`<config_dir>/cli/<provider>/<id>`). `config_dir()` honors
-  `BURNRATE_CONFIG_DIR`.
+  `BURNRATE_CONFIG_DIR`; `database_path()` / `config_path()` point at
+  `burnrate.sqlite` and the legacy `accounts.json`. Legacy JSON loading
+  (`load_or_recover_from_path`) moves a malformed file aside
+  (`.json.invalid-<nonce>`) instead of overwriting it.
+- `storage.rs` — `ConfigStore`, the sqlite persistence layer (`rusqlite`, WAL,
+  foreign keys, busy timeout, `0600`-hardened files). Schema is versioned via
+  `PRAGMA user_version` + `run_migrations`; a fresh database does a **one-time
+  import** of the legacy `accounts.json` (renamed `.migrated-<nonce>` after) —
+  a schema-less/truncated DB file counts as fresh. `created_database()` is how
+  `app_state.rs` knows to skip destructive startup reconciliation. Accounts,
+  AWS category buckets (own table, `ON DELETE CASCADE`), and settings all live
+  here; `plaintext_secret` is a column but is only populated in plaintext mode.
 - `key_store.rs` — secret storage: OS **keyring by default**, **plaintext only
   when explicitly selected**, with migration between modes and an in-process
-  read cache. Secrets never live in `accounts.json` under keyring mode. macOS
+  read cache. Secrets never reach the config database under keyring mode. macOS
   binds a keychain "Always Allow" grant to the app's code signature, so an
   unsigned build re-prompts every launch; a code-signed install
   (`APPLE_SIGNING_IDENTITY` → `package-dmg`, with `entitlements.macos.plist` for
@@ -85,7 +102,8 @@ burnrate`).
   `OPENAI_API_KEY`, …) stripped via `strip_credential_env` — an inherited agent
   token (e.g. from a cmux surface) otherwise makes `claude auth status` report
   env auth with no subscription/email, breaking verify, fetch, and detection.
-- `providers/{claude,codex,openrouter}.rs` — each implements `fetch()`, and
+- `providers/{claude,codex,openrouter,runpod,aws}.rs` — each implements
+  `fetch()`, and
   claude/codex also implement `detect()`. claude reads `~/.claude` creds +
   macOS Keychain (service name derived per account via
   `keychain_service_name_for(account.cli_config_dir(), …)`), validates with
@@ -97,12 +115,24 @@ burnrate`).
   (`base64`, payload claims only — no signature check on local trusted data).
   Each provider threads the account's per-account config dir
   (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`) into its CLI calls so multiple accounts
-  stay isolated; openrouter hits `/api/v1/credits`.
+  stay isolated; openrouter hits `/api/v1/credits`. runpod combines the REST
+  API (`https://rest.runpod.io/v1`) and GraphQL (`https://api.runpod.io/graphql`)
+  for prepaid balance, burn-rate runway, and active resources — both endpoints
+  overridable via `BURNRATE_RUNPOD_REST_URL` / `BURNRATE_RUNPOD_GRAPHQL_URL`.
+  aws uses the official AWS SDK (default credential chain, optional named
+  profile, region defaulting to `us-east-1` — no static keys stored): STS
+  caller identity, then Cost Explorer `GetCostAndUsage` month-to-date
+  `UnblendedCost` in USD; an optional monthly budget turns spend into
+  remaining/warning/exhausted status, and user-editable category buckets
+  (service/tag/cost-category filters, optional group-by) become extra buckets.
 - `providers/login.rs` — interactive sign-in. Shells out to `claude auth login`
   / `codex login` under the account's config dir, streams an **allowlist-redacted**
   view of CLI output (surfacing the auth URL, masking token-shaped lines) via the
   `burnrate-login-progress` event, opens the URL with the OS opener, then verifies
-  the result and reads the email. `LoginManager` enforces a single concurrent
+  the result and reads the email. Claude's flow additionally needs the browser
+  auth code pasted back: progress events carry `needs_code`, and
+  `LoginManager::submit_input` writes the code to the CLI's stdin.
+  `LoginManager` enforces a single concurrent
   sign-in and supports cancel (task abort + `kill_on_drop`). `run_logout` performs
   the CLI sign-out. No PTY: piped stdio + opening the URL ourselves.
 - `tray.rs` — tray icon/menu (Preferences / Refresh / Check for Updates / Quit;
@@ -139,7 +169,9 @@ burnrate`).
   settings gear that calls `open_preferences`; Preferences hosts the Updates
   section (channel selector + check button) and renders the banner. Multi-account:
   each account shows its email; the Add-account menu offers browser sign-in vs.
-  manual token entry for Claude Code / Codex.
+  manual token entry for Claude Code / Codex (plus API-key entry for
+  OpenRouter/Runpod and profile-based AWS setup). `LoginModal` includes the
+  paste-the-auth-code step (`needsCode`) that Claude sign-in requires.
 
 ### Cross-cutting invariants
 
@@ -155,9 +187,9 @@ burnrate`).
   (`npm run dev`) opts out via `--no-default-features` to keep live reload.
   Removing the default would make every non-`tauri build` binary open blank.
 - **CSP allowlist.** `tauri.conf.json` restricts `connect-src` to the Anthropic,
-  ChatGPT, OpenRouter, and localhost hosts — adding a provider endpoint requires
-  editing that CSP. The updater's HTTP (manifest fetch, nightly discovery, asset
-  download) runs in Rust via `reqwest`, not the webview, so it is exempt.
+  ChatGPT, OpenRouter, Runpod, and localhost hosts — adding a provider endpoint
+  requires editing that CSP. HTTP that runs in Rust (the updater's `reqwest`
+  calls and the AWS SDK) is exempt — only webview traffic is governed.
 - **App version derives from `Cargo.toml`.** `tauri.conf.json` deliberately omits
   `version` so the bundle/updater version tracks the crate version that
   `release-plz` bumps — keeping the auto-updater's version comparison correct. Do
@@ -167,7 +199,7 @@ burnrate`).
   `_PASSWORD` on all runners (not just macOS). The public key lives in
   `tauri.conf.json` `plugins.updater.pubkey`; `src/updater.rs` refuses to promise
   updates if it's blank.
-- **Update-update sync.** Adding a `#[tauri::command]` requires touching three
+- **IPC command sync.** Adding a `#[tauri::command]` requires touching three
   places in lockstep: register it in `main.rs`, wrap it in `src-ui/api.ts`, and
   add it to the `vi.hoisted` mock in `App.states.test.tsx` (an unmocked export
   throws at render).
@@ -250,7 +282,8 @@ list.
 - Avoid god files and oversized components. Split code by responsibility before a file becomes hard to scan or test.
 - Keep module boundaries clear:
   - provider detection/fetch/parsing belongs under `src/providers/`;
-  - persistent account configuration belongs in `src/config.rs`;
+  - the in-memory config model and path helpers belong in `src/config.rs`;
+  - sqlite persistence and schema migrations belong in `src/storage.rs`;
   - secret handling belongs in `src/key_store.rs`;
   - tray behavior belongs in `src/tray.rs`;
   - UI API bridging belongs in `src-ui/api.ts`;
