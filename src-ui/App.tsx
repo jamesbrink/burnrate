@@ -28,6 +28,7 @@ import {
 } from "./api";
 import { useUpdater } from "./useUpdater";
 import { LoginModal } from "./LoginModal";
+import { UpdateDialog } from "./UpdateDialog";
 import {
   OPENROUTER_DEFAULT_ENDPOINT,
   RUNPOD_DEFAULT_ENDPOINT,
@@ -72,7 +73,9 @@ export function App() {
 
   const updateChannel: UpdateChannel =
     state?.settings?.updateChannel ?? "stable";
-  const updater = useUpdater(updateChannel);
+  // Only the Preferences window actively checks (poll + tray-menu entry); the
+  // tray view passively mirrors the backend's update-available broadcast.
+  const updater = useUpdater(updateChannel, { enabled: !isTrayView });
 
   useEffect(() => {
     void getAppVersion().then(setAppVersion);
@@ -615,6 +618,7 @@ export function App() {
         snapshots={snapshots}
         busy={busy}
         error={error}
+        updateAvailable={updater.state.available}
         onRefresh={() => void revalidate({ force: true })}
         onOpenPreferences={() => void openPreferences()}
         onReorderAccounts={(ids) => void onReorderAccounts(ids)}
@@ -665,6 +669,14 @@ export function App() {
           onSubmitCode={login.submitCode}
         />
       ) : null}
+      <UpdateDialog
+        state={updater.state}
+        channel={settings.updateChannel}
+        appVersion={appVersion}
+        onInstall={() => void updater.install()}
+        onRetry={() => void updater.checkNow()}
+        onClose={updater.closeDialog}
+      />
     </>
   );
 }

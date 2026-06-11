@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   Clock3,
+  Download,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -45,6 +46,7 @@ export function TrayPanel({
   snapshots,
   busy,
   error,
+  updateAvailable = false,
   onRefresh,
   onOpenPreferences,
   onReorderAccounts,
@@ -53,6 +55,7 @@ export function TrayPanel({
   snapshots: UsageSnapshot[];
   busy: boolean;
   error: string | null;
+  updateAvailable?: boolean;
   onRefresh: () => void;
   onOpenPreferences: () => void;
   onReorderAccounts: (orderedIds: string[]) => void;
@@ -73,6 +76,16 @@ export function TrayPanel({
           <p>{summary}</p>
         </div>
         <div className="tray-header-actions">
+          {updateAvailable ? (
+            <button
+              className="tray-update-pill"
+              onClick={onOpenPreferences}
+              title="Update available — open Preferences"
+            >
+              <Download size={12} />
+              <span>Update</span>
+            </button>
+          ) : null}
           <button
             className="icon-button tray-refresh"
             onClick={onRefresh}

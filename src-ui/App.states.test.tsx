@@ -32,6 +32,7 @@ const api = vi.hoisted(() => ({
   isStale: vi.fn(),
   logoutAccount: vi.fn(),
   markFetched: vi.fn(),
+  notifyUpdateAvailable: vi.fn(),
   onCheckUpdateRequested: vi.fn(),
   onDashboardUpdated: vi.fn(),
   onLoginComplete: vi.fn(),
@@ -39,6 +40,7 @@ const api = vi.hoisted(() => ({
   onLoginProgress: vi.fn(),
   onRefreshRequested: vi.fn(),
   onSettingsUpdated: vi.fn(),
+  onUpdateAvailable: vi.fn(),
   onUpdateProgress: vi.fn(),
   openPreferences: vi.fn(),
   readCachedDashboard: vi.fn(),
@@ -64,10 +66,12 @@ beforeEach(() => {
   api.onLoginComplete.mockResolvedValue(() => {});
   api.onLoginFailed.mockResolvedValue(() => {});
   api.onUpdateProgress.mockResolvedValue(() => {});
+  api.onUpdateAvailable.mockResolvedValue(() => {});
   api.onCheckUpdateRequested.mockResolvedValue(() => {});
   api.updaterAvailable.mockResolvedValue(false);
   api.checkForUpdates.mockResolvedValue(null);
   api.installUpdate.mockResolvedValue(undefined);
+  api.notifyUpdateAvailable.mockResolvedValue(undefined);
   api.getAppVersion.mockResolvedValue("1.2.3");
   api.openPreferences.mockResolvedValue(undefined);
   api.reorderAccounts.mockResolvedValue([]);
@@ -451,7 +455,7 @@ test("leaves native tray scale unchanged when the slider is already at 100%", as
   expect(api.saveSettings).not.toHaveBeenCalled();
 });
 
-test("shows update check status in preferences", async () => {
+test("a manual update check walks the dialog from checking to up to date", async () => {
   api.guardedFetch.mockResolvedValue(dashboardState());
   api.updaterAvailable.mockResolvedValue(true);
   let resolveCheck: (value: null) => void = () => {};
@@ -465,10 +469,50 @@ test("shows update check status in preferences", async () => {
   await screen.findByRole("heading", { name: "Preferences" });
 
   fireEvent.click(screen.getByRole("button", { name: /Check for updates/ }));
-  expect(await screen.findByText("Checking…")).toBeInTheDocument();
+  expect(await screen.findByText("Checking for updates…")).toBeInTheDocument();
 
   await act(async () => resolveCheck(null));
-  expect(await screen.findByText("You're up to date.")).toBeInTheDocument();
+  expect(await screen.findByText("You’re up to date")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "OK" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+test("the tray view mirrors the update broadcast into the header pill", async () => {
+  window.history.replaceState({}, "", "/?view=tray");
+  api.guardedFetch.mockResolvedValue(dashboardState());
+  let broadcast: (info: unknown) => void = () => {};
+  api.onUpdateAvailable.mockImplementation(
+    (handler: (info: unknown) => void) => {
+      broadcast = handler;
+      return Promise.resolve(() => {});
+    },
+  );
+
+  render(<App />);
+  await screen.findByRole("heading", { name: "Burnrate" });
+
+  // The passive tray view never checks on its own.
+  expect(api.checkForUpdates).not.toHaveBeenCalled();
+  expect(api.onCheckUpdateRequested).not.toHaveBeenCalled();
+  expect(screen.queryByTitle(/Update available/)).not.toBeInTheDocument();
+
+  act(() =>
+    broadcast({
+      version: "9.9.9",
+      currentVersion: "1.2.3",
+      body: null,
+      date: null,
+    }),
+  );
+  const pill = await screen.findByTitle(/Update available/);
+
+  fireEvent.click(pill);
+  expect(api.openPreferences).toHaveBeenCalled();
+
+  // An empty follow-up check clears the pill again.
+  act(() => broadcast(null));
+  expect(screen.queryByTitle(/Update available/)).not.toBeInTheDocument();
 });
 
 test("selecting the already-active channel does not re-save", async () => {

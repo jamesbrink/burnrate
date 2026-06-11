@@ -307,18 +307,9 @@ function UpdatesSettings({
   onCheck,
   onInstall,
 }: UpdatesPanelProps) {
-  // The banner owns the "update available" affordance; here we surface the
-  // steady-state result of a check inline next to the button.
-  const status = state.checking
-    ? "Checking…"
-    : state.error
-      ? state.error
-      : state.available
-        ? `Version ${state.version} ready to install`
-        : state.hasChecked
-          ? "You're up to date."
-          : "";
-
+  // Check feedback (checking / up to date / failed) lives in the
+  // UpdateDialog that `onCheck` opens; the banner owns the passive
+  // "update available" affordance.
   return (
     <section className="prefs-updates" aria-label="Updates">
       <SectionTitle title="Updates" detail={`v${appVersion}`} />
@@ -361,11 +352,6 @@ function UpdatesSettings({
             </button>
           ) : null}
         </div>
-        {status ? (
-          <p className={`updates-status ${state.error ? "error" : ""}`}>
-            {status}
-          </p>
-        ) : null}
       </div>
     </section>
   );
