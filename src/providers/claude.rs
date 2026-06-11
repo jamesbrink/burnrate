@@ -721,31 +721,91 @@ async fn persist_credentials(source: &CredentialSource, raw: &str) -> Result<()>
             let user = user.clone();
             let payload = raw.to_string();
             tokio::task::spawn_blocking(move || {
-                let output = Command::new("security")
-                    .args([
-                        "add-generic-password",
-                        "-U",
-                        "-s",
-                        &service,
-                        "-a",
-                        &user,
-                        "-w",
-                        &payload,
-                    ])
-                    .output()
-                    .context("failed to run macOS security command")?;
-                if output.status.success() {
-                    Ok(())
-                } else {
-                    Err(anyhow!(
-                        "failed to update Claude Code credentials in Keychain service `{service}`"
-                    ))
-                }
+                write_keychain_credentials(&service, &user, &payload)
             })
             .await
             .context("Claude Code credential writer panicked")?
         }
     }
+}
+
+/// `security -i`'s command tokenizer rejects lines past ~4KB; real credential
+/// payloads are ~2-3KB, so anything larger falls back to argv (the same
+/// compromise the CLI's own persistence makes).
+#[cfg(target_os = "macos")]
+const SECURITY_STDIN_LINE_LIMIT: usize = 3500;
+
+/// Update the keychain item without exposing the secret in process arguments:
+/// the command (payload included) is fed to `security -i` over stdin, which is
+/// how the Claude CLI itself persists refreshed credentials.
+#[cfg(target_os = "macos")]
+fn write_keychain_credentials(service: &str, user: &str, payload: &str) -> Result<()> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let command_line = format!(
+        "add-generic-password -U -a {} -s {} -w {}\n",
+        security_quote(user),
+        security_quote(service),
+        security_quote(payload),
+    );
+    let output = if command_line.len() <= SECURITY_STDIN_LINE_LIMIT {
+        let mut child = Command::new("security")
+            .arg("-i")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to run macOS security command")?;
+        child
+            .stdin
+            .take()
+            .context("failed to open security stdin")?
+            .write_all(command_line.as_bytes())
+            .context("failed to write to security stdin")?;
+        child
+            .wait_with_output()
+            .context("failed to run macOS security command")?
+    } else {
+        Command::new("security")
+            .args([
+                "add-generic-password",
+                "-U",
+                "-s",
+                service,
+                "-a",
+                user,
+                "-w",
+                payload,
+            ])
+            .output()
+            .context("failed to run macOS security command")?
+    };
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "failed to update Claude Code credentials in Keychain service `{service}`"
+        ))
+    }
+}
+
+/// Quote a value for `security -i`'s tokenizer (double quotes with backslash
+/// escapes). The payload is compact `serde_json` output, so it never contains
+/// raw control characters or newlines.
+#[cfg(target_os = "macos")]
+fn security_quote(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => quoted.push_str("\\\\"),
+            '"' => quoted.push_str("\\\""),
+            _ => quoted.push(ch),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 /// Write-then-rename with owner-only permissions, mirroring how the CLI itself
@@ -1874,6 +1934,16 @@ exit 0
         assert!(error.contains("429"));
         assert!(error.contains("Rate limited."));
         assert_eq!(std::fs::read_to_string(&credentials).unwrap(), original);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn security_quote_escapes_quotes_and_backslashes() {
+        assert_eq!(security_quote("plain"), r#""plain""#);
+        assert_eq!(
+            security_quote(r#"{"key":"va\lue"}"#),
+            r#""{\"key\":\"va\\lue\"}""#
+        );
     }
 
     #[tokio::test]
