@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.10](https://github.com/jamesbrink/burnrate/compare/v0.1.9...v0.1.10) - 2026-06-11
+
+### Fixed
+
+- *(claude)* auto-refresh OAuth tokens for managed secondary accounts ([#35](https://github.com/jamesbrink/burnrate/pull/35))
+
 ## [0.1.9](https://github.com/jamesbrink/burnrate/compare/v0.1.8...v0.1.9) - 2026-06-10
 
 ### Other
