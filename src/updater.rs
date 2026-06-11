@@ -227,15 +227,11 @@ pub(crate) fn updater_available() -> bool {
     updater_supported() && updater_pubkey_configured()
 }
 
-/// Records `version` as notified; true only when it differs from the last
-/// version recorded this session, so [`notify_update_available`] posts at most
-/// one notification per discovered version per app run.
-pub(crate) fn should_notify(last: &mut Option<String>, version: &str) -> bool {
-    if last.as_deref() == Some(version) {
-        return false;
-    }
-    *last = Some(version.to_string());
-    true
+/// True when `version` differs from the last version notified this session.
+/// The caller records the version only after the notification actually posts,
+/// so a failed post retries on the next poll instead of going silent.
+pub(crate) fn should_notify(last: &Option<String>, version: &str) -> bool {
+    last.as_deref() != Some(version)
 }
 
 /// Post a system notification for an update found by the background poll. The
@@ -252,14 +248,14 @@ pub(crate) fn notify_update_available(
     if !updater_available() {
         return Ok(());
     }
-    {
-        let mut last = state
-            .last_notified_version
-            .lock()
-            .map_err(|e| e.to_string())?;
-        if !should_notify(&mut last, &version) {
-            return Ok(());
-        }
+    // Held across `.show()` so a concurrent caller (the other window) can't
+    // double-post the same version in the gap before it's recorded.
+    let mut last = state
+        .last_notified_version
+        .lock()
+        .map_err(|e| e.to_string())?;
+    if !should_notify(&last, &version) {
+        return Ok(());
     }
     #[cfg(target_os = "macos")]
     {
@@ -273,6 +269,7 @@ pub(crate) fn notify_update_available(
     }
     #[cfg(not(target_os = "macos"))]
     let _ = app; // `updater_available()` is false off-macOS; kept for cfg parity.
+    *last = Some(version);
     Ok(())
 }
 
@@ -542,21 +539,16 @@ mod tests {
 
     #[test]
     fn notifies_first_time_for_a_version() {
-        let mut last = None;
-        assert!(should_notify(&mut last, "0.2.0"));
-        assert_eq!(last.as_deref(), Some("0.2.0"));
+        assert!(should_notify(&None, "0.2.0"));
     }
 
     #[test]
     fn repeat_polls_of_the_same_version_stay_silent() {
-        let mut last = Some("0.2.0".to_string());
-        assert!(!should_notify(&mut last, "0.2.0"));
+        assert!(!should_notify(&Some("0.2.0".to_string()), "0.2.0"));
     }
 
     #[test]
     fn a_newer_version_notifies_again() {
-        let mut last = Some("0.2.0".to_string());
-        assert!(should_notify(&mut last, "0.3.0"));
-        assert!(!should_notify(&mut last, "0.3.0"));
+        assert!(should_notify(&Some("0.2.0".to_string()), "0.3.0"));
     }
 }

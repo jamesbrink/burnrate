@@ -139,8 +139,10 @@ export function useUpdater(
           const info = await checkForUpdates(channelRef.current);
           applyCheckResult(info);
           if (source === "auto" && info) {
-            // Fire-and-forget; the backend dedupes per version per session.
-            void notifyUpdateAvailable(info.version);
+            // Fire-and-forget; the backend dedupes per version per session. A
+            // failed notification is benign (it retries next poll) — swallow
+            // it rather than surface an unhandled rejection.
+            void notifyUpdateAvailable(info.version).catch(() => {});
           }
         } catch (err) {
           update({ error: String(err), checking: false, hasChecked: true });
