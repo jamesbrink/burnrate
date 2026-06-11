@@ -718,17 +718,6 @@ p {
   flex-wrap: wrap;
 }
 
-.updates-status {
-  margin: 2px 0 0;
-  font-size: 12px;
-  opacity: 0.85;
-}
-
-.updates-status.error {
-  color: var(--crit);
-  opacity: 1;
-}
-
 .spin {
   animation: spin 0.9s linear infinite;
 }
@@ -939,6 +928,27 @@ html[data-view="tray"] .tray-header-actions {
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+}
+
+html[data-view="tray"] .tray-update-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 11px;
+  font-weight: 640;
+  flex: 0 0 auto;
+  transition: filter 0.12s ease;
+}
+
+html[data-view="tray"] .tray-update-pill:hover {
+  filter: brightness(1.12);
 }
 
 html[data-view="tray"] .icon-button.tray-refresh,
@@ -1516,6 +1526,29 @@ html[data-view="tray"] .tray-empty {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* Manual-check update dialog (shares the login modal shell) */
+.update-dialog-meta {
+  color: var(--fg-soft);
+}
+
+.update-dialog-ok {
+  color: var(--ok, var(--accent));
+}
+
+.update-dialog-notes {
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: var(--field-bg);
+  padding: 9px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg-soft);
 }
 
 @media (max-width: 420px) {

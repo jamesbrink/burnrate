@@ -10,12 +10,14 @@ function state(overrides: Partial<UpdaterState> = {}): UpdaterState {
     available: true,
     version: "1.2.3",
     body: "Notes",
+    date: null,
     downloading: false,
     progress: 0,
     error: null,
     dismissed: false,
     checking: false,
     hasChecked: true,
+    dialogOpen: false,
     ...overrides,
   };
 }

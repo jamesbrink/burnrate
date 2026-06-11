@@ -4,7 +4,9 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 const api = vi.hoisted(() => ({
   checkForUpdates: vi.fn(),
   installUpdate: vi.fn(),
+  notifyUpdateAvailable: vi.fn(),
   onCheckUpdateRequested: vi.fn(),
+  onUpdateAvailable: vi.fn(),
   onUpdateProgress: vi.fn(),
   updaterAvailable: vi.fn(),
 }));
@@ -12,18 +14,23 @@ const api = vi.hoisted(() => ({
 vi.mock("./api", () => api);
 
 import { useUpdater } from "./useUpdater";
+import type { UpdateInfo } from "./types";
 
-// Captured event handlers so tests can drive the progress / tray-check paths.
+// Captured event handlers so tests can drive the progress / tray-check /
+// availability-broadcast paths.
 let progressHandler: ((pct: number) => void) | null = null;
 let checkHandler: (() => void) | null = null;
+let availableHandler: ((info: UpdateInfo | null) => void) | null = null;
 
 beforeEach(() => {
   vi.clearAllMocks();
   progressHandler = null;
   checkHandler = null;
+  availableHandler = null;
   api.updaterAvailable.mockResolvedValue(true);
   api.checkForUpdates.mockResolvedValue(null);
   api.installUpdate.mockResolvedValue(undefined);
+  api.notifyUpdateAvailable.mockResolvedValue(undefined);
   api.onUpdateProgress.mockImplementation((handler: (pct: number) => void) => {
     progressHandler = handler;
     return Promise.resolve(() => {});
@@ -32,11 +39,17 @@ beforeEach(() => {
     checkHandler = handler;
     return Promise.resolve(() => {});
   });
+  api.onUpdateAvailable.mockImplementation(
+    (handler: (info: UpdateInfo | null) => void) => {
+      availableHandler = handler;
+      return Promise.resolve(() => {});
+    },
+  );
 });
 
 afterEach(() => vi.restoreAllMocks());
 
-test("background poll surfaces an available update", async () => {
+test("background poll surfaces an available update via notification, not dialog", async () => {
   api.checkForUpdates.mockResolvedValue({
     version: "2.0.0",
     currentVersion: "1.0.0",
@@ -51,6 +64,17 @@ test("background poll surfaces an available update", async () => {
   await waitFor(() => expect(result.current.state.available).toBe(true));
   expect(result.current.state.version).toBe("2.0.0");
   expect(api.checkForUpdates).toHaveBeenCalledWith("stable");
+  expect(api.notifyUpdateAvailable).toHaveBeenCalledWith("2.0.0");
+  expect(result.current.state.dialogOpen).toBe(false);
+});
+
+test("an up-to-date background poll does not notify", async () => {
+  const { result } = renderHook(() =>
+    useUpdater("stable", { forcePoll: true }),
+  );
+
+  await waitFor(() => expect(result.current.state.hasChecked).toBe(true));
+  expect(api.notifyUpdateAvailable).not.toHaveBeenCalled();
 });
 
 test("up-to-date check marks hasChecked without availability", async () => {
@@ -208,13 +232,92 @@ test("concurrent checks are de-duplicated into one backend call", async () => {
   expect(api.checkForUpdates).toHaveBeenCalledOnce();
 });
 
-test("the tray menu check triggers a fresh check", async () => {
-  renderHook(() => useUpdater("stable"));
+test("the tray menu check routes as manual: dialog opens, no notification", async () => {
+  api.checkForUpdates.mockResolvedValue({
+    version: "2.0.0",
+    currentVersion: "1.0.0",
+    body: null,
+    date: null,
+  });
+  const { result } = renderHook(() => useUpdater("stable"));
   await waitFor(() => expect(checkHandler).toBeTypeOf("function"));
 
-  api.checkForUpdates.mockResolvedValue(null);
   await act(async () => {
     checkHandler?.();
   });
   expect(api.checkForUpdates).toHaveBeenCalledWith("stable");
+  expect(result.current.state.dialogOpen).toBe(true);
+  expect(api.notifyUpdateAvailable).not.toHaveBeenCalled();
+});
+
+test("checkNow opens the dialog and closeDialog keeps the result", async () => {
+  api.checkForUpdates.mockResolvedValue({
+    version: "2.0.0",
+    currentVersion: "1.0.0",
+    body: "Notes",
+    date: "2026-06-01",
+  });
+  const { result } = renderHook(() => useUpdater("stable"));
+
+  await act(async () => {
+    await result.current.checkNow();
+  });
+  expect(result.current.state.dialogOpen).toBe(true);
+  expect(result.current.state.date).toBe("2026-06-01");
+  expect(api.notifyUpdateAvailable).not.toHaveBeenCalled();
+
+  act(() => result.current.closeDialog());
+  expect(result.current.state.dialogOpen).toBe(false);
+  expect(result.current.state.available).toBe(true);
+  expect(result.current.state.version).toBe("2.0.0");
+});
+
+test("a manual up-to-date check shows the dialog's up-to-date state", async () => {
+  const { result } = renderHook(() => useUpdater("stable"));
+
+  await act(async () => {
+    await result.current.checkNow();
+  });
+  expect(result.current.state.dialogOpen).toBe(true);
+  expect(result.current.state.hasChecked).toBe(true);
+  expect(result.current.state.available).toBe(false);
+});
+
+test("a failed manual check keeps the dialog open with the error", async () => {
+  api.checkForUpdates.mockRejectedValue(new Error("offline"));
+  const { result } = renderHook(() => useUpdater("stable"));
+
+  await act(async () => {
+    await result.current.checkNow();
+  });
+  expect(result.current.state.dialogOpen).toBe(true);
+  expect(result.current.state.error).toContain("offline");
+});
+
+test("a disabled instance never checks but mirrors broadcasts", async () => {
+  const { result } = renderHook(() =>
+    useUpdater("stable", { enabled: false, forcePoll: true }),
+  );
+  await waitFor(() => expect(availableHandler).toBeTypeOf("function"));
+
+  // No active work: no poll, no probe, no tray-menu listener.
+  expect(api.updaterAvailable).not.toHaveBeenCalled();
+  expect(api.checkForUpdates).not.toHaveBeenCalled();
+  expect(api.onCheckUpdateRequested).not.toHaveBeenCalled();
+
+  // The backend broadcast is the sole state source…
+  act(() =>
+    availableHandler?.({
+      version: "2.0.0",
+      currentVersion: "1.0.0",
+      body: null,
+      date: null,
+    }),
+  );
+  expect(result.current.state.available).toBe(true);
+  expect(result.current.state.version).toBe("2.0.0");
+
+  // …and a later empty check clears it.
+  act(() => availableHandler?.(null));
+  expect(result.current.state.available).toBe(false);
 });

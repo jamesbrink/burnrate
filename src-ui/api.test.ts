@@ -11,10 +11,12 @@ import {
   isStale,
   logoutAccount,
   markFetched,
+  notifyUpdateAvailable,
   onCheckUpdateRequested,
   onLoginComplete,
   onLoginProgress,
   onRefreshRequested,
+  onUpdateAvailable,
   onUpdateProgress,
   openPreferences,
   readCachedDashboard,
@@ -31,6 +33,7 @@ import type {
   LoginComplete,
   LoginProgress,
   SnapshotStatus,
+  UpdateInfo,
   UsageSnapshot,
 } from "./types";
 
@@ -293,6 +296,32 @@ test("onCheckUpdateRequested bridges window events", async () => {
   unlisten();
   window.dispatchEvent(new CustomEvent("burnrate-check-update-requested"));
   expect(handler).toHaveBeenCalledOnce();
+});
+
+test("mock checkForUpdates broadcasts the result like the backend", async () => {
+  const seen: (UpdateInfo | null)[] = [];
+  const unlisten = await onUpdateAvailable((info) => {
+    seen.push(info);
+  });
+
+  await checkForUpdates("stable");
+  expect(seen).toEqual([null]);
+
+  vi.stubEnv("VITE_MOCK_UPDATE", "1");
+  try {
+    await checkForUpdates("stable");
+  } finally {
+    vi.unstubAllEnvs();
+  }
+  expect(seen[1]?.version).toBe("9.9.9");
+
+  unlisten();
+  await checkForUpdates("stable");
+  expect(seen).toHaveLength(2);
+});
+
+test("notifyUpdateAvailable is a no-op outside Tauri", async () => {
+  await expect(notifyUpdateAvailable("9.9.9")).resolves.toBeUndefined();
 });
 
 function last<T>(items: T[]): T | undefined {

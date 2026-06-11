@@ -733,7 +733,27 @@ export async function checkForUpdates(
   if (isTauri) {
     return invoke<UpdateInfo | null>("check_for_updates", { channel });
   }
-  return import.meta.env.VITE_MOCK_UPDATE === "1" ? MOCK_UPDATE : null;
+  const info =
+    import.meta.env.VITE_MOCK_UPDATE === "1" ? MOCK_UPDATE : null;
+  // Mirror the backend, which broadcasts every check result so the tray
+  // window can mirror availability without polling.
+  window.dispatchEvent(
+    new CustomEvent<UpdateInfo | null>("burnrate-update-available", {
+      detail: info,
+    }),
+  );
+  return info;
+}
+
+/** Post the "update available" system notification (deduped per session by
+ *  the backend). Only called for background-poll results — a manual check
+ *  shows the result dialog instead. */
+export async function notifyUpdateAvailable(version: string): Promise<void> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    await invoke("notify_update_available", { version });
+  }
+  // Mock: a system notification is a native side effect — nothing to simulate.
 }
 
 export async function installUpdate(version: string): Promise<void> {
@@ -757,6 +777,14 @@ export async function onUpdateProgress(
   handler: (percent: number) => void | Promise<void>,
 ) {
   return onLoginEvent<number>("burnrate-update-progress", handler);
+}
+
+/** Subscribe to the backend's per-check availability broadcast (`null` means
+ *  the latest check found no update). */
+export async function onUpdateAvailable(
+  handler: (info: UpdateInfo | null) => void | Promise<void>,
+) {
+  return onLoginEvent<UpdateInfo | null>("burnrate-update-available", handler);
 }
 
 export async function onCheckUpdateRequested(
