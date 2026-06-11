@@ -433,8 +433,12 @@ fn main() {
 
     let state = AppState::load().expect("failed to initialize Burnrate state");
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_updater::Builder::new().build())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_updater::Builder::new().build());
+    // Notifications back the updater's "update available" alert; the dep is
+    // macOS-only (see Cargo.toml), so the registration is too.
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+    builder
         .menu(build_app_menu)
         .manage(state)
         .manage(tray::TrayWindowState::default())
@@ -484,7 +488,8 @@ fn main() {
             open_preferences,
             updater::updater_available,
             updater::check_for_updates,
-            updater::install_pending_update
+            updater::install_pending_update,
+            updater::notify_update_available
         ])
         .run(tauri::generate_context!())
         .expect("error while running Burnrate");

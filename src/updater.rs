@@ -1,7 +1,9 @@
-//! Auto-updater IPC: channel-aware `check_for_updates` and
-//! `install_pending_update`. Wraps `tauri_plugin_updater` so the manual
-//! "Check for Updates" tray entry and the frontend's 30-minute background
-//! poll flow through the same code path.
+//! Auto-updater IPC: channel-aware `check_for_updates`,
+//! `install_pending_update`, and the session-deduped `notify_update_available`
+//! system notification. Wraps `tauri_plugin_updater` so the manual "Check for
+//! Updates" tray entry and the frontend's 30-minute background poll flow
+//! through the same code path; every completed check also broadcasts
+//! `burnrate-update-available` so the tray popover can mirror availability.
 //!
 //! Adapted from the implementation in the sibling `aethon` project, trimmed
 //! to the core check → download → install → restart flow (no boot-probation
@@ -32,6 +34,10 @@ const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(8);
 #[derive(Default)]
 pub(crate) struct UpdaterState {
     pub pending_update: tokio::sync::Mutex<Option<tauri_plugin_updater::Update>>,
+    /// Last version a system notification was posted for this session. Dedupes
+    /// the repeated 30-minute polls and the two webview windows so each newly
+    /// discovered version notifies at most once per app run.
+    pub last_notified_version: std::sync::Mutex<Option<String>>,
 }
 
 /// Serializable view of an available update returned to the frontend.
@@ -221,6 +227,55 @@ pub(crate) fn updater_available() -> bool {
     updater_supported() && updater_pubkey_configured()
 }
 
+/// Records `version` as notified; true only when it differs from the last
+/// version recorded this session, so [`notify_update_available`] posts at most
+/// one notification per discovered version per app run.
+pub(crate) fn should_notify(last: &mut Option<String>, version: &str) -> bool {
+    if last.as_deref() == Some(version) {
+        return false;
+    }
+    *last = Some(version.to_string());
+    true
+}
+
+/// Post a system notification for an update found by the background poll. The
+/// frontend calls this only for auto checks — a manual check shows the result
+/// dialog instead. Deduped per session via [`should_notify`].
+#[tauri::command]
+pub(crate) fn notify_update_available(
+    app: AppHandle,
+    state: State<'_, UpdaterState>,
+    version: String,
+) -> Result<(), String> {
+    // Defense in depth: the frontend already gates on `updater_available`, and
+    // macOS only shows notifications for bundled apps anyway.
+    if !updater_available() {
+        return Ok(());
+    }
+    {
+        let mut last = state
+            .last_notified_version
+            .lock()
+            .map_err(|e| e.to_string())?;
+        if !should_notify(&mut last, &version) {
+            return Ok(());
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_plugin_notification::NotificationExt;
+        app.notification()
+            .builder()
+            .title(format!("Burnrate {version} is available"))
+            .body("Open Burnrate to see what's changed and install the update.")
+            .show()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app; // `updater_available()` is false off-macOS; kept for cfg parity.
+    Ok(())
+}
+
 /// Check the given channel's release feed for an update. On success the
 /// [`tauri_plugin_updater::Update`] is stashed in [`UpdaterState`] for
 /// [`install_pending_update`]; the serializable [`UpdateInfo`] is returned to
@@ -257,7 +312,7 @@ pub(crate) async fn check_for_updates(
     };
 
     let mut slot = state.pending_update.lock().await;
-    match update {
+    let info = match update {
         Some(u) => {
             let info = UpdateInfo {
                 version: u.version.clone(),
@@ -266,13 +321,17 @@ pub(crate) async fn check_for_updates(
                 date: u.date.map(|d| d.to_string()),
             };
             *slot = Some(u);
-            Ok(Some(info))
+            Some(info)
         }
         None => {
             *slot = None;
-            Ok(None)
+            None
         }
-    }
+    };
+    // Broadcast the outcome so the tray window can mirror availability (and
+    // clear it when a later check comes back empty) without its own poll.
+    let _ = app.emit("burnrate-update-available", &info);
+    Ok(info)
 }
 
 /// Download and install the pending update, then restart the app. Emits
@@ -479,5 +538,25 @@ mod tests {
         );
         let got = nightly_candidate_urls_from_json(&body, NIGHTLY_CANDIDATE_LIMIT);
         assert_eq!(got, vec![url("nightly"), url("nightly-undated")]);
+    }
+
+    #[test]
+    fn notifies_first_time_for_a_version() {
+        let mut last = None;
+        assert!(should_notify(&mut last, "0.2.0"));
+        assert_eq!(last.as_deref(), Some("0.2.0"));
+    }
+
+    #[test]
+    fn repeat_polls_of_the_same_version_stay_silent() {
+        let mut last = Some("0.2.0".to_string());
+        assert!(!should_notify(&mut last, "0.2.0"));
+    }
+
+    #[test]
+    fn a_newer_version_notifies_again() {
+        let mut last = Some("0.2.0".to_string());
+        assert!(should_notify(&mut last, "0.3.0"));
+        assert!(!should_notify(&mut last, "0.3.0"));
     }
 }
