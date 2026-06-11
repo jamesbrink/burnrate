@@ -27,11 +27,19 @@ use crate::{
 use super::{bucket_from_parts, endpoint, overall_status, primary_quota, subscription_from_json};
 
 const DEFAULT_USAGE_ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
+const DEFAULT_TOKEN_ENDPOINT: &str = "https://platform.claude.com/v1/oauth/token";
+/// Claude Code's public OAuth client (PKCE, no secret) — the same client the CLI
+/// itself presents when refreshing.
+const CLAUDE_OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const ANTHROPIC_BETA: &str = "oauth-2025-04-20";
 const INFERENCE_SCOPE: &str = "user:inference";
 const PROFILE_SCOPE: &str = "user:profile";
 const USAGE_CACHE_TTL_MS: u64 = 5 * 60 * 1000;
 const USAGE_ERROR_BACKOFF_MS: u64 = 2 * 60 * 1000;
+/// Refresh when the access token is within this margin of expiry (tokens live
+/// 8 hours; the background poll runs every 5 minutes, so a 10-minute margin
+/// guarantees a refresh attempt lands before expiry).
+const TOKEN_REFRESH_MARGIN_MS: u64 = 10 * 60 * 1000;
 const AUTH_STATUS_TIMEOUT_MS: u64 = 1_500;
 const AUTH_LOGIN_HELP_TIMEOUT_MS: u64 = 1_500;
 const REAUTH_HINT: &str = "Run `claude auth login` to refresh Claude Code authentication.";
@@ -47,6 +55,28 @@ struct ClaudeUsageCacheEntry {
 #[serde(rename_all = "camelCase")]
 struct CredentialFile {
     claude_ai_oauth: OAuthCredentials,
+}
+
+/// Where a credential blob was read from, so a refreshed token can be written
+/// back to the same place.
+#[derive(Debug, Clone)]
+enum CredentialSource {
+    File(PathBuf),
+    #[cfg(target_os = "macos")]
+    Keychain {
+        service: String,
+        user: String,
+    },
+}
+
+/// A parsed credential plus its raw JSON and backing store. The raw text is
+/// kept so a token refresh can patch only the rotated fields and preserve any
+/// keys the CLI stores that Burnrate does not model.
+#[derive(Debug, Clone)]
+struct LoadedCredentials {
+    parsed: CredentialFile,
+    raw: String,
+    source: CredentialSource,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -65,8 +95,7 @@ struct ClaudeAuthStatus {
 #[serde(rename_all = "camelCase")]
 struct OAuthCredentials {
     access_token: String,
-    #[serde(rename = "refreshToken")]
-    _refresh_token: String,
+    refresh_token: String,
     expires_at: u64,
     #[serde(default)]
     scopes: Vec<String>,
@@ -182,13 +211,30 @@ async fn fetch_oauth_usage(http: &Client, account: &AccountConfig) -> Result<Cla
     if should_check_claude_auth(account) {
         email = ensure_claude_code_auth(account.cli_config_dir()).await?;
     }
-    let credentials = read_credentials(account).await?;
-    let oauth = credentials.claude_ai_oauth;
+    let mut loaded = read_credentials(account).await?;
     let now = now_millis();
-    validate_oauth_credentials(&oauth)?;
-    if oauth.expires_at <= now {
-        return Err(anyhow!("Claude Code OAuth token is expired. {REAUTH_HINT}"));
+    validate_oauth_credentials(&loaded.parsed.claude_ai_oauth)?;
+    match refresh_decision(account, &loaded.parsed.claude_ai_oauth, now) {
+        RefreshDecision::NotNeeded | RefreshDecision::NearExpiryUnmanaged => {}
+        RefreshDecision::ExpiredUnmanaged => {
+            return Err(anyhow!("Claude Code OAuth token is expired. {REAUTH_HINT}"));
+        }
+        RefreshDecision::Refresh => {
+            match refresh_oauth_credentials(http, &oauth_token_endpoint()?, &loaded).await {
+                Ok(refreshed) => loaded = refreshed,
+                // Still inside the pre-expiry margin: keep the current token and
+                // let the next poll retry, so a transient token-endpoint failure
+                // (e.g. a 429) never interrupts usage reporting early.
+                Err(_) if loaded.parsed.claude_ai_oauth.expires_at > now => {}
+                Err(error) => {
+                    return Err(anyhow!(
+                        "Claude Code OAuth token refresh failed: {error}. {REAUTH_HINT}"
+                    ));
+                }
+            }
+        }
     }
+    let oauth = loaded.parsed.claude_ai_oauth;
 
     let resp = http
         .get(endpoint(
@@ -352,7 +398,7 @@ fn format_usage_http_error(prefix: &str, status: StatusCode, body: &str) -> Stri
     }
 }
 
-async fn read_credentials(account: &AccountConfig) -> Result<CredentialFile> {
+async fn read_credentials(account: &AccountConfig) -> Result<LoadedCredentials> {
     #[cfg(target_os = "macos")]
     {
         if account
@@ -428,7 +474,7 @@ pub(crate) fn delete_keychain_credentials_for_dir(config_dir: Option<&str>) {
 }
 
 #[cfg(target_os = "macos")]
-fn read_macos_keychain_credentials(account: &AccountConfig) -> Result<CredentialFile> {
+fn read_macos_keychain_credentials(account: &AccountConfig) -> Result<LoadedCredentials> {
     let user = keychain_username();
     let service_name = keychain_service_name_for(account.cli_config_dir(), oauth_file_suffix());
     let output = Command::new("security")
@@ -455,7 +501,15 @@ fn read_macos_keychain_credentials(account: &AccountConfig) -> Result<Credential
     }
 
     let json = String::from_utf8(output.stdout).context("invalid UTF-8 in Claude credentials")?;
-    parse_credential_json(&json)
+    let parsed = parse_credential_json(&json)?;
+    Ok(LoadedCredentials {
+        parsed,
+        raw: json,
+        source: CredentialSource::Keychain {
+            service: service_name,
+            user,
+        },
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -501,7 +555,7 @@ fn oauth_file_suffix() -> &'static str {
     }
 }
 
-fn read_credentials_file(account: &AccountConfig) -> Result<Option<CredentialFile>> {
+fn read_credentials_file(account: &AccountConfig) -> Result<Option<LoadedCredentials>> {
     let Some(path) = account.credential_path.as_ref().map(PathBuf::from) else {
         return Ok(None);
     };
@@ -519,17 +573,198 @@ fn read_credentials_file(account: &AccountConfig) -> Result<Option<CredentialFil
         return Ok(None);
     };
 
-    parse_credential_path(&path).map(Some)
-}
-
-fn parse_credential_path(path: &Path) -> Result<CredentialFile> {
-    let contents = std::fs::read_to_string(path)
+    let contents = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    parse_credential_json(&contents)
+    let parsed = parse_credential_json(&contents)?;
+    Ok(Some(LoadedCredentials {
+        parsed,
+        raw: contents,
+        source: CredentialSource::File(path),
+    }))
 }
 
 fn parse_credential_json(contents: &str) -> Result<CredentialFile> {
     serde_json::from_str(contents).context("failed to parse Claude Code credentials")
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RefreshDecision {
+    /// Token is comfortably valid — nothing to do.
+    NotNeeded,
+    /// Token is expired or near expiry and lives in a Burnrate-managed CLI dir,
+    /// where Burnrate is the credential's only client — refresh it ourselves.
+    Refresh,
+    /// Expired, but backed by the system-default store (`~/.claude`). Refresh
+    /// tokens are single-use (rotation): refreshing here would race the user's
+    /// own terminal CLI and sign it out, so only a real `claude` login may fix it.
+    ExpiredUnmanaged,
+    /// Near expiry in the system-default store: the token is still valid, and
+    /// the user's own CLI sessions are responsible for refreshing it.
+    NearExpiryUnmanaged,
+}
+
+fn refresh_decision(
+    account: &AccountConfig,
+    oauth: &OAuthCredentials,
+    now: u64,
+) -> RefreshDecision {
+    if oauth.expires_at > now + TOKEN_REFRESH_MARGIN_MS {
+        return RefreshDecision::NotNeeded;
+    }
+    let managed = account
+        .cli_config_dir()
+        .filter(|dir| !dir.trim().is_empty())
+        .is_some_and(|dir| crate::config::is_managed_cli_dir(Path::new(dir)));
+    if managed {
+        RefreshDecision::Refresh
+    } else if oauth.expires_at <= now {
+        RefreshDecision::ExpiredUnmanaged
+    } else {
+        RefreshDecision::NearExpiryUnmanaged
+    }
+}
+
+fn oauth_token_endpoint() -> Result<String> {
+    let value = std::env::var("BURNRATE_CLAUDE_TOKEN_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_TOKEN_ENDPOINT.to_string());
+    super::validate_endpoint(&value)?;
+    Ok(value)
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenRefreshResponse {
+    access_token: String,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    expires_in: u64,
+}
+
+/// Exchange the stored refresh token for a new access token and persist the
+/// rotated credential back to its source. Refresh tokens are single-use, so the
+/// patched JSON is written out **before** the new access token is used — a
+/// successful exchange that isn't persisted would strand the account until the
+/// next browser sign-in.
+async fn refresh_oauth_credentials(
+    http: &Client,
+    token_url: &str,
+    loaded: &LoadedCredentials,
+) -> Result<LoadedCredentials> {
+    let request = json!({
+        "grant_type": "refresh_token",
+        "refresh_token": loaded.parsed.claude_ai_oauth.refresh_token,
+        "client_id": CLAUDE_OAUTH_CLIENT_ID,
+    });
+    let resp = http
+        .post(token_url)
+        .header("anthropic-beta", ANTHROPIC_BETA)
+        // The token endpoint rate-limits generic agents; mirror the CLI's own
+        // refresh User-Agent.
+        .header("User-Agent", claude_cli_user_agent())
+        .json(&request)
+        .send()
+        .await
+        .context("failed to reach the Claude OAuth token endpoint")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(anyhow!(format_http_error(
+            "Claude OAuth token refresh error",
+            status,
+            &body
+        )));
+    }
+
+    let tokens: TokenRefreshResponse = resp
+        .json()
+        .await
+        .context("failed to decode the Claude OAuth token response")?;
+
+    let raw = patch_credential_json(&loaded.raw, &tokens, now_millis())?;
+    persist_credentials(&loaded.source, &raw).await?;
+    let parsed = parse_credential_json(&raw)?;
+    Ok(LoadedCredentials {
+        parsed,
+        raw,
+        source: loaded.source.clone(),
+    })
+}
+
+/// Patch only the rotated fields into the raw credential JSON, preserving any
+/// keys the CLI stores that Burnrate does not model.
+fn patch_credential_json(raw: &str, tokens: &TokenRefreshResponse, now: u64) -> Result<String> {
+    let mut value: serde_json::Value =
+        serde_json::from_str(raw).context("failed to parse Claude Code credentials")?;
+    let oauth = value
+        .pointer_mut("/claudeAiOauth")
+        .and_then(|value| value.as_object_mut())
+        .ok_or_else(|| anyhow!("Claude Code credentials are missing the claudeAiOauth object"))?;
+    oauth.insert("accessToken".to_string(), json!(tokens.access_token));
+    if let Some(refresh_token) = &tokens.refresh_token {
+        oauth.insert("refreshToken".to_string(), json!(refresh_token));
+    }
+    oauth.insert(
+        "expiresAt".to_string(),
+        json!(now + tokens.expires_in.saturating_mul(1000)),
+    );
+    serde_json::to_string(&value).context("failed to serialize refreshed Claude Code credentials")
+}
+
+async fn persist_credentials(source: &CredentialSource, raw: &str) -> Result<()> {
+    match source {
+        CredentialSource::File(path) => write_private_file(path, raw),
+        #[cfg(target_os = "macos")]
+        CredentialSource::Keychain { service, user } => {
+            let service = service.clone();
+            let user = user.clone();
+            let payload = raw.to_string();
+            tokio::task::spawn_blocking(move || {
+                let output = Command::new("security")
+                    .args([
+                        "add-generic-password",
+                        "-U",
+                        "-s",
+                        &service,
+                        "-a",
+                        &user,
+                        "-w",
+                        &payload,
+                    ])
+                    .output()
+                    .context("failed to run macOS security command")?;
+                if output.status.success() {
+                    Ok(())
+                } else {
+                    Err(anyhow!(
+                        "failed to update Claude Code credentials in Keychain service `{service}`"
+                    ))
+                }
+            })
+            .await
+            .context("Claude Code credential writer panicked")?
+        }
+    }
+}
+
+/// Write-then-rename with owner-only permissions, mirroring how the CLI itself
+/// rewrites `.credentials.json`.
+fn write_private_file(path: &Path, contents: &str) -> Result<()> {
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "credentials".to_string());
+    let tmp = path.with_file_name(format!("{file_name}.tmp"));
+    std::fs::write(&tmp, contents).with_context(|| format!("failed to write {}", tmp.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("failed to set permissions on {}", tmp.display()))?;
+    }
+    std::fs::rename(&tmp, path).with_context(|| format!("failed to replace {}", path.display()))?;
+    Ok(())
 }
 
 /// Best-effort auth check used during `fetch`. Returns the signed-in email when
@@ -880,13 +1115,21 @@ fn now_millis() -> u64 {
 }
 
 fn claude_code_user_agent() -> String {
-    static USER_AGENT: OnceLock<String> = OnceLock::new();
-    USER_AGENT
-        .get_or_init(detect_claude_code_user_agent)
-        .clone()
+    format!("claude-code/{}", claude_cli_version_cached())
 }
 
-fn detect_claude_code_user_agent() -> String {
+/// The User-Agent the CLI itself sends to the OAuth token endpoint
+/// (`claude-cli/<version> (external, cli)`).
+fn claude_cli_user_agent() -> String {
+    format!("claude-cli/{} (external, cli)", claude_cli_version_cached())
+}
+
+fn claude_cli_version_cached() -> String {
+    static VERSION: OnceLock<String> = OnceLock::new();
+    VERSION.get_or_init(detect_claude_cli_version).clone()
+}
+
+fn detect_claude_cli_version() -> String {
     let mut command = Command::new(super::resolve_cli(&claude_binary()));
     command
         .arg("--version")
@@ -896,10 +1139,9 @@ fn detect_claude_code_user_agent() -> String {
     match output {
         Ok(output) if output.status.success() => {
             let raw = String::from_utf8_lossy(&output.stdout);
-            let version = raw.split_whitespace().next().unwrap_or("0.0.0");
-            format!("claude-code/{version}")
+            raw.split_whitespace().next().unwrap_or("0.0.0").to_string()
         }
-        _ => "claude-code/0.0.0".to_string(),
+        _ => "0.0.0".to_string(),
     }
 }
 
@@ -913,7 +1155,7 @@ mod tests {
     use serde_json::json;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
-        matchers::{header, method, path},
+        matchers::{body_partial_json, header, method, path},
     };
 
     use super::*;
@@ -1411,5 +1653,253 @@ exit 0
                 .unwrap()
                 .contains("Rate limited. Please try again later.")
         );
+    }
+
+    fn loaded_from_file(path: &Path) -> LoadedCredentials {
+        let raw = std::fs::read_to_string(path).unwrap();
+        LoadedCredentials {
+            parsed: parse_credential_json(&raw).unwrap(),
+            raw: raw.clone(),
+            source: CredentialSource::File(path.to_path_buf()),
+        }
+    }
+
+    fn expired_credential_json(expires_at: u64) -> String {
+        serde_json::to_string(&json!({
+            "claudeAiOauth": {
+                "accessToken": "old-access",
+                "refreshToken": "old-refresh",
+                "expiresAt": expires_at,
+                "scopes": ["user:inference", "user:profile"],
+                "subscriptionType": "max",
+                "unknownOauthKey": "keep-me"
+            },
+            "unknownTopLevelKey": true
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn refresh_decision_gates_on_managed_dir_and_expiry() {
+        let now: u64 = 1_750_000_000_000;
+        let oauth = |expires_at: u64| OAuthCredentials {
+            access_token: "token".to_string(),
+            refresh_token: "refresh".to_string(),
+            expires_at,
+            scopes: vec![INFERENCE_SCOPE.to_string(), PROFILE_SCOPE.to_string()],
+            subscription_type: Some("max".to_string()),
+            rate_limit_tier: None,
+        };
+
+        // System-default store (no managed dir): never refresh.
+        let unmanaged = account();
+        assert_eq!(
+            refresh_decision(&unmanaged, &oauth(now + TOKEN_REFRESH_MARGIN_MS + 1), now),
+            RefreshDecision::NotNeeded
+        );
+        assert_eq!(
+            refresh_decision(&unmanaged, &oauth(now + 1), now),
+            RefreshDecision::NearExpiryUnmanaged
+        );
+        assert_eq!(
+            refresh_decision(&unmanaged, &oauth(now), now),
+            RefreshDecision::ExpiredUnmanaged
+        );
+
+        // Burnrate-managed CLI dir: refresh when expired or near expiry.
+        let managed_dir = crate::config::config_dir()
+            .unwrap()
+            .join("cli")
+            .join("claude-code")
+            .join("refresh-test");
+        let mut managed = account();
+        managed.config_dir = Some(managed_dir.to_string_lossy().to_string());
+        assert_eq!(
+            refresh_decision(&managed, &oauth(now + TOKEN_REFRESH_MARGIN_MS + 1), now),
+            RefreshDecision::NotNeeded
+        );
+        assert_eq!(
+            refresh_decision(&managed, &oauth(now + 1), now),
+            RefreshDecision::Refresh
+        );
+        assert_eq!(
+            refresh_decision(&managed, &oauth(now), now),
+            RefreshDecision::Refresh
+        );
+
+        // A managed-looking dir outside the config root never qualifies.
+        let mut outside = account();
+        outside.config_dir = Some("/tmp/not-burnrate/cli/claude-code/x".to_string());
+        assert_eq!(
+            refresh_decision(&outside, &oauth(now), now),
+            RefreshDecision::ExpiredUnmanaged
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_rotates_tokens_and_preserves_unknown_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let credentials = dir.path().join(".credentials.json");
+        std::fs::write(&credentials, expired_credential_json(1)).unwrap();
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .and(header("anthropic-beta", ANTHROPIC_BETA))
+            .and(body_partial_json(json!({
+                "grant_type": "refresh_token",
+                "refresh_token": "old-refresh",
+                "client_id": CLAUDE_OAUTH_CLIENT_ID,
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "new-access",
+                "refresh_token": "new-refresh",
+                "expires_in": 28_800,
+                "token_type": "Bearer"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let loaded = loaded_from_file(&credentials);
+        let before = now_millis();
+        let refreshed = refresh_oauth_credentials(&Client::new(), &server.uri(), &loaded)
+            .await
+            .unwrap();
+
+        assert_eq!(refreshed.parsed.claude_ai_oauth.access_token, "new-access");
+        assert_eq!(
+            refreshed.parsed.claude_ai_oauth.refresh_token,
+            "new-refresh"
+        );
+        assert!(refreshed.parsed.claude_ai_oauth.expires_at >= before + 28_800_000);
+
+        let persisted: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&credentials).unwrap()).unwrap();
+        assert_eq!(
+            persisted.pointer("/claudeAiOauth/accessToken"),
+            Some(&json!("new-access"))
+        );
+        assert_eq!(
+            persisted.pointer("/claudeAiOauth/refreshToken"),
+            Some(&json!("new-refresh"))
+        );
+        assert_eq!(
+            persisted.pointer("/claudeAiOauth/unknownOauthKey"),
+            Some(&json!("keep-me"))
+        );
+        assert_eq!(persisted.pointer("/unknownTopLevelKey"), Some(&json!(true)));
+        assert_eq!(
+            persisted.pointer("/claudeAiOauth/subscriptionType"),
+            Some(&json!("max"))
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&credentials)
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(
+            requests[0]
+                .headers
+                .get("user-agent")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(
+                    |value| value.starts_with("claude-cli/") && value.ends_with("(external, cli)")
+                )
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_keeps_existing_refresh_token_when_response_omits_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let credentials = dir.path().join(".credentials.json");
+        std::fs::write(&credentials, expired_credential_json(1)).unwrap();
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "new-access",
+                "expires_in": 28_800
+            })))
+            .mount(&server)
+            .await;
+
+        let loaded = loaded_from_file(&credentials);
+        let refreshed = refresh_oauth_credentials(&Client::new(), &server.uri(), &loaded)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            refreshed.parsed.claude_ai_oauth.refresh_token,
+            "old-refresh"
+        );
+        let persisted: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&credentials).unwrap()).unwrap();
+        assert_eq!(
+            persisted.pointer("/claudeAiOauth/refreshToken"),
+            Some(&json!("old-refresh"))
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_surfaces_http_errors_and_leaves_credentials_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let credentials = dir.path().join(".credentials.json");
+        let original = expired_credential_json(1);
+        std::fs::write(&credentials, &original).unwrap();
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(json!({
+                "error": { "type": "rate_limit_error", "message": "Rate limited." }
+            })))
+            .mount(&server)
+            .await;
+
+        let loaded = loaded_from_file(&credentials);
+        let error = refresh_oauth_credentials(&Client::new(), &server.uri(), &loaded)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("Claude OAuth token refresh error"));
+        assert!(error.contains("429"));
+        assert!(error.contains("Rate limited."));
+        assert_eq!(std::fs::read_to_string(&credentials).unwrap(), original);
+    }
+
+    #[tokio::test]
+    async fn fetch_reports_expired_token_without_refreshing_unmanaged_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let credentials = dir.path().join(".credentials.json");
+        std::fs::write(&credentials, expired_credential_json(1)).unwrap();
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let mut account = account();
+        account.id = "claude-code-refresh-unmanaged".to_string();
+        account.credential_path = Some(credentials.to_string_lossy().to_string());
+        account.endpoint_override = Some(server.uri());
+
+        let error = fetch(&Client::new(), &account)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("Claude Code OAuth token is expired"));
+        assert!(error.contains("claude auth login"));
     }
 }

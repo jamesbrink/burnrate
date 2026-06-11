@@ -107,8 +107,18 @@ burnrate`).
   claude/codex also implement `detect()`. claude reads `~/.claude` creds +
   macOS Keychain (service name derived per account via
   `keychain_service_name_for(account.cli_config_dir(), …)`), validates with
-  `claude auth status --json` (also yields the account **email**), and queries the
-  Anthropic OAuth usage endpoint (with its own usage cache + error backoff);
+  `claude auth status --json` (also yields the account **email** — a local
+  read that never refreshes tokens), and queries the Anthropic OAuth usage
+  endpoint (with its own usage cache + error backoff). Claude access tokens
+  live ~8h and refresh tokens are **single-use** (rotation), so claude also
+  refreshes the OAuth token itself near expiry — but **only** for accounts in
+  Burnrate-managed CLI dirs, where Burnrate is the credential's sole client
+  (`refresh_decision`): it POSTs the CLI's public client id to the
+  platform.claude.com token endpoint (mimicking the CLI's User-Agent — the
+  endpoint rate-limits generic agents) and persists the rotated credential
+  back to its source (keychain or file) **before** using it. The
+  system-default `~/.claude` is never refreshed — its rotation belongs to the
+  user's terminal sessions, and a second writer would sign them out;
   codex detects `CODEX_HOME`/`~/.codex` and talks to the Codex app server over
   stdio JSON (reset timestamps may be seconds or millis — both normalized), and
   reads the account email by decoding the `tokens.id_token` JWT in `auth.json`

@@ -76,6 +76,19 @@ claude auth login
 Or use **Sign in again** on the account in Preferences — for the
 auto-detected account it refreshes your real `~/.claude` session.
 
+## A secondary Claude account reports an expired token
+
+Claude access tokens only live about 8 hours. Burnrate keeps the accounts it
+manages (added via browser sign-in) refreshed automatically, so an "OAuth
+token is expired" error on a secondary account should self-heal within one
+refresh cycle on Burnrate 0.1.10+. If it persists, the refresh token itself
+has been revoked (for example, the same account was signed in somewhere else —
+Claude refresh tokens are single-use) and a **Sign in again** from Preferences
+is required.
+
+Burnrate never refreshes your primary `~/.claude` login; your own `claude`
+sessions keep that one fresh.
+
 ## Headless diagnostics
 
 The binary ships a hidden debug CLI that exercises the real detection,
