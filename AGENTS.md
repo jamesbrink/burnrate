@@ -23,18 +23,25 @@ burnrate`).
   `submit_account_login_code`, `cancel_account_login`, `logout_account`, `save_settings`,
   `refresh_snapshots`, `resize_preferences_to_content`,
   `resize_tray_to_content`, `close_preferences`, `open_preferences`,
-  `updater_available`, `check_for_updates`, `install_pending_update`),
-  registers `tauri-plugin-updater`,
+  `updater_available`, `check_for_updates`, `install_pending_update`,
+  `notify_update_available`),
+  registers `tauri-plugin-updater` (and, macOS-only, `tauri-plugin-notification`
+  — the dep is target-gated so Linux builds never pull in dbus),
   builds the two windows and macOS menu, installs the tray, and spawns the
   5-minute background refresh loop. Closing the Preferences window is
   intercepted to _hide_ (tray-only), not quit.
 - `updater.rs` — auto-updater IPC over `tauri-plugin-updater`: `check_for_updates`
   (channel-aware: `stable` hits `releases/latest`, `nightly` discovers candidate
   tags via the GitHub Releases API with a static fallback) stashes the pending
-  `Update` in the managed `UpdaterState`; `install_pending_update` downloads +
-  installs (emitting `burnrate-update-progress`) and restarts. `updater_available`
+  `Update` in the managed `UpdaterState` and broadcasts every completed check
+  as `burnrate-update-available` (`Option<UpdateInfo>`) so the tray window can
+  mirror availability without polling; `install_pending_update` downloads +
+  installs (emitting `burnrate-update-progress`) and restarts;
+  `notify_update_available` posts the macOS "update available" system
+  notification, deduped per session via `UpdaterState::last_notified_version`
+  (the frontend calls it only for background-poll results). `updater_available`
   gates the UI on a configured pubkey so unsigned dev builds stay quiet. Pure
-  parsing/endpoint helpers are unit-tested.
+  parsing/endpoint/dedupe helpers are unit-tested.
 - `app_state.rs` — `AppState` is the managed Tauri state: the `ConfigStore`
   (sqlite), a `Mutex<AppConfig>` (in-memory copy), the `ProviderClient`, and a
   `LoginManager`. `load()` opens the store, merges auto-detected accounts, and
@@ -146,7 +153,9 @@ burnrate`).
   sign-in and supports cancel (task abort + `kill_on_drop`). `run_logout` performs
   the CLI sign-out. No PTY: piped stdio + opening the URL ourselves.
 - `tray.rs` — tray icon/menu (Preferences / Refresh / Check for Updates / Quit;
-  the updates entry emits `burnrate-check-update-requested`), left-click toggles
+  the updates entry shows the Preferences window, then emits
+  `burnrate-check-update-requested` so the check's result dialog is actually
+  visible), left-click toggles
   the cursor-anchored `tray` popover window, `summarize()` reduces snapshots to
   a single status/label, and the macOS activation policy switch (Accessory =
   hidden from Dock, Regular = shown while Preferences is open).
@@ -167,17 +176,25 @@ burnrate`).
   `listen()` for the `burnrate-refresh-requested` / `burnrate-dashboard-updated` /
   `burnrate-settings-updated`, `burnrate-login-progress` / `-complete` /
   `-failed`, and the updater's `burnrate-update-progress` /
-  `burnrate-check-update-requested` events. The updater calls are mocked too
-  (a `VITE_MOCK_UPDATE` opt-in advertises a fake update for `dev:web`).
+  `burnrate-check-update-requested` / `burnrate-update-available` events. The
+  updater calls are mocked too (a `VITE_MOCK_UPDATE` opt-in advertises a fake
+  update for `dev:web`, and the mock `checkForUpdates` dispatches the
+  availability broadcast like the backend).
 - `types.ts` mirrors the Rust wire models; `constants.ts` holds shared provider
   labels/endpoints (kept cycle-free). `Preferences.tsx`, `TrayPanel.tsx`,
   `ProviderLogo.tsx`, and `format.ts` are the focused UI pieces, plus
   `AccountForm.tsx`, `AddAccountMenu.tsx`, `LoginModal.tsx`, the `useLogin.ts`
   hook, `SortableList.tsx` (reusable `@dnd-kit` drag-to-reorder used by both
-  surfaces), and the updater pair `useUpdater.ts` (channel-aware poll/check/
-  install state machine) + `UpdateBanner.tsx`. The `TrayPanel` header has a
-  settings gear that calls `open_preferences`; Preferences hosts the Updates
-  section (channel selector + check button) and renders the banner. Multi-account:
+  surfaces), and the updater trio `useUpdater.ts` (channel-aware poll/check/
+  install state machine; only the Preferences window runs it `enabled` — the
+  tray view passively mirrors the `burnrate-update-available` broadcast, and
+  background-poll finds trigger the deduped system notification) +
+  `UpdateBanner.tsx` + `UpdateDialog.tsx` (the manual-check result dialog:
+  checking / up-to-date / available-with-release-notes / error phases). The
+  `TrayPanel` header has a settings gear that calls `open_preferences` and an
+  update pill (shown when an update is available) that does the same;
+  Preferences hosts the Updates section (channel selector + check button that
+  opens the dialog) and renders the banner. Multi-account:
   each account shows its email; the Add-account menu offers browser sign-in vs.
   manual token entry for Claude Code / Codex (plus API-key entry for
   OpenRouter/Runpod and profile-based AWS setup). `LoginModal` includes the
