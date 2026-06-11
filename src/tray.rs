@@ -230,6 +230,9 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
                 let _ = app.emit("burnrate-refresh-requested", ());
             }
             "check-updates" => {
+                // Surface the window first: the manual check's feedback is a
+                // dialog in Preferences, useless while the window is hidden.
+                show_main_window(app);
                 let _ = app.emit("burnrate-check-update-requested", ());
             }
             "quit" => app.exit(0),
