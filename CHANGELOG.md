@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11](https://github.com/jamesbrink/burnrate/compare/v0.1.10...v0.1.11) - 2026-06-11
+
+### Added
+
+- *(updater)* system notification for background-found updates and a manual-check result dialog ([#37](https://github.com/jamesbrink/burnrate/pull/37))
+
 ## [0.1.10](https://github.com/jamesbrink/burnrate/compare/v0.1.9...v0.1.10) - 2026-06-11
 
 ### Fixed
