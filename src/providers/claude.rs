@@ -222,13 +222,21 @@ async fn fetch_oauth_usage(http: &Client, account: &AccountConfig) -> Result<Cla
         RefreshDecision::Refresh => {
             match refresh_oauth_credentials(http, &oauth_token_endpoint()?, &loaded).await {
                 Ok(refreshed) => loaded = refreshed,
-                // Still inside the pre-expiry margin: keep the current token and
-                // let the next poll retry, so a transient token-endpoint failure
-                // (e.g. a 429) never interrupts usage reporting early.
-                Err(_) if loaded.parsed.claude_ai_oauth.expires_at > now => {}
-                Err(error) => {
+                // The exchange never went through (network error, 4xx/5xx), so
+                // the stored refresh token is untouched. Inside the pre-expiry
+                // margin the current token still works: keep it and let the
+                // next poll retry, so a transient token-endpoint failure (e.g.
+                // a 429) never interrupts usage reporting early. A failure
+                // *after* a successful exchange is never retried away — the
+                // single-use refresh token is consumed, the account is
+                // stranded, and the error must surface.
+                Err(failure)
+                    if !failure.token_consumed
+                        && loaded.parsed.claude_ai_oauth.expires_at > now => {}
+                Err(failure) => {
                     return Err(anyhow!(
-                        "Claude Code OAuth token refresh failed: {error}. {REAUTH_HINT}"
+                        "Claude Code OAuth token refresh failed: {}. {REAUTH_HINT}",
+                        failure.error
                     ));
                 }
             }
@@ -641,6 +649,33 @@ struct TokenRefreshResponse {
     expires_in: u64,
 }
 
+/// A failed token refresh, distinguishing failures that left the stored
+/// credential untouched from failures after the exchange went through. Refresh
+/// tokens are single-use: once the endpoint accepts the exchange, the stored
+/// refresh token is dead, and any subsequent failure (persistence included)
+/// strands the account — such errors must surface, never be retried away.
+#[derive(Debug)]
+struct RefreshFailure {
+    token_consumed: bool,
+    error: anyhow::Error,
+}
+
+impl RefreshFailure {
+    fn safe(error: anyhow::Error) -> Self {
+        Self {
+            token_consumed: false,
+            error,
+        }
+    }
+
+    fn consumed(error: anyhow::Error) -> Self {
+        Self {
+            token_consumed: true,
+            error,
+        }
+    }
+}
+
 /// Exchange the stored refresh token for a new access token and persist the
 /// rotated credential back to its source. Refresh tokens are single-use, so the
 /// patched JSON is written out **before** the new access token is used — a
@@ -650,7 +685,7 @@ async fn refresh_oauth_credentials(
     http: &Client,
     token_url: &str,
     loaded: &LoadedCredentials,
-) -> Result<LoadedCredentials> {
+) -> Result<LoadedCredentials, RefreshFailure> {
     let request = json!({
         "grant_type": "refresh_token",
         "refresh_token": loaded.parsed.claude_ai_oauth.refresh_token,
@@ -665,26 +700,36 @@ async fn refresh_oauth_credentials(
         .json(&request)
         .send()
         .await
-        .context("failed to reach the Claude OAuth token endpoint")?;
+        .map_err(|error| {
+            RefreshFailure::safe(
+                anyhow!(error).context("failed to reach the Claude OAuth token endpoint"),
+            )
+        })?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(anyhow!(format_http_error(
+        return Err(RefreshFailure::safe(anyhow!(format_http_error(
             "Claude OAuth token refresh error",
             status,
             &body
-        )));
+        ))));
     }
 
-    let tokens: TokenRefreshResponse = resp
-        .json()
-        .await
-        .context("failed to decode the Claude OAuth token response")?;
+    // From here on the exchange has succeeded and the old refresh token is
+    // consumed — every failure is a stranded credential.
+    let tokens: TokenRefreshResponse = resp.json().await.map_err(|error| {
+        RefreshFailure::consumed(
+            anyhow!(error).context("failed to decode the Claude OAuth token response"),
+        )
+    })?;
 
-    let raw = patch_credential_json(&loaded.raw, &tokens, now_millis())?;
-    persist_credentials(&loaded.source, &raw).await?;
-    let parsed = parse_credential_json(&raw)?;
+    let raw = patch_credential_json(&loaded.raw, &tokens, now_millis())
+        .map_err(RefreshFailure::consumed)?;
+    persist_credentials(&loaded.source, &raw)
+        .await
+        .map_err(RefreshFailure::consumed)?;
+    let parsed = parse_credential_json(&raw).map_err(RefreshFailure::consumed)?;
     Ok(LoadedCredentials {
         parsed,
         raw,
@@ -809,21 +854,39 @@ fn security_quote(value: &str) -> String {
 }
 
 /// Write-then-rename with owner-only permissions, mirroring how the CLI itself
-/// rewrites `.credentials.json`.
+/// rewrites `.credentials.json`. The temp file is created `0600` from the first
+/// byte (never umask-widened) and removed if any step fails.
 fn write_private_file(path: &Path, contents: &str) -> Result<()> {
     let file_name = path
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| "credentials".to_string());
     let tmp = path.with_file_name(format!("{file_name}.tmp"));
-    std::fs::write(&tmp, contents).with_context(|| format!("failed to write {}", tmp.display()))?;
+    let result = write_private_file_at(&tmp, contents).and_then(|()| {
+        std::fs::rename(&tmp, path).with_context(|| format!("failed to replace {}", path.display()))
+    });
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+fn write_private_file_at(tmp: &Path, contents: &str) -> Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("failed to set permissions on {}", tmp.display()))?;
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
     }
-    std::fs::rename(&tmp, path).with_context(|| format!("failed to replace {}", path.display()))?;
+    let mut file = options
+        .open(tmp)
+        .with_context(|| format!("failed to create {}", tmp.display()))?;
+    file.write_all(contents.as_bytes())
+        .with_context(|| format!("failed to write {}", tmp.display()))?;
+    file.sync_all()
+        .with_context(|| format!("failed to flush {}", tmp.display()))?;
     Ok(())
 }
 
@@ -1925,15 +1988,47 @@ exit 0
             .await;
 
         let loaded = loaded_from_file(&credentials);
-        let error = refresh_oauth_credentials(&Client::new(), &server.uri(), &loaded)
+        let failure = refresh_oauth_credentials(&Client::new(), &server.uri(), &loaded)
             .await
-            .unwrap_err()
-            .to_string();
+            .unwrap_err();
 
+        assert!(!failure.token_consumed);
+        let error = failure.error.to_string();
         assert!(error.contains("Claude OAuth token refresh error"));
         assert!(error.contains("429"));
         assert!(error.contains("Rate limited."));
         assert_eq!(std::fs::read_to_string(&credentials).unwrap(), original);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn refresh_persistence_failure_marks_token_consumed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let credentials = dir.path().join(".credentials.json");
+        std::fs::write(&credentials, expired_credential_json(1)).unwrap();
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "new-access",
+                "expires_in": 28_800
+            })))
+            .mount(&server)
+            .await;
+
+        let loaded = loaded_from_file(&credentials);
+        // Make the directory read-only so persistence fails after the exchange
+        // has already succeeded (the rotated refresh token is consumed).
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+        let failure = refresh_oauth_credentials(&Client::new(), &server.uri(), &loaded)
+            .await
+            .unwrap_err();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(failure.token_consumed);
+        assert!(failure.error.to_string().contains("failed to create"));
     }
 
     #[cfg(target_os = "macos")]
