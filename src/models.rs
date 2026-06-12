@@ -53,6 +53,32 @@ pub(crate) enum CopilotPlan {
     Custom,
 }
 
+impl CopilotPlan {
+    /// Monthly premium-request allowance per GitHub's published plan quotas.
+    /// `Custom` has no built-in allowance — the account's
+    /// `copilot_custom_limit` applies instead.
+    pub(crate) fn monthly_limit(self) -> Option<f64> {
+        match self {
+            CopilotPlan::Free => Some(50.0),
+            CopilotPlan::Pro | CopilotPlan::Business => Some(300.0),
+            CopilotPlan::ProPlus => Some(1500.0),
+            CopilotPlan::Enterprise => Some(1000.0),
+            CopilotPlan::Custom => None,
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            CopilotPlan::Free => "Free",
+            CopilotPlan::Pro => "Pro",
+            CopilotPlan::ProPlus => "Pro+",
+            CopilotPlan::Business => "Business",
+            CopilotPlan::Enterprise => "Enterprise",
+            CopilotPlan::Custom => "Custom",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SecretStorageMode {

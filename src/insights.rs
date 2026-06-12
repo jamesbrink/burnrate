@@ -254,6 +254,113 @@ fn local_midnight(date: NaiveDate) -> DateTime<Utc> {
         .unwrap_or_else(|| naive.and_utc())
 }
 
+/// Month-to-date premium requests from local Copilot CLI session logs. Only
+/// CLI sessions that shut down cleanly record the count, and only this
+/// machine's sessions are visible — the result is a lower bound, and every UI
+/// surface labels it an estimate.
+pub(crate) async fn copilot_premium_requests_mtd() -> Result<u64> {
+    match tokio::task::spawn_blocking(|| premium_requests_blocking(None)).await {
+        Ok(result) => result,
+        Err(error) => Err(anyhow::anyhow!("premium request scan task failed: {error}")),
+    }
+}
+
+fn premium_requests_blocking(state_dir: Option<PathBuf>) -> Result<u64> {
+    let mut client = Claudex::with_config(ClaudexConfig {
+        state_dir,
+        // Scope the sync to Copilot: this path runs per Copilot snapshot
+        // fetch and must not pay for re-indexing every provider.
+        providers: vec![Provider::Copilot],
+    })?;
+    let filter = Filter {
+        providers: vec![Provider::Copilot],
+        since: Some(start_of_month(Local::now())),
+        ..Filter::default()
+    };
+    let sessions = client.sessions(None, None, filter, 100_000)?;
+    Ok(sum_premium_requests(&sessions))
+}
+
+/// Sum the `premium_requests` counters claudex preserves in each Copilot
+/// session's `extras` JSON. Sessions without the counter (crashed before
+/// shutdown, VS Code Chat) contribute nothing.
+pub(crate) fn sum_premium_requests(sessions: &[claudex::index::IndexedSession]) -> u64 {
+    sessions
+        .iter()
+        .filter_map(|session| session.extras.as_deref())
+        .filter_map(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .filter_map(|extras| extras.get("premium_requests").and_then(|v| v.as_u64()))
+        .sum()
+}
+
+/// Shared helpers for tests (here and in `providers::copilot`) that point
+/// claudex at hermetic fixture directories via its env overrides.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::fs;
+    use std::path::Path;
+    use std::sync::Mutex;
+
+    use chrono::{DateTime, Utc};
+
+    /// `CLAUDEX_DIR` / `CLAUDEX_COPILOT_DIR` are process-global; tests that
+    /// set them must hold this lock so cargo's parallel test threads can't
+    /// observe each other's fixture roots. Poison is irrelevant — the guard
+    /// only orders env access.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Run `body` with the claudex index (`CLAUDEX_DIR`) and Copilot data
+    /// root (`CLAUDEX_COPILOT_DIR`) redirected to hermetic dirs, so no test
+    /// can ever index fixture data into the machine's real `~/.claudex`.
+    pub(crate) fn with_claudex_env<R>(
+        state_dir: Option<&Path>,
+        copilot_dir: Option<&Path>,
+        body: impl FnOnce() -> R,
+    ) -> R {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+        let apply = |key: &str, value: Option<&Path>| match value {
+            Some(dir) => unsafe { std::env::set_var(key, dir) },
+            None => unsafe { std::env::remove_var(key) },
+        };
+        apply("CLAUDEX_DIR", state_dir);
+        apply("CLAUDEX_COPILOT_DIR", copilot_dir);
+        let result = body();
+        apply("CLAUDEX_DIR", None);
+        apply("CLAUDEX_COPILOT_DIR", None);
+        result
+    }
+
+    /// Write a minimal-but-valid Copilot CLI session into
+    /// `<base>/session-state/<id>/events.jsonl`, stamped `at`.
+    pub(crate) fn write_copilot_fixture(
+        base: &Path,
+        session_id: &str,
+        at: DateTime<Utc>,
+        premium_requests: u64,
+    ) {
+        let dir = base.join("session-state").join(session_id);
+        fs::create_dir_all(&dir).unwrap();
+        let ts = at.to_rfc3339();
+        let later = (at + chrono::Duration::minutes(5)).to_rfc3339();
+        let events = format!(
+            concat!(
+                "{{\"type\":\"session.start\",\"timestamp\":\"{ts}\",\"data\":{{\"sessionId\":\"{id}\",",
+                "\"selectedModel\":\"gpt-5\",\"context\":{{\"cwd\":\"/work/demo\"}}}}}}\n",
+                "{{\"type\":\"user.message\",\"timestamp\":\"{ts}\",\"data\":{{\"content\":\"hi\"}}}}\n",
+                "{{\"type\":\"session.shutdown\",\"timestamp\":\"{later}\",\"data\":{{",
+                "\"totalPremiumRequests\":{premium},",
+                "\"modelMetrics\":{{\"gpt-5\":{{\"usage\":{{\"inputTokens\":120,\"outputTokens\":40,",
+                "\"cacheReadTokens\":0,\"cacheWriteTokens\":0}},\"requests\":{{\"count\":2}}}}}}}}}}\n",
+            ),
+            ts = ts,
+            later = later,
+            id = session_id,
+            premium = premium_requests,
+        );
+        fs::write(dir.join("events.jsonl"), events).unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -261,7 +368,12 @@ mod tests {
 
     use tempfile::tempdir;
 
+    use super::test_support::{with_claudex_env, write_copilot_fixture};
     use super::*;
+
+    fn with_copilot_dir<R>(dir: &Path, body: impl FnOnce() -> R) -> R {
+        with_claudex_env(None, Some(dir), body)
+    }
 
     #[test]
     fn maps_burnrate_providers_to_claudex_kinds() {
@@ -356,36 +468,6 @@ mod tests {
         assert_eq!(month.with_timezone(&Local).day(), 1);
     }
 
-    /// Write a minimal-but-valid Copilot CLI session into
-    /// `<base>/session-state/<id>/events.jsonl`, stamped `at`.
-    pub(crate) fn write_copilot_fixture(
-        base: &Path,
-        session_id: &str,
-        at: DateTime<Utc>,
-        premium_requests: u64,
-    ) {
-        let dir = base.join("session-state").join(session_id);
-        fs::create_dir_all(&dir).unwrap();
-        let ts = at.to_rfc3339();
-        let later = (at + chrono::Duration::minutes(5)).to_rfc3339();
-        let events = format!(
-            concat!(
-                "{{\"type\":\"session.start\",\"timestamp\":\"{ts}\",\"data\":{{\"sessionId\":\"{id}\",",
-                "\"selectedModel\":\"gpt-5\",\"context\":{{\"cwd\":\"/work/demo\"}}}}}}\n",
-                "{{\"type\":\"user.message\",\"timestamp\":\"{ts}\",\"data\":{{\"content\":\"hi\"}}}}\n",
-                "{{\"type\":\"session.shutdown\",\"timestamp\":\"{later}\",\"data\":{{",
-                "\"totalPremiumRequests\":{premium},",
-                "\"modelMetrics\":{{\"gpt-5\":{{\"usage\":{{\"inputTokens\":120,\"outputTokens\":40,",
-                "\"cacheReadTokens\":0,\"cacheWriteTokens\":0}},\"requests\":{{\"count\":2}}}}}}}}}}\n",
-            ),
-            ts = ts,
-            later = later,
-            id = session_id,
-            premium = premium_requests,
-        );
-        fs::write(dir.join("events.jsonl"), events).unwrap();
-    }
-
     #[test]
     fn collects_copilot_usage_from_a_hermetic_fixture() {
         let state = tempdir().unwrap();
@@ -393,16 +475,14 @@ mod tests {
         write_copilot_fixture(copilot_home.path(), "11111111-aaaa", Utc::now(), 7);
 
         // Root the claudex Copilot provider at the fixture instead of
-        // ~/.copilot. Env is process-global: this is the only test in the
-        // crate that sets it, and the claudex client is constructed (reading
-        // the var) before this function returns.
-        unsafe { std::env::set_var("CLAUDEX_COPILOT_DIR", copilot_home.path()) };
-        let report = collect_blocking(
-            Some(state.path().to_path_buf()),
-            vec![Provider::Copilot],
-            &[ProviderKind::Copilot, ProviderKind::OpenRouter],
-        );
-        unsafe { std::env::remove_var("CLAUDEX_COPILOT_DIR") };
+        // ~/.copilot; the claudex client reads the var at construction.
+        let report = with_copilot_dir(copilot_home.path(), || {
+            collect_blocking(
+                Some(state.path().to_path_buf()),
+                vec![Provider::Copilot],
+                &[ProviderKind::Copilot, ProviderKind::OpenRouter],
+            )
+        });
 
         assert!(report.available, "report: {:?}", report.message);
         assert_eq!(report.providers.len(), 1, "openrouter has no local source");
@@ -412,6 +492,60 @@ mod tests {
         assert!(usage.month_input_tokens > 0);
         assert_eq!(usage.top_model.as_deref(), Some("gpt-5"));
         assert!(!usage.daily.is_empty());
+    }
+
+    #[test]
+    fn sums_premium_requests_from_session_extras() {
+        let session = |extras: Option<&str>| claudex::index::IndexedSession {
+            rowid: 0,
+            provider: "copilot".to_string(),
+            project_name: "demo".to_string(),
+            session_id: None,
+            file_path: String::new(),
+            first_timestamp_ms: None,
+            last_timestamp_ms: None,
+            message_count: 0,
+            duration_ms: 0,
+            model: None,
+            extras: extras.map(str::to_string),
+            present_on_disk: true,
+            archived_at: None,
+        };
+
+        let sessions = vec![
+            session(Some(r#"{"premium_requests":12,"branch":"main"}"#)),
+            session(Some(r#"{"premium_requests":30}"#)),
+            session(Some(r#"{"branch":"no-counter"}"#)),
+            session(Some("{not json")),
+            session(None),
+        ];
+
+        assert_eq!(sum_premium_requests(&sessions), 42);
+        assert_eq!(sum_premium_requests(&[]), 0);
+    }
+
+    #[test]
+    fn counts_month_to_date_premium_requests_from_fixture_sessions() {
+        let state = tempdir().unwrap();
+        let copilot_home = tempdir().unwrap();
+        let now = Utc::now();
+        write_copilot_fixture(copilot_home.path(), "22222222-bbbb", now, 5);
+        write_copilot_fixture(copilot_home.path(), "33333333-cccc", now, 9);
+        // A session from a previous month must not count toward MTD. 40 days
+        // is always outside the current month.
+        write_copilot_fixture(
+            copilot_home.path(),
+            "44444444-dddd",
+            now - chrono::Duration::days(40),
+            100,
+        );
+
+        let counted = with_copilot_dir(copilot_home.path(), || {
+            premium_requests_blocking(Some(state.path().to_path_buf()))
+        })
+        .unwrap();
+
+        assert_eq!(counted, 14);
     }
 
     #[test]
