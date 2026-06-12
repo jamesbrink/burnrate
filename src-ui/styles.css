@@ -442,6 +442,45 @@ p {
   overflow-wrap: anywhere;
 }
 
+/* Per-provider local usage line (claudex) in the tray card. */
+.tray-local-usage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 7px;
+  border-top: 1px solid var(--hairline);
+}
+
+.tray-local-usage .sparkline {
+  flex: none;
+}
+
+.sparkline-line {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sparkline-area {
+  fill: color-mix(in srgb, currentcolor 16%, transparent);
+  stroke: none;
+}
+
+.tray-local-stats {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tray-local-stats small {
+  color: var(--fg-soft);
+  font-size: 10.5px;
+}
+
 .empty-state {
   min-height: 58px;
   border: 1px dashed var(--hairline);
@@ -665,6 +704,118 @@ p {
 .prefs-updates {
   display: grid;
   gap: 10px;
+}
+
+/* Local insights (claudex) ----------------------------------------------- */
+.prefs-insights {
+  display: grid;
+  gap: 10px;
+}
+
+.insights-toggle {
+  font-size: 12px;
+  color: var(--fg-soft);
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.insights-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--surface-soft);
+}
+
+.insights-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insights-card-head small {
+  margin-left: auto;
+  color: var(--fg-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+
+.insights-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+
+.insights-stat {
+  display: grid;
+  gap: 2px;
+}
+
+.insights-stat dt {
+  font-size: 11px;
+  color: var(--fg-soft);
+}
+
+.insights-stat dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.insight-bars {
+  width: 100%;
+  height: 44px;
+}
+
+.insight-bars rect {
+  fill: color-mix(in srgb, currentcolor 55%, transparent);
+}
+
+.insights-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.insights-list + .insights-list {
+  border-top: 1px solid var(--hairline);
+  padding-top: 8px;
+}
+
+.insights-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.insights-list li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insights-list li small {
+  color: var(--fg-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.insights-footnote {
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .settings-slider {

@@ -17,6 +17,7 @@ import {
 } from "react";
 import { AccountForm } from "./AccountForm";
 import { AddAccountMenu } from "./AddAccountMenu";
+import { InsightsPanel, type InsightsPanelProps } from "./InsightsPanel";
 import {
   bucketMeterLabel,
   bucketPercent,
@@ -108,6 +109,7 @@ export function Preferences({
   onLogout,
   onReorderAccounts,
   settings,
+  insights,
   updates,
 }: {
   accounts: AccountView[];
@@ -129,6 +131,7 @@ export function Preferences({
   onLogout: (id: string) => void;
   onReorderAccounts: (orderedIds: string[]) => void;
   settings: TraySettingsPanelProps;
+  insights: InsightsPanelProps;
   updates: UpdatesPanelProps;
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -244,6 +247,8 @@ export function Preferences({
               ) : null}
             </div>
           </section>
+
+          <InsightsPanel {...insights} />
 
           <AccountForm
             form={form}

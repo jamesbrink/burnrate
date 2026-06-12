@@ -14,11 +14,14 @@ import {
   formatLimit,
   formatReset,
 } from "./format";
+import { LocalUsageSummary } from "./LocalUsageSummary";
 import { ProviderLogo } from "./ProviderLogo";
 import { SortableList, reorderWithinSubset } from "./SortableList";
 import type {
   AccountView,
   DashboardState,
+  LocalUsageReport,
+  ProviderLocalUsage,
   SnapshotStatus,
   UsageBucketSnapshot,
   UsageSnapshot,
@@ -47,6 +50,7 @@ export function TrayPanel({
   snapshots,
   busy,
   error,
+  localUsage = null,
   updateAvailable = false,
   onRefresh,
   onOpenPreferences,
@@ -56,6 +60,7 @@ export function TrayPanel({
   snapshots: UsageSnapshot[];
   busy: boolean;
   error: string | null;
+  localUsage?: LocalUsageReport | null;
   updateAvailable?: boolean;
   onRefresh: () => void;
   onOpenPreferences: () => void;
@@ -68,6 +73,32 @@ export function TrayPanel({
     snapshot,
   }));
   const isDense = Math.max(accounts.length, snapshots.length) >= 8;
+  // Local usage is provider-level: render it once, under the provider's first
+  // card, with a multi-account caption when several cards share the history.
+  const firstCardByProvider = new Map<string, string>();
+  const providerCardCounts = new Map<string, number>();
+  for (const snapshot of snapshots) {
+    if (!firstCardByProvider.has(snapshot.provider)) {
+      firstCardByProvider.set(snapshot.provider, snapshot.accountId);
+    }
+    providerCardCounts.set(
+      snapshot.provider,
+      (providerCardCounts.get(snapshot.provider) ?? 0) + 1,
+    );
+  }
+  const usageFor = (snapshot: UsageSnapshot): ProviderLocalUsage | null => {
+    if (
+      !localUsage?.available ||
+      firstCardByProvider.get(snapshot.provider) !== snapshot.accountId
+    ) {
+      return null;
+    }
+    return (
+      localUsage.providers.find(
+        (usage) => usage.provider === snapshot.provider,
+      ) ?? null
+    );
+  };
 
   return (
     <main className={`tray-panel${isDense ? " tray-panel-dense" : ""}`}>
@@ -124,7 +155,14 @@ export function TrayPanel({
                 )
               }
               renderItem={(item, handle) => (
-                <TraySnapshot snapshot={item.snapshot} handle={handle} />
+                <TraySnapshot
+                  snapshot={item.snapshot}
+                  handle={handle}
+                  localUsage={usageFor(item.snapshot)}
+                  multiAccount={
+                    (providerCardCounts.get(item.snapshot.provider) ?? 0) > 1
+                  }
+                />
               )}
             />
           ) : (
@@ -157,9 +195,13 @@ export function orderTrayAccountsFromUsageSubset(
 function TraySnapshot({
   snapshot,
   handle,
+  localUsage = null,
+  multiAccount = false,
 }: {
   snapshot: UsageSnapshot;
   handle: ReactNode;
+  localUsage?: ProviderLocalUsage | null;
+  multiAccount?: boolean;
 }) {
   const buckets = displayBuckets(snapshot);
   const plan = snapshot.subscription?.planLabel;
@@ -198,6 +240,10 @@ function TraySnapshot({
           <BucketRow key={bucket.id} bucket={bucket} />
         ))}
       </div>
+
+      {localUsage ? (
+        <LocalUsageSummary usage={localUsage} multiAccount={multiAccount} />
+      ) : null}
 
       {snapshot.message ? (
         <p className="tray-message">{snapshot.message}</p>

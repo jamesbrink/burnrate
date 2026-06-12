@@ -86,3 +86,13 @@ export function formatReset(value: string | null): string {
   if (hours < 48) return `resets in ${hours}h`;
   return `resets ${reset.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
+
+/** Compact USD for insights surfaces: cents matter under $10, whole dollars
+ *  past $100 (`$1.84`, `$42.10`, `$96`). */
+export function formatUsd(value: number): string {
+  const digits = value < 10 ? 2 : value < 100 ? 2 : 0;
+  return `$${new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(value)}`;
+}
