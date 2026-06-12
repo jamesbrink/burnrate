@@ -17,7 +17,7 @@ use crate::{
     models::{AccountConfig, AppSettings, AwsCategoryConfig, AwsCostFilter, AwsGroupBy},
 };
 
-const LATEST_SCHEMA_VERSION: i64 = 1;
+const LATEST_SCHEMA_VERSION: i64 = 2;
 
 pub(crate) struct ConfigStore {
     conn: Mutex<Connection>,
@@ -217,6 +217,20 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
         tx.commit()?;
     }
+    if version < 2 {
+        let tx = conn.transaction()?;
+        tx.execute_batch(
+            r#"
+            ALTER TABLE accounts ADD COLUMN copilot_plan TEXT;
+            ALTER TABLE accounts ADD COLUMN copilot_custom_limit REAL;
+            ALTER TABLE app_settings ADD COLUMN local_insights INTEGER NOT NULL DEFAULT 1
+                CHECK (local_insights IN (0, 1));
+
+            PRAGMA user_version = 2;
+            "#,
+        )?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -261,19 +275,20 @@ fn load_config_from_conn(conn: &Connection) -> Result<AppConfig> {
 fn load_settings(conn: &Connection) -> Result<AppSettings> {
     let row = conn
         .query_row(
-            "SELECT hide_from_dock, update_channel, tray_scale FROM app_settings WHERE id = 1",
+            "SELECT hide_from_dock, update_channel, tray_scale, local_insights FROM app_settings WHERE id = 1",
             [],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, f64>(2)?,
+                    row.get::<_, i64>(3)?,
                 ))
             },
         )
         .optional()?;
 
-    let Some((hide_from_dock, update_channel, tray_scale)) = row else {
+    let Some((hide_from_dock, update_channel, tray_scale, local_insights)) = row else {
         return Ok(AppSettings::default());
     };
 
@@ -281,6 +296,7 @@ fn load_settings(conn: &Connection) -> Result<AppSettings> {
         hide_from_dock: int_to_bool(hide_from_dock),
         update_channel: from_wire(&update_channel)?,
         tray_scale,
+        local_insights: int_to_bool(local_insights),
     })
 }
 
@@ -303,6 +319,8 @@ fn load_accounts(conn: &Connection) -> Result<Vec<AccountConfig>> {
             aws_profile,
             aws_region,
             aws_monthly_budget_usd,
+            copilot_plan,
+            copilot_custom_limit,
             order_index,
             created_at,
             updated_at
@@ -328,9 +346,11 @@ fn load_accounts(conn: &Connection) -> Result<Vec<AccountConfig>> {
                 aws_profile: row.get(12)?,
                 aws_region: row.get(13)?,
                 aws_monthly_budget_usd: row.get(14)?,
-                order_index: row.get(15)?,
-                created_at: row.get(16)?,
-                updated_at: row.get(17)?,
+                copilot_plan: row.get(15)?,
+                copilot_custom_limit: row.get(16)?,
+                order_index: row.get(17)?,
+                created_at: row.get(18)?,
+                updated_at: row.get(19)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -354,6 +374,8 @@ struct AccountRow {
     aws_profile: Option<String>,
     aws_region: Option<String>,
     aws_monthly_budget_usd: Option<f64>,
+    copilot_plan: Option<String>,
+    copilot_custom_limit: Option<f64>,
     order_index: Option<i64>,
     created_at: String,
     updated_at: String,
@@ -379,6 +401,8 @@ impl AccountRow {
             aws_region: self.aws_region,
             aws_monthly_budget_usd: self.aws_monthly_budget_usd,
             aws_categories,
+            copilot_plan: self.copilot_plan.as_deref().map(from_wire).transpose()?,
+            copilot_custom_limit: self.copilot_custom_limit,
             order_index: self.order_index,
             created_at: parse_timestamp(&self.created_at)?,
             updated_at: parse_timestamp(&self.updated_at)?,
@@ -429,13 +453,14 @@ fn save_config_tx(tx: &Transaction<'_>, config: &AppConfig) -> Result<()> {
 
     tx.execute(
         r#"
-        INSERT INTO app_settings (id, hide_from_dock, update_channel, tray_scale)
-        VALUES (1, ?1, ?2, ?3)
+        INSERT INTO app_settings (id, hide_from_dock, update_channel, tray_scale, local_insights)
+        VALUES (1, ?1, ?2, ?3, ?4)
         "#,
         params![
             bool_to_int(config.settings.hide_from_dock),
             to_wire(&config.settings.update_channel)?,
             config.settings.tray_scale,
+            bool_to_int(config.settings.local_insights),
         ],
     )?;
 
@@ -458,11 +483,13 @@ fn save_config_tx(tx: &Transaction<'_>, config: &AppConfig) -> Result<()> {
                 aws_profile,
                 aws_region,
                 aws_monthly_budget_usd,
+                copilot_plan,
+                copilot_custom_limit,
                 order_index,
                 created_at,
                 updated_at
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
             "#,
             params![
                 account.id,
@@ -480,6 +507,8 @@ fn save_config_tx(tx: &Transaction<'_>, config: &AppConfig) -> Result<()> {
                 account.aws_profile,
                 account.aws_region,
                 account.aws_monthly_budget_usd,
+                account.copilot_plan.as_ref().map(to_wire).transpose()?,
+                account.copilot_custom_limit,
                 account.order_index,
                 format_timestamp(&account.created_at),
                 format_timestamp(&account.updated_at),
@@ -559,7 +588,8 @@ mod tests {
 
     use super::*;
     use crate::models::{
-        AccountInput, AwsCostFilter, AwsGroupByKind, ProviderKind, SecretStorageMode, UpdateChannel,
+        AccountInput, AwsCostFilter, AwsGroupByKind, CopilotPlan, ProviderKind, SecretStorageMode,
+        UpdateChannel,
     };
 
     #[test]
@@ -614,6 +644,7 @@ mod tests {
                 hide_from_dock: false,
                 update_channel: UpdateChannel::Nightly,
                 tray_scale: 0.75,
+                local_insights: false,
             },
             accounts: Vec::new(),
         };
@@ -641,6 +672,8 @@ mod tests {
                     key: "LINKED_ACCOUNT".to_string(),
                 }),
             }],
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
         config.accounts[0].email = Some("aws@example.test".to_string());
         config.accounts[0].order_index = Some(2);
@@ -652,6 +685,7 @@ mod tests {
         assert!(!loaded.settings.hide_from_dock);
         assert_eq!(loaded.settings.update_channel, UpdateChannel::Nightly);
         assert_eq!(loaded.settings.tray_scale, 0.75);
+        assert!(!loaded.settings.local_insights);
         assert_eq!(loaded.accounts.len(), 1);
         assert_eq!(loaded.accounts[0].provider, ProviderKind::Aws);
         assert_eq!(
@@ -667,6 +701,133 @@ mod tests {
                 .key,
             "LINKED_ACCOUNT"
         );
+    }
+
+    #[test]
+    fn copilot_account_round_trips_plan_and_custom_limit() {
+        let dir = tempdir().unwrap();
+        let store = ConfigStore::open_at(
+            dir.path().join(config::DATABASE_FILE),
+            dir.path().join(config::CONFIG_FILE),
+        )
+        .unwrap();
+        let mut config = AppConfig::default();
+        config.upsert_manual(AccountInput {
+            id: Some("copilot-local".to_string()),
+            provider: ProviderKind::Copilot,
+            label: "GitHub Copilot".to_string(),
+            enabled: true,
+            endpoint_override: None,
+            secret_storage: SecretStorageMode::Keyring,
+            secret: None,
+            aws_profile: None,
+            aws_region: None,
+            aws_monthly_budget_usd: None,
+            aws_categories: Vec::new(),
+            copilot_plan: Some(CopilotPlan::Custom),
+            copilot_custom_limit: Some(2500.0),
+        });
+
+        store.save_config(&config).unwrap();
+        let loaded = store.load_config().unwrap();
+
+        assert_eq!(loaded.accounts.len(), 1);
+        assert_eq!(loaded.accounts[0].provider, ProviderKind::Copilot);
+        assert_eq!(loaded.accounts[0].copilot_plan, Some(CopilotPlan::Custom));
+        assert_eq!(loaded.accounts[0].copilot_custom_limit, Some(2500.0));
+    }
+
+    /// Build a database exactly as schema v1 wrote it (pre-Copilot, no
+    /// `local_insights`), with one settings row and one account row.
+    fn create_v1_database(db_path: &Path) {
+        let conn = Connection::open(db_path).unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE app_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                hide_from_dock INTEGER NOT NULL CHECK (hide_from_dock IN (0, 1)),
+                update_channel TEXT NOT NULL,
+                tray_scale REAL NOT NULL
+            );
+
+            CREATE TABLE accounts (
+                id TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                label TEXT NOT NULL,
+                enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+                auto_detected INTEGER NOT NULL CHECK (auto_detected IN (0, 1)),
+                credential_path TEXT,
+                endpoint_override TEXT,
+                secret_storage TEXT NOT NULL,
+                keyring_account TEXT,
+                plaintext_secret TEXT,
+                email TEXT,
+                config_dir TEXT,
+                aws_profile TEXT,
+                aws_region TEXT,
+                aws_monthly_budget_usd REAL,
+                order_index INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE aws_categories (
+                account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL,
+                id TEXT NOT NULL,
+                label TEXT NOT NULL,
+                enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+                filter_json TEXT NOT NULL,
+                group_by_json TEXT,
+                PRIMARY KEY (account_id, id)
+            );
+
+            INSERT INTO app_settings (id, hide_from_dock, update_channel, tray_scale)
+            VALUES (1, 0, 'nightly', 0.75);
+
+            INSERT INTO accounts (
+                id, provider, label, enabled, auto_detected, secret_storage,
+                created_at, updated_at
+            )
+            VALUES (
+                'claude-code-local', 'claude-code', 'Claude Code', 1, 1, 'keyring',
+                '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
+            );
+
+            PRAGMA user_version = 1;
+            "#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn migrates_v1_database_preserving_rows_and_defaulting_new_fields() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join(config::DATABASE_FILE);
+        create_v1_database(&db_path);
+
+        let store =
+            ConfigStore::open_at(db_path.clone(), dir.path().join(config::CONFIG_FILE)).unwrap();
+
+        // An established v1 database is not "new": destructive startup
+        // reconciliation must still run for it.
+        assert!(!store.created_database());
+
+        let loaded = store.load_config().unwrap();
+        assert!(!loaded.settings.hide_from_dock);
+        assert_eq!(loaded.settings.update_channel, UpdateChannel::Nightly);
+        assert!(loaded.settings.local_insights, "new flag defaults on");
+        assert_eq!(loaded.accounts.len(), 1);
+        assert_eq!(loaded.accounts[0].id, "claude-code-local");
+        assert_eq!(loaded.accounts[0].copilot_plan, None);
+        assert_eq!(loaded.accounts[0].copilot_custom_limit, None);
+
+        drop(store);
+        let conn = Connection::open(db_path).unwrap();
+        let version: i64 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
     }
 
     #[test]
@@ -687,6 +848,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
         config::save_to_path(&json_path, &legacy).unwrap();
 
@@ -742,6 +905,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
         config::save_to_path(&backup_path, &backup).unwrap();
 
@@ -814,6 +979,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
         store.save_config(&first).unwrap();
 
@@ -822,6 +989,7 @@ mod tests {
                 hide_from_dock: true,
                 update_channel: UpdateChannel::Stable,
                 tray_scale: 1.0,
+                local_insights: true,
             },
             accounts: Vec::new(),
         };

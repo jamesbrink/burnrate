@@ -10,6 +10,7 @@ pub(crate) enum ProviderKind {
     OpenRouter,
     Runpod,
     Aws,
+    Copilot,
 }
 
 impl ProviderKind {
@@ -20,6 +21,7 @@ impl ProviderKind {
             ProviderKind::OpenRouter => "openrouter",
             ProviderKind::Runpod => "runpod",
             ProviderKind::Aws => "aws",
+            ProviderKind::Copilot => "copilot",
         }
     }
 
@@ -32,8 +34,23 @@ impl ProviderKind {
             ProviderKind::OpenRouter => "OpenRouter",
             ProviderKind::Runpod => "Runpod",
             ProviderKind::Aws => "AWS",
+            ProviderKind::Copilot => "GitHub Copilot",
         }
     }
+}
+
+/// GitHub Copilot subscription tier, which determines the monthly premium
+/// request allowance. `Custom` defers to the account's
+/// `copilot_custom_limit` for plans with negotiated or unknown quotas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum CopilotPlan {
+    Free,
+    Pro,
+    ProPlus,
+    Business,
+    Enterprise,
+    Custom,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +82,11 @@ pub(crate) struct AppSettings {
     /// lower it to `0.5` to fit dense popovers before scrolling.
     #[serde(default = "default_tray_scale")]
     pub tray_scale: f64,
+    /// Whether claudex-backed local usage insights are collected and shown.
+    /// On by default; the opt-out exists because indexing builds (and keeps)
+    /// `~/.claudex/index.db` from local CLI session logs.
+    #[serde(default = "default_true")]
+    pub local_insights: bool,
 }
 
 impl Default for AppSettings {
@@ -73,6 +95,7 @@ impl Default for AppSettings {
             hide_from_dock: true,
             update_channel: UpdateChannel::default(),
             tray_scale: default_tray_scale(),
+            local_insights: true,
         }
     }
 }
@@ -111,6 +134,13 @@ pub(crate) struct AccountConfig {
     /// User-configurable Cost Explorer categories shown as sub-buckets.
     #[serde(default)]
     pub aws_categories: Vec<AwsCategoryConfig>,
+    /// GitHub Copilot plan, which sets the monthly premium request allowance.
+    /// `None` shows usage without a limit.
+    #[serde(default)]
+    pub copilot_plan: Option<CopilotPlan>,
+    /// Monthly premium request allowance when `copilot_plan` is `Custom`.
+    #[serde(default)]
+    pub copilot_custom_limit: Option<f64>,
     /// Global display order; lower sorts first. `None` is legacy/unset and sorts
     /// after explicitly ordered accounts.
     #[serde(default)]
@@ -144,6 +174,10 @@ pub(crate) struct AccountInput {
     pub aws_monthly_budget_usd: Option<f64>,
     #[serde(default)]
     pub aws_categories: Vec<AwsCategoryConfig>,
+    #[serde(default)]
+    pub copilot_plan: Option<CopilotPlan>,
+    #[serde(default)]
+    pub copilot_custom_limit: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,6 +204,10 @@ pub(crate) struct AccountView {
     pub aws_monthly_budget_usd: Option<f64>,
     #[serde(default)]
     pub aws_categories: Vec<AwsCategoryConfig>,
+    #[serde(default)]
+    pub copilot_plan: Option<CopilotPlan>,
+    #[serde(default)]
+    pub copilot_custom_limit: Option<f64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -337,6 +375,7 @@ mod tests {
         assert_eq!(ProviderKind::OpenRouter.as_str(), "openrouter");
         assert_eq!(ProviderKind::Runpod.as_str(), "runpod");
         assert_eq!(ProviderKind::Aws.as_str(), "aws");
+        assert_eq!(ProviderKind::Copilot.as_str(), "copilot");
         assert_eq!(
             serde_json::to_string(&ProviderKind::OpenRouter).unwrap(),
             "\"openrouter\""
@@ -345,6 +384,29 @@ mod tests {
             serde_json::from_str::<ProviderKind>("\"open-router\"").unwrap(),
             ProviderKind::OpenRouter
         );
+        assert_eq!(
+            serde_json::to_string(&ProviderKind::Copilot).unwrap(),
+            "\"copilot\""
+        );
+    }
+
+    #[test]
+    fn copilot_plans_use_stable_wire_names() {
+        assert_eq!(
+            serde_json::to_string(&CopilotPlan::ProPlus).unwrap(),
+            "\"pro-plus\""
+        );
+        assert_eq!(
+            serde_json::from_str::<CopilotPlan>("\"enterprise\"").unwrap(),
+            CopilotPlan::Enterprise
+        );
+    }
+
+    #[test]
+    fn settings_without_local_insights_field_default_to_enabled() {
+        let settings: AppSettings = serde_json::from_str(r#"{"hideFromDock":false}"#).unwrap();
+        assert!(settings.local_insights);
+        assert!(AppSettings::default().local_insights);
     }
 
     #[test]

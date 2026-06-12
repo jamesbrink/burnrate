@@ -48,6 +48,8 @@ impl AppConfig {
                 aws_region: account.aws_region.clone(),
                 aws_monthly_budget_usd: account.aws_monthly_budget_usd,
                 aws_categories: account.aws_categories.clone(),
+                copilot_plan: account.copilot_plan,
+                copilot_custom_limit: account.copilot_custom_limit,
                 created_at: account.created_at,
                 updated_at: account.updated_at,
             })
@@ -119,6 +121,8 @@ impl AppConfig {
             account.aws_region = input.aws_region;
             account.aws_monthly_budget_usd = input.aws_monthly_budget_usd;
             account.aws_categories = input.aws_categories;
+            account.copilot_plan = input.copilot_plan;
+            account.copilot_custom_limit = input.copilot_custom_limit;
             // Keep `auto_detected`: editing metadata does not change where the
             // account's credentials live, and clearing it would make the re-auth
             // guard treat the genuine system-default account as unsafe to sign
@@ -144,6 +148,8 @@ impl AppConfig {
             aws_region: input.aws_region,
             aws_monthly_budget_usd: input.aws_monthly_budget_usd,
             aws_categories: input.aws_categories,
+            copilot_plan: input.copilot_plan,
+            copilot_custom_limit: input.copilot_custom_limit,
             order_index: None,
             created_at: now,
             updated_at: now,
@@ -372,6 +378,8 @@ pub(crate) fn default_auto_account(
         aws_region: None,
         aws_monthly_budget_usd: None,
         aws_categories: Vec::new(),
+        copilot_plan: None,
+        copilot_custom_limit: None,
         order_index: None,
         created_at: now,
         updated_at: now,
@@ -464,6 +472,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
 
         save_to_path(&path, &config).unwrap();
@@ -569,6 +579,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
         config.accounts[0].plaintext_secret = Some("sk-test".to_string());
 
@@ -597,6 +609,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
         config.accounts[0].keyring_account = Some("stale-keyring-entry".to_string());
 
@@ -634,6 +648,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
 
         config.upsert_manual(AccountInput {
@@ -648,6 +664,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
 
         assert_eq!(config.accounts.len(), 1);
@@ -678,6 +696,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
 
         // Editing metadata must not strip detection provenance: the re-auth
@@ -702,6 +722,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
 
         let removed = config.remove("openrouter-main").unwrap();
@@ -743,6 +765,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
         });
     }
 

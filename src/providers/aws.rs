@@ -457,6 +457,8 @@ mod tests {
                 },
                 group_by: None,
             }],
+            copilot_plan: None,
+            copilot_custom_limit: None,
             order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

@@ -1,6 +1,7 @@
 mod aws;
 mod claude;
 mod codex;
+mod copilot;
 pub(crate) mod login;
 mod openrouter;
 mod runpod;
@@ -77,6 +78,7 @@ impl ProviderClient {
             ProviderKind::OpenRouter => openrouter::fetch(&self.http, account).await,
             ProviderKind::Runpod => runpod::fetch(&self.http, account).await,
             ProviderKind::Aws => aws::fetch(account).await,
+            ProviderKind::Copilot => copilot::fetch(&self.http, account).await,
         };
 
         match result {
@@ -149,6 +151,9 @@ pub(crate) fn detect_accounts() -> Vec<AccountConfig> {
         accounts.push(account);
     }
     if let Some(account) = codex::detect() {
+        accounts.push(account);
+    }
+    if let Some(account) = copilot::detect() {
         accounts.push(account);
     }
     accounts
@@ -637,7 +642,9 @@ fn token_pointers(provider: ProviderKind) -> &'static [&'static str] {
             "/apiKey",
         ],
         ProviderKind::OpenRouter | ProviderKind::Runpod => &["/api_key", "/apiKey", "/key"],
-        ProviderKind::Aws => &[],
+        // AWS uses the SDK credential chain; Copilot's optional GitHub token
+        // lives in the key store, which `token_from_config` checks first.
+        ProviderKind::Aws | ProviderKind::Copilot => &[],
     }
 }
 
@@ -930,6 +937,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
             order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

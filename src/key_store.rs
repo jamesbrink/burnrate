@@ -172,6 +172,8 @@ mod tests {
             aws_region: None,
             aws_monthly_budget_usd: None,
             aws_categories: Vec::new(),
+            copilot_plan: None,
+            copilot_custom_limit: None,
             order_index: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
