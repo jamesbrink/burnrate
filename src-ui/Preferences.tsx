@@ -2,21 +2,13 @@ import {
   AlertCircle,
   CheckCircle2,
   DownloadCloud,
-  KeyRound,
   Plus,
   RefreshCw,
   Trash2,
   Wifi,
 } from "lucide-react";
-import {
-  type Dispatch,
-  type FormEvent,
-  type ReactNode,
-  type SetStateAction,
-  useState,
-} from "react";
-import { AccountForm } from "./AccountForm";
-import { AddAccountMenu } from "./AddAccountMenu";
+import { type ReactNode, useState } from "react";
+import { AccountModal, type AccountModalMode } from "./AccountModal";
 import { InsightsPanel, type InsightsPanelProps } from "./InsightsPanel";
 import {
   bucketMeterLabel,
@@ -30,6 +22,7 @@ import { SortableList } from "./SortableList";
 import { UpdateBanner } from "./UpdateBanner";
 import {
   OPENROUTER_DEFAULT_ENDPOINT,
+  PROVIDERS,
   RUNPOD_DEFAULT_ENDPOINT,
   cloneDefaultAwsCategories,
   emptyForm,
@@ -62,15 +55,6 @@ export interface TraySettingsPanelProps {
   onTrayScaleChange: (scale: number) => void;
 }
 
-// Re-exported for existing importers (App.tsx). Source of truth: ./constants.
-export {
-  OPENROUTER_DEFAULT_ENDPOINT,
-  RUNPOD_DEFAULT_ENDPOINT,
-  cloneDefaultAwsCategories,
-  emptyForm,
-  providerLabels,
-};
-
 const statusLabels: Record<SnapshotStatus, string> = {
   healthy: "Healthy",
   warning: "Warning",
@@ -95,17 +79,12 @@ export function Preferences({
   summary,
   busy,
   error,
-  form,
-  activeId,
-  setForm,
-  setActiveId,
-  onSubmit,
+  onSaveAccount,
+  onToggleAccount,
   onDetect,
   onRefresh,
-  onEditAccount,
   onRemoveAccount,
   onStartLogin,
-  onManualAdd,
   onLogout,
   onReorderAccounts,
   settings,
@@ -117,31 +96,40 @@ export function Preferences({
   summary: Summary;
   busy: boolean;
   error: string | null;
-  form: AccountInput;
-  activeId: string | null;
-  setForm: Dispatch<SetStateAction<AccountInput>>;
-  setActiveId: Dispatch<SetStateAction<string | null>>;
-  onSubmit: (event: FormEvent) => void;
+  /** Resolves on success; rejections render inline in the account modal. */
+  onSaveAccount: (input: AccountInput) => Promise<void>;
+  onToggleAccount: (account: AccountView) => void;
   onDetect: () => void;
   onRefresh: () => void;
-  onEditAccount: (account: AccountView) => void;
   onRemoveAccount: (id: string) => void;
   onStartLogin: (provider: ProviderKind, accountId?: string) => void;
-  onManualAdd: (provider: ProviderKind) => void;
   onLogout: (id: string) => void;
   onReorderAccounts: (orderedIds: string[]) => void;
   settings: TraySettingsPanelProps;
   insights: InsightsPanelProps;
   updates: UpdatesPanelProps;
 }) {
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [modal, setModal] = useState<
+    null | { kind: "add" } | { kind: "edit"; accountId: string }
+  >(null);
+  // Resolve the edit target from live account state so the modal reflects
+  // backend updates (and vanishes if the account is removed elsewhere).
+  const editingAccount =
+    modal?.kind === "edit"
+      ? accounts.find((account) => account.id === modal.accountId)
+      : undefined;
+  const modalMode: AccountModalMode | null =
+    modal?.kind === "add"
+      ? { kind: "add" }
+      : editingAccount
+        ? { kind: "edit", account: editingAccount }
+        : null;
   // Mirrors the backend re-auth guard: browser sign-in is only safe for the
   // auto-detected system-default account or one with an isolated config dir.
-  const activeAccount = accounts.find((account) => account.id === activeId);
   const canReauth =
-    !activeAccount ||
-    activeAccount.autoDetected ||
-    Boolean(activeAccount.configDir);
+    !editingAccount ||
+    editingAccount.autoDetected ||
+    Boolean(editingAccount.configDir);
 
   return (
     <main className="prefs-shell">
@@ -194,21 +182,12 @@ export function Preferences({
               <button
                 className="icon-button subtle"
                 title="Add account"
-                aria-expanded={addMenuOpen}
-                onClick={() => setAddMenuOpen((open) => !open)}
+                onClick={() => setModal({ kind: "add" })}
               >
                 <Plus size={16} />
               </button>
             </div>
           </div>
-
-          {addMenuOpen ? (
-            <AddAccountMenu
-              onStartLogin={onStartLogin}
-              onManual={onManualAdd}
-              onClose={() => setAddMenuOpen(false)}
-            />
-          ) : null}
 
           <SortableList
             items={accounts}
@@ -219,8 +198,13 @@ export function Preferences({
               <AccountButton
                 account={account}
                 handle={handle}
-                active={account.id === activeId}
-                onEdit={onEditAccount}
+                active={
+                  modal?.kind === "edit" && modal.accountId === account.id
+                }
+                onEdit={(target) =>
+                  setModal({ kind: "edit", accountId: target.id })
+                }
+                onToggle={onToggleAccount}
                 onRemove={onRemoveAccount}
               />
             )}
@@ -231,46 +215,91 @@ export function Preferences({
         </aside>
 
         <section className="prefs-main" aria-label="Usage and account settings">
-          <section className="prefs-usage">
-            <SectionTitle
-              title="Usage"
-              detail={snapshots.length > 0 ? summary.shortLabel : "Idle"}
+          {accounts.length === 0 && snapshots.length === 0 && !busy ? (
+            <FirstRunPanel
+              onAdd={() => setModal({ kind: "add" })}
+              onDetect={onDetect}
             />
-            <div className="usage-list">
-              {snapshots.map((snapshot) => (
-                <UsageRow key={snapshot.accountId} snapshot={snapshot} />
-              ))}
-              {!busy && snapshots.length === 0 ? (
-                <div className="empty-state">
-                  Add or detect an account to start monitoring quota.
-                </div>
-              ) : null}
-            </div>
-          </section>
+          ) : (
+            <section className="prefs-usage">
+              <SectionTitle
+                title="Usage"
+                detail={snapshots.length > 0 ? summary.shortLabel : "Idle"}
+              />
+              <div className="usage-list">
+                {snapshots.map((snapshot) => (
+                  <UsageRow key={snapshot.accountId} snapshot={snapshot} />
+                ))}
+                {!busy && snapshots.length === 0 ? (
+                  <div className="empty-state">
+                    Add or detect an account to start monitoring quota.
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          )}
 
           <InsightsPanel {...insights} />
-
-          <AccountForm
-            form={form}
-            setForm={setForm}
-            activeId={activeId}
-            busy={busy}
-            onSubmit={onSubmit}
-            onReset={() => {
-              setForm(emptyForm);
-              setActiveId(null);
-            }}
-            onStartLogin={onStartLogin}
-            onLogout={onLogout}
-            canReauth={canReauth}
-          />
 
           <TraySettings {...settings} />
 
           <UpdatesSettings {...updates} />
         </section>
       </section>
+
+      {modalMode ? (
+        <AccountModal
+          key={
+            modalMode.kind === "edit"
+              ? `edit-${modalMode.account.id}`
+              : "add"
+          }
+          mode={modalMode}
+          busy={busy}
+          canReauth={canReauth}
+          onSave={onSaveAccount}
+          onClose={() => setModal(null)}
+          onStartLogin={onStartLogin}
+          onLogout={onLogout}
+          onRemove={onRemoveAccount}
+        />
+      ) : null}
     </main>
+  );
+}
+
+/** Guided empty state for a fresh install: no accounts configured yet. */
+function FirstRunPanel({
+  onAdd,
+  onDetect,
+}: {
+  onAdd: () => void;
+  onDetect: () => void;
+}) {
+  return (
+    <section className="prefs-usage first-run" aria-label="Get started">
+      <SectionTitle title="Get started" detail="No accounts yet" />
+      <div className="first-run-body">
+        <div className="first-run-logos" aria-hidden="true">
+          {PROVIDERS.map((provider) => (
+            <ProviderLogo key={provider} provider={provider} size="sm" />
+          ))}
+        </div>
+        <p className="muted">
+          Burnrate watches quotas, credits, and spend across your AI providers
+          from the menu bar. CLIs already signed in on this Mac (Claude Code,
+          Codex, Copilot) can be detected automatically.
+        </p>
+        <div className="first-run-actions">
+          <button className="primary" onClick={onAdd}>
+            <Plus size={15} /> Add your first account
+          </button>
+          <button className="secondary" onClick={onDetect}>
+            <Wifi size={15} /> Detect accounts
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -376,14 +405,18 @@ function AccountButton({
   handle,
   active,
   onEdit,
+  onToggle,
   onRemove,
 }: {
   account: AccountView;
   handle: ReactNode;
   active: boolean;
   onEdit: (account: AccountView) => void;
+  onToggle: (account: AccountView) => void;
   onRemove: (id: string) => void;
 }) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
   return (
     <div className={`account-row ${active ? "active" : ""}`}>
       {handle}
@@ -400,20 +433,44 @@ function AccountButton({
           ) : null}
         </span>
       </button>
-      <span className="account-flags">
-        {account.hasSecret ? <KeyRound size={15} /> : null}
-        <StatusDot enabled={account.enabled} />
-        <button
-          className="icon-button danger"
-          title="Remove account"
-          onClick={(event) => {
-            event.stopPropagation();
-            onRemove(account.id);
-          }}
-        >
-          <Trash2 size={15} />
-        </button>
-      </span>
+      {confirmRemove ? (
+        <span className="account-flags remove-confirm">
+          <button
+            className="danger-solid"
+            title={`Confirm removing ${account.label}`}
+            onClick={() => onRemove(account.id)}
+          >
+            Remove
+          </button>
+          <button
+            className="secondary"
+            title="Keep account"
+            onClick={() => setConfirmRemove(false)}
+          >
+            Keep
+          </button>
+        </span>
+      ) : (
+        <span className="account-flags">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={account.enabled}
+            aria-label={account.enabled ? "Enabled" : "Disabled"}
+            className={`row-switch${account.enabled ? " on" : ""}`}
+            onClick={() => onToggle(account)}
+          >
+            <span />
+          </button>
+          <button
+            className="icon-button danger"
+            title="Remove account"
+            onClick={() => setConfirmRemove(true)}
+          >
+            <Trash2 size={15} />
+          </button>
+        </span>
+      )}
     </div>
   );
 }
@@ -485,11 +542,3 @@ function StatusBadge({ status }: { status: SnapshotStatus }) {
   );
 }
 
-function StatusDot({ enabled }: { enabled: boolean }) {
-  return (
-    <span
-      className={`dot ${enabled ? "enabled" : ""}`}
-      aria-label={enabled ? "Enabled" : "Disabled"}
-    />
-  );
-}

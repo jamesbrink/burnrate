@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -374,6 +375,30 @@ test("escape dismisses the tray popover but not preferences", async () => {
   expect(api.closePreferences).not.toHaveBeenCalled();
 });
 
+test("a fresh install shows the guided first-run panel", async () => {
+  api.guardedFetch.mockResolvedValue(dashboardState());
+  api.detectAccounts.mockResolvedValue([]);
+
+  render(<App />);
+
+  const panel = await screen.findByRole("region", { name: "Get started" });
+
+  // Its add button opens the provider wizard.
+  fireEvent.click(
+    within(panel).getByRole("button", { name: /Add your first account/ }),
+  );
+  expect(
+    await screen.findByRole("dialog", { name: "Add Account" }),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByTitle("Close"));
+
+  // Disambiguated from the toolbar's detect icon by scoping to the panel.
+  fireEvent.click(
+    within(panel).getByRole("button", { name: /Detect accounts/ }),
+  );
+  await waitFor(() => expect(api.detectAccounts).toHaveBeenCalled());
+});
+
 test("refreshes usage after saving an OpenRouter account", async () => {
   const savedAccount: AccountView = {
     id: "openrouter-team",
@@ -401,6 +426,8 @@ test("refreshes usage after saving an OpenRouter account", async () => {
   render(<App />);
 
   await screen.findByRole("heading", { name: "Preferences" });
+  fireEvent.click(screen.getByTitle("Add account"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "OpenRouter" }));
   fireEvent.change(screen.getByLabelText("Label"), {
     target: { value: "OpenRouter Team" },
   });

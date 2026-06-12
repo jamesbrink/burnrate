@@ -321,18 +321,84 @@ p {
 }
 
 .account-flags {
-  gap: 7px;
+  gap: 6px;
 }
 
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+/* Compact row controls so the account label keeps its width. */
+.account-row .icon-button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+}
+
+.account-row .icon-button:hover {
+  background: var(--active-bg);
+}
+
+/* Inline enable/disable switch on the account rows. */
+.row-switch {
+  flex: none;
+  width: 30px;
+  height: 18px;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
   background: var(--dot-off);
+  display: inline-flex;
+  align-items: center;
+  transition: background 120ms ease;
 }
 
-.dot.enabled {
+.row-switch span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 120ms ease;
+}
+
+.row-switch.on {
   background: var(--enabled-dot);
+}
+
+.row-switch.on span {
+  transform: translateX(12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-switch,
+  .row-switch span {
+    transition: none;
+  }
+}
+
+/* Inline remove confirmation on the account rows. */
+.remove-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-soft);
+}
+
+.danger-solid {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-weight: 600;
+  font-size: 12px;
+  color: light-dark(#ffffff, #1c0d0c);
+  background: var(--crit);
+}
+
+.remove-confirm .secondary {
+  padding: 4px 9px;
+  font-size: 12px;
 }
 
 .usage-list {
@@ -1636,17 +1702,6 @@ html[data-view="tray"] .tray-empty {
 }
 
 /* Add-account chooser */
-.add-account-menu {
-  display: grid;
-  gap: 4px;
-  margin-bottom: 8px;
-  padding: 6px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-}
-
 .add-account-option {
   display: flex;
   align-items: center;
@@ -1677,20 +1732,7 @@ html[data-view="tray"] .tray-empty {
   color: var(--fg-soft);
 }
 
-.add-account-back {
-  align-self: start;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 0;
-  background: transparent;
-  color: var(--fg-soft);
-  cursor: pointer;
-  padding: 4px 6px;
-  font-size: 12px;
-}
-
-/* Sign-in / sign-out controls on the edit form */
+/* Sign-in / sign-out controls in the edit modal */
 .account-auth-actions {
   display: flex;
   align-items: center;
@@ -1726,6 +1768,109 @@ html[data-view="tray"] .tray-empty {
   cursor: pointer;
   padding: 7px 8px;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Add / edit account modal (shares the login overlay chrome) */
+.account-modal {
+  width: min(520px, 100%);
+}
+
+.account-modal-form {
+  display: grid;
+  gap: 12px;
+}
+
+.account-modal-body {
+  display: grid;
+  gap: 10px;
+  /* The AWS section is tall — the dialog scrolls internally instead of
+     outgrowing the window. */
+  max-height: min(54vh, 520px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.modal-back {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-soft);
+}
+
+.modal-back:hover {
+  background: var(--active-bg);
+  color: var(--fg);
+}
+
+.modal-close {
+  margin-left: auto;
+}
+
+.login-modal-head .account-email {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fg-soft);
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.provider-tile {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: inherit;
+  font-weight: 620;
+  text-align: left;
+}
+
+.provider-tile:hover {
+  border-color: var(--active-border);
+  background: var(--active-bg);
+}
+
+.method-list {
+  display: grid;
+  gap: 4px;
+}
+
+.account-modal-actions {
+  align-items: center;
+}
+
+.account-modal-spacer {
+  flex: 1;
+}
+
+/* First-run guided empty state */
+.first-run-body {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 6px 2px 10px;
+}
+
+.first-run-logos {
+  display: flex;
+  gap: 7px;
+}
+
+.first-run-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* Login modal */

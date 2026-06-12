@@ -1,5 +1,6 @@
 import type {
   AccountInput,
+  AccountView,
   AwsCategoryConfig,
   CopilotPlan,
   ProviderKind,
@@ -100,3 +101,63 @@ export const emptyForm: AccountInput = {
   copilotPlan: null,
   copilotCustomLimit: null,
 };
+
+/** Display order for provider pickers (Add-account grid, first-run logos). */
+export const PROVIDERS: ProviderKind[] = [
+  "claude-code",
+  "codex",
+  "copilot",
+  "aws",
+  "openrouter",
+  "runpod",
+];
+
+/** Providers authenticated through their CLI rather than a pasted API key. */
+export const CLI_PROVIDERS: ProviderKind[] = ["claude-code", "codex"];
+
+/** Fresh form state for adding a `provider` account. Picking a provider always
+ *  starts clean — a secret typed for one provider never carries to another. */
+export function formForProvider(provider: ProviderKind): AccountInput {
+  return {
+    provider,
+    label: providerLabels[provider],
+    enabled: true,
+    endpointOverride: providerDefaultEndpoints[provider] ?? "",
+    secretStorage: "keyring",
+    secret: "",
+    awsProfile: null,
+    awsRegion: provider === "aws" ? AWS_DEFAULT_REGION : null,
+    awsMonthlyBudgetUsd: null,
+    awsCategories: provider === "aws" ? cloneDefaultAwsCategories() : [],
+    copilotPlan: null,
+    copilotCustomLimit: null,
+  };
+}
+
+/** Form state prefilled from an existing account for editing. The secret is
+ *  always blank — saving with it blank keeps the stored one. */
+export function formFromAccount(account: AccountView): AccountInput {
+  return {
+    id: account.id,
+    provider: account.provider,
+    label: account.label,
+    enabled: account.enabled,
+    endpointOverride:
+      account.endpointOverride ??
+      providerDefaultEndpoints[account.provider] ??
+      "",
+    secretStorage: account.secretStorage,
+    secret: "",
+    awsProfile: account.awsProfile ?? null,
+    awsRegion: account.awsRegion ?? AWS_DEFAULT_REGION,
+    awsMonthlyBudgetUsd: account.awsMonthlyBudgetUsd ?? null,
+    awsCategories:
+      account.provider === "aws"
+        ? account.awsCategories?.length
+          ? account.awsCategories
+          : cloneDefaultAwsCategories()
+        : [],
+    copilotPlan: account.copilotPlan ?? null,
+    copilotCustomLimit: account.copilotCustomLimit ?? null,
+  };
+}

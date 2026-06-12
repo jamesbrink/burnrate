@@ -193,7 +193,12 @@ export function TrayPanel({
               )}
             />
           ) : (
-            <div className="tray-empty">No enabled accounts.</div>
+            <div className="tray-empty">
+              <span>No enabled accounts.</span>
+              <button type="button" onClick={onOpenPreferences}>
+                Open Preferences
+              </button>
+            </div>
           )}
         </section>
 

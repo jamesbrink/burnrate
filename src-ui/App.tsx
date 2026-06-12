@@ -1,5 +1,4 @@
 import {
-  FormEvent,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -32,14 +31,13 @@ import {
 import { useUpdater } from "./useUpdater";
 import { LoginModal } from "./LoginModal";
 import { UpdateDialog } from "./UpdateDialog";
+import { Preferences } from "./Preferences";
 import {
   OPENROUTER_DEFAULT_ENDPOINT,
   RUNPOD_DEFAULT_ENDPOINT,
-  cloneDefaultAwsCategories,
-  emptyForm,
-  Preferences,
+  formFromAccount,
   providerLabels,
-} from "./Preferences";
+} from "./constants";
 import { TrayPanel } from "./TrayPanel";
 import type {
   AccountInput,
@@ -66,8 +64,6 @@ export function App() {
   const [snapshots, setSnapshots] = useState<UsageSnapshot[]>(
     () => readCachedDashboard()?.dashboard.snapshots ?? [],
   );
-  const [form, setForm] = useState<AccountInput>(emptyForm);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [localUsageReport, setLocalUsageReport] =
     useState<LocalUsageReport | null>(null);
   // Spinner only on a true cold start (no cached data to show).
@@ -92,9 +88,7 @@ export function App() {
   stateRef.current = state;
 
   const login = useLogin({
-    onCompleted: async (account) => {
-      setActiveId(account.id);
-      setForm(emptyForm);
+    onCompleted: async () => {
       try {
         const dashboard = await guardedFetch({ force: true });
         setState(dashboard);
@@ -381,9 +375,6 @@ export function App() {
     summary.label,
     busy,
     error,
-    activeId,
-    form.provider,
-    form.secretStorage,
     localUsageReport,
   ]);
 
@@ -484,13 +475,14 @@ export function App() {
     localUsageReport,
   ]);
 
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    const endpoint = form.endpointOverride?.trim() || null;
+  /** Persist an account from the modal. Throws on failure so the modal can
+   *  render the error inline and keep the user's input. */
+  async function onSaveAccount(input: AccountInput): Promise<void> {
+    const endpoint = input.endpointOverride?.trim() || null;
     const defaultEndpoint =
-      form.provider === "openrouter"
+      input.provider === "openrouter"
         ? OPENROUTER_DEFAULT_ENDPOINT
-        : form.provider === "runpod"
+        : input.provider === "runpod"
           ? RUNPOD_DEFAULT_ENDPOINT
           : null;
     const endpointOverride =
@@ -501,59 +493,40 @@ export function App() {
     setError(null);
     try {
       const accounts = await saveAccount({
-        ...form,
+        ...input,
         endpointOverride,
-        secret: form.provider === "aws" ? null : form.secret?.trim() || null,
-        awsProfile: form.awsProfile?.trim() || null,
-        awsRegion: form.awsRegion?.trim() || null,
-        awsCategories: form.awsCategories ?? [],
-        copilotPlan: form.provider === "copilot" ? (form.copilotPlan ?? null) : null,
+        secret: input.provider === "aws" ? null : input.secret?.trim() || null,
+        awsProfile: input.awsProfile?.trim() || null,
+        awsRegion: input.awsRegion?.trim() || null,
+        awsCategories: input.awsCategories ?? [],
+        copilotPlan:
+          input.provider === "copilot" ? (input.copilotPlan ?? null) : null,
         copilotCustomLimit:
-          form.provider === "copilot" && form.copilotPlan === "custom"
-            ? (form.copilotCustomLimit ?? null)
+          input.provider === "copilot" && input.copilotPlan === "custom"
+            ? (input.copilotCustomLimit ?? null)
             : null,
       });
       updateAccounts(accounts, settings, summary);
-      setForm(emptyForm);
-      setActiveId(null);
       const dashboard = await guardedFetch({ force: true });
       setState(dashboard);
       setSnapshots(dashboard.snapshots);
-    } catch (err) {
-      setError(String(err));
     } finally {
       setBusy(false);
     }
   }
 
-  function editAccount(account: AccountView) {
-    setActiveId(account.id);
-    setForm({
-      id: account.id,
-      provider: account.provider,
-      label: account.label,
-      enabled: account.enabled,
-      endpointOverride:
-        account.endpointOverride ??
-        (account.provider === "openrouter"
-          ? OPENROUTER_DEFAULT_ENDPOINT
-          : account.provider === "runpod"
-            ? RUNPOD_DEFAULT_ENDPOINT
-            : ""),
-      secretStorage: account.secretStorage,
-      secret: "",
-      awsProfile: account.awsProfile ?? null,
-      awsRegion: account.awsRegion ?? "us-east-1",
-      awsMonthlyBudgetUsd: account.awsMonthlyBudgetUsd ?? null,
-      awsCategories:
-        account.provider === "aws"
-          ? account.awsCategories?.length
-            ? account.awsCategories
-            : cloneDefaultAwsCategories()
-          : [],
-      copilotPlan: account.copilotPlan ?? null,
-      copilotCustomLimit: account.copilotCustomLimit ?? null,
-    });
+  /** Quick enable/disable from the sidebar row — a save of the account as-is
+   *  with the flag flipped (blank secret keeps the stored one). */
+  async function onToggleAccount(account: AccountView) {
+    setError(null);
+    try {
+      await onSaveAccount({
+        ...formFromAccount(account),
+        enabled: !account.enabled,
+      });
+    } catch (err) {
+      setError(String(err));
+    }
   }
 
   // After an account mutation, re-fetch and re-cache the dashboard so the
@@ -606,36 +579,11 @@ export function App() {
     void login.start(provider, providerLabels[provider], accountId);
   }
 
-  function manualAdd(provider: ProviderKind) {
-    setActiveId(null);
-    setForm({
-      provider,
-      label: providerLabels[provider],
-      enabled: true,
-      endpointOverride:
-        provider === "openrouter"
-          ? OPENROUTER_DEFAULT_ENDPOINT
-          : provider === "runpod"
-            ? RUNPOD_DEFAULT_ENDPOINT
-            : "",
-      secretStorage: "keyring",
-      secret: "",
-      awsProfile: null,
-      awsRegion: provider === "aws" ? "us-east-1" : null,
-      awsMonthlyBudgetUsd: null,
-      awsCategories: provider === "aws" ? cloneDefaultAwsCategories() : [],
-      copilotPlan: null,
-      copilotCustomLimit: null,
-    });
-  }
-
   async function onLogout(id: string) {
     setBusy(true);
     setError(null);
     try {
       await applyAccountChange(await logoutAccount(id));
-      setForm(emptyForm);
-      setActiveId(null);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -689,17 +637,12 @@ export function App() {
         summary={summary}
         busy={busy}
         error={error}
-        form={form}
-        activeId={activeId}
-        setForm={setForm}
-        setActiveId={setActiveId}
-        onSubmit={(event) => void onSubmit(event)}
+        onSaveAccount={onSaveAccount}
+        onToggleAccount={(account) => void onToggleAccount(account)}
         onDetect={() => void onDetect()}
         onRefresh={() => void revalidate({ force: true })}
-        onEditAccount={editAccount}
         onRemoveAccount={(id) => void onRemove(id)}
         onStartLogin={startLogin}
-        onManualAdd={manualAdd}
         onLogout={(id) => void onLogout(id)}
         onReorderAccounts={(ids) => void onReorderAccounts(ids)}
         settings={{
