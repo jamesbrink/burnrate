@@ -93,10 +93,15 @@ export function formatAgo(value: string | null): string {
   if (!value) return "";
   const then = new Date(value);
   if (Number.isNaN(then.getTime())) return "";
-  const minutes = Math.max(0, Math.round((Date.now() - then.getTime()) / 60000));
+  // Floor, never round: "ago" labels must not jump to the next unit early
+  // (90s is "1m ago", not "2m ago") or run backwards between re-renders.
+  const minutes = Math.max(
+    0,
+    Math.floor((Date.now() - then.getTime()) / 60000),
+  );
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
+  const hours = Math.floor(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
   return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }

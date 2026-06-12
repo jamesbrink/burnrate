@@ -1210,7 +1210,6 @@ html[data-view="tray"] .tray-card-toggle {
   color: inherit;
   font: inherit;
   text-align: left;
-  cursor: default;
 }
 
 html[data-view="tray"] .tray-card-toggle:focus-visible {

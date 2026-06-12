@@ -52,7 +52,7 @@ export function Sparkline({
     >
       <path className="sparkline-area" d={area} />
       <polyline className="sparkline-line" points={points.join(" ")} />
-      {titles
+      {titles && titles.length === values.length
         ? values.map((_, index) => (
             // Invisible full-height hit areas so hovering any point of the
             // line shows that day's tooltip (a polyline itself has no

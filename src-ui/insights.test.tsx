@@ -226,6 +226,10 @@ test("formatAgo walks just-now, minutes, hours, and date branches", () => {
   expect(formatAgo(new Date(Date.now() - 3 * 60 * 1000).toISOString())).toBe(
     "3m ago",
   );
+  // Floors, never rounds: 90 seconds is still "1m ago".
+  expect(formatAgo(new Date(Date.now() - 90 * 1000).toISOString())).toBe(
+    "1m ago",
+  );
   expect(
     formatAgo(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()),
   ).toBe("2h ago");
@@ -254,6 +258,13 @@ test("Sparkline exposes per-day hover titles when given", () => {
   expect(titles).toHaveLength(14);
 
   rerender(<Sparkline values={[1, 2, 3]} label="untitled" />);
+  expect(container.querySelectorAll("svg title")).toHaveLength(0);
+
+  // A titles array that doesn't match the series is ignored entirely rather
+  // than rendering empty tooltips.
+  rerender(
+    <Sparkline values={[1, 2, 3]} titles={["only one"]} label="mismatched" />,
+  );
   expect(container.querySelectorAll("svg title")).toHaveLength(0);
 });
 
