@@ -11,11 +11,11 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     config::{self, AppConfig},
-    key_store,
+    insights, key_store,
     models::AppSettings,
     models::{
-        AccountConfig, AccountInput, AccountView, DashboardState, LoginComplete, LoginFailed,
-        ProviderKind, SecretStorageMode, UsageSnapshot,
+        AccountConfig, AccountInput, AccountView, DashboardState, LocalUsageReport, LoginComplete,
+        LoginFailed, ProviderKind, SecretStorageMode, UsageSnapshot,
     },
     providers::{
         self, ProviderClient,
@@ -30,6 +30,11 @@ pub(crate) struct AppState {
     config: Mutex<AppConfig>,
     provider_client: ProviderClient,
     login_manager: LoginManager,
+    /// Last good claudex insights report. The async mutex also serializes
+    /// collections, so concurrent callers (two webview windows plus the
+    /// background refresh) trigger one claudex sync, mirroring the
+    /// per-account provider fetch locks.
+    local_usage: tokio::sync::Mutex<Option<LocalUsageReport>>,
 }
 
 impl AppState {
@@ -54,7 +59,42 @@ impl AppState {
             config: Mutex::new(config),
             provider_client: ProviderClient::new(),
             login_manager: LoginManager::new(),
+            local_usage: tokio::sync::Mutex::new(None),
         })
+    }
+
+    /// claudex-backed local usage for the enabled accounts' providers.
+    /// Returns the last good report when a collection fails transiently, and
+    /// a disabled-state report when the setting is off.
+    pub(crate) async fn local_usage(&self) -> LocalUsageReport {
+        if !self.settings().local_insights {
+            return LocalUsageReport {
+                available: false,
+                message: Some("Local insights are disabled in Preferences.".to_string()),
+                providers: Vec::new(),
+                generated_at: Utc::now(),
+            };
+        }
+
+        let providers: Vec<ProviderKind> = self
+            .config
+            .lock()
+            .expect("config lock")
+            .enabled_accounts_ordered()
+            .iter()
+            .map(|account| account.provider)
+            .collect();
+
+        let mut cached = self.local_usage.lock().await;
+        let report = insights::collect_local_usage(providers).await;
+        if report.available {
+            *cached = Some(report.clone());
+            report
+        } else if let Some(previous) = cached.clone() {
+            previous
+        } else {
+            report
+        }
     }
 
     pub(crate) fn list_accounts(&self) -> Result<Vec<AccountView>> {

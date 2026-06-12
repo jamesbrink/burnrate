@@ -11,6 +11,7 @@ export const providerLabels: Record<ProviderKind, string> = {
   openrouter: "OpenRouter",
   runpod: "Runpod",
   aws: "AWS",
+  copilot: "GitHub Copilot",
 };
 
 export const providerDefaultEndpoints: Partial<Record<ProviderKind, string>> = {

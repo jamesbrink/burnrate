@@ -12,7 +12,10 @@ mod tray;
 mod updater;
 
 use app_state::AppState;
-use models::{AccountInput, AccountView, AppSettings, DashboardState, LoginFailed, ProviderKind};
+use models::{
+    AccountInput, AccountView, AppSettings, DashboardState, LocalUsageReport, LoginFailed,
+    ProviderKind,
+};
 use std::time::Duration;
 
 #[cfg(target_os = "macos")]
@@ -163,7 +166,15 @@ async fn refresh_snapshots(
     let dashboard = state.dashboard().await.map_err(|error| error.to_string())?;
     tray::update_summary(&app, &dashboard.tray_summary);
     let _ = app.emit("burnrate-dashboard-updated", &dashboard);
+    spawn_local_usage_broadcast(app);
     Ok(dashboard)
+}
+
+/// On-demand claudex insights report (the push channel is
+/// `burnrate-local-usage-updated`, broadcast after every dashboard refresh).
+#[tauri::command]
+async fn local_usage(state: State<'_, AppState>) -> Result<LocalUsageReport, String> {
+    Ok(state.local_usage().await)
 }
 
 #[tauri::command]
@@ -385,11 +396,22 @@ async fn refresh_dashboard_for_app(app: &AppHandle) {
         Ok(dashboard) => {
             tray::update_summary(app, &dashboard.tray_summary);
             let _ = app.emit("burnrate-dashboard-updated", &dashboard);
+            spawn_local_usage_broadcast(app.clone());
         }
         Err(error) => {
             eprintln!("Burnrate background refresh failed: {error}");
         }
     }
+}
+
+/// Collect claudex insights off the dashboard path and broadcast the result.
+/// Detached on purpose: the first collection can rebuild the whole local
+/// session index, and quota cards must never wait for it.
+fn spawn_local_usage_broadcast(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let report = app.state::<AppState>().local_usage().await;
+        let _ = app.emit("burnrate-local-usage-updated", &report);
+    });
 }
 
 #[cfg(target_os = "macos")]
@@ -483,6 +505,7 @@ fn main() {
             cancel_account_login,
             logout_account,
             refresh_snapshots,
+            local_usage,
             resize_preferences_to_content,
             resize_tray_to_content,
             close_preferences,

@@ -3,7 +3,15 @@ export type ProviderKind =
   | "codex"
   | "openrouter"
   | "runpod"
-  | "aws";
+  | "aws"
+  | "copilot";
+export type CopilotPlan =
+  | "free"
+  | "pro"
+  | "pro-plus"
+  | "business"
+  | "enterprise"
+  | "custom";
 export type SecretStorageMode = "keyring" | "plaintext";
 export type SnapshotStatus =
   | "healthy"
@@ -36,6 +44,8 @@ export interface AccountView {
   awsRegion?: string | null;
   awsMonthlyBudgetUsd?: number | null;
   awsCategories?: AwsCategoryConfig[];
+  copilotPlan?: CopilotPlan | null;
+  copilotCustomLimit?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -52,6 +62,8 @@ export interface AccountInput {
   awsRegion?: string | null;
   awsMonthlyBudgetUsd?: number | null;
   awsCategories?: AwsCategoryConfig[];
+  copilotPlan?: CopilotPlan | null;
+  copilotCustomLimit?: number | null;
 }
 
 export type AwsCostFilter =
@@ -129,6 +141,50 @@ export interface AppSettings {
   hideFromDock: boolean;
   updateChannel: UpdateChannel;
   trayScale: number;
+  localInsights: boolean;
+}
+
+/** claudex-backed local usage metrics, aggregated per provider (not per
+ *  account — local session history cannot tell same-provider accounts apart). */
+export interface LocalUsageReport {
+  available: boolean;
+  message: string | null;
+  providers: ProviderLocalUsage[];
+  generatedAt: string;
+}
+
+export interface ProviderLocalUsage {
+  provider: ProviderKind;
+  todayCostUsd: number;
+  todaySessions: number;
+  weekCostUsd: number;
+  monthCostUsd: number;
+  projectedMonthCostUsd: number | null;
+  monthInputTokens: number;
+  monthOutputTokens: number;
+  topModel: string | null;
+  modelDistribution: LocalModelUsage[];
+  topProjects: LocalProjectCost[];
+  /** Daily cost buckets, ascending by ISO date (sparkline source). */
+  daily: LocalDailyUsage[];
+}
+
+export interface LocalDailyUsage {
+  date: string;
+  costUsd: number;
+  sessions: number;
+}
+
+export interface LocalModelUsage {
+  model: string;
+  sessions: number;
+  costUsd: number;
+}
+
+export interface LocalProjectCost {
+  project: string;
+  sessions: number;
+  costUsd: number;
 }
 
 /** Available update returned by the `check_for_updates` command. */

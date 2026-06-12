@@ -343,6 +343,7 @@ function dashboardState(): DashboardState {
       hideFromDock: true,
       updateChannel: "stable",
       trayScale: 1,
+      localInsights: true,
     },
   };
 }

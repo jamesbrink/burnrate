@@ -176,6 +176,7 @@ export function App() {
     hideFromDock: state?.settings?.hideFromDock ?? true,
     updateChannel: state?.settings?.updateChannel ?? "stable",
     trayScale: state?.settings?.trayScale ?? TRAY_MAX_SCALE,
+    localInsights: state?.settings?.localInsights ?? true,
   };
 
   async function updateSettings(next: AppSettings) {

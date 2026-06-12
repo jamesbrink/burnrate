@@ -30,6 +30,7 @@ const providerLabels = {
   aws: "AWS",
   openrouter: "OpenRouter",
   runpod: "Runpod",
+  copilot: "Copilot",
 } as const;
 
 const statusLabels: Record<SnapshotStatus, string> = {

@@ -30,11 +30,13 @@ const api = vi.hoisted(() => ({
   guardedFetch: vi.fn(),
   installUpdate: vi.fn(),
   isStale: vi.fn(),
+  localUsage: vi.fn(),
   logoutAccount: vi.fn(),
   markFetched: vi.fn(),
   notifyUpdateAvailable: vi.fn(),
   onCheckUpdateRequested: vi.fn(),
   onDashboardUpdated: vi.fn(),
+  onLocalUsageUpdated: vi.fn(),
   onLoginComplete: vi.fn(),
   onLoginFailed: vi.fn(),
   onLoginProgress: vi.fn(),
@@ -95,7 +97,15 @@ beforeEach(() => {
     hideFromDock: false,
     updateChannel: "stable",
     trayScale: 1,
+    localInsights: true,
   });
+  api.localUsage.mockResolvedValue({
+    available: false,
+    message: null,
+    providers: [],
+    generatedAt: new Date().toISOString(),
+  });
+  api.onLocalUsageUpdated.mockResolvedValue(() => {});
 });
 
 afterEach(() => {
@@ -1153,6 +1163,7 @@ function dashboardState(
       hideFromDock: false,
       updateChannel: "stable",
       trayScale: 1,
+      localInsights: true,
     },
   };
 }

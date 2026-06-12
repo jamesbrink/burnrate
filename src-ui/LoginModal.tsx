@@ -10,6 +10,7 @@ const providerNames: Record<ProviderKind, string> = {
   aws: "AWS",
   openrouter: "OpenRouter",
   runpod: "Runpod",
+  copilot: "GitHub Copilot",
 };
 
 /**
