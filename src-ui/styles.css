@@ -64,11 +64,34 @@
   box-sizing: border-box;
 }
 
+/* Native-app feel: nothing is selectable or shows an I-beam by default.
+   Selection is opted back in below only where copying matters (form fields,
+   emails, error text) — labels, metrics, and headings stay inert, which is
+   what keeps the popover from feeling like a web page. The -webkit- prefix is
+   load-bearing on WKWebView. */
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
   background: var(--root-bg);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+input,
+textarea,
+.tray-email,
+.account-email,
+.tray-message,
+.snapshot-message,
+.tray-notice span,
+.notice span,
+.update-banner.error,
+.login-error,
+.login-code-error {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 html,

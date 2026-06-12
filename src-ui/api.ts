@@ -812,6 +812,14 @@ export async function openPreferences(): Promise<void> {
   }
 }
 
+/** Dismiss the tray popover (Esc). */
+export async function hideTray(): Promise<void> {
+  /* v8 ignore next 3: native Tauri invoke path */
+  if (isTauri) {
+    await invoke("hide_tray");
+  }
+}
+
 export async function onRefreshRequested(handler: () => void | Promise<void>) {
   /* v8 ignore next 3: native Tauri event path */
   if (isTauri) {

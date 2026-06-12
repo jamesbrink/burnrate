@@ -11,6 +11,7 @@ import {
   detectAccounts,
   getAppVersion,
   guardedFetch,
+  hideTray,
   isStale,
   localUsage as fetchLocalUsage,
   logoutAccount,
@@ -136,11 +137,16 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (isTrayView) {
-      return;
-    }
-
+    // Tray popover: Esc dismisses it. Preferences: Cmd+W / Cmd+Q hide the
+    // window (the app lives in the tray, so neither quits).
     function onKeyDown(event: KeyboardEvent) {
+      if (isTrayView) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          void hideTray();
+        }
+        return;
+      }
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
         return;
       }

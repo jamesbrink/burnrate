@@ -381,6 +381,13 @@ fn open_preferences(app: AppHandle) {
     tray::hide_tray_window(&app);
 }
 
+/// Dismiss the tray popover (Esc in the tray view). Goes through the same hide
+/// path as blur/toggle so the reopen guard stays consistent.
+#[tauri::command]
+fn hide_tray(app: AppHandle) {
+    tray::hide_tray_window(&app);
+}
+
 fn spawn_background_refresh(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -554,6 +561,7 @@ fn main() {
             resize_tray_to_content,
             close_preferences,
             open_preferences,
+            hide_tray,
             updater::updater_available,
             updater::check_for_updates,
             updater::install_pending_update,

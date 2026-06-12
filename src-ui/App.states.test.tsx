@@ -28,6 +28,7 @@ const api = vi.hoisted(() => ({
   detectAccounts: vi.fn(),
   getAppVersion: vi.fn(),
   guardedFetch: vi.fn(),
+  hideTray: vi.fn(),
   installUpdate: vi.fn(),
   isStale: vi.fn(),
   localUsage: vi.fn(),
@@ -357,6 +358,20 @@ test("closes preferences from macOS window shortcuts", async () => {
   fireEvent.keyDown(window, { key: "q", metaKey: true });
 
   expect(api.closePreferences).toHaveBeenCalledTimes(2);
+});
+
+test("escape dismisses the tray popover but not preferences", async () => {
+  window.history.replaceState({}, "", "/?view=tray");
+  api.guardedFetch.mockResolvedValue(dashboardState());
+
+  render(<App />);
+
+  await screen.findByRole("region", { name: "Usage" });
+  fireEvent.keyDown(window, { key: "Escape" });
+  fireEvent.keyDown(window, { key: "w", metaKey: true });
+
+  expect(api.hideTray).toHaveBeenCalledTimes(1);
+  expect(api.closePreferences).not.toHaveBeenCalled();
 });
 
 test("refreshes usage after saving an OpenRouter account", async () => {
