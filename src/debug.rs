@@ -8,7 +8,7 @@
 
 use serde_json::json;
 
-use crate::{app_state::AppState, providers};
+use crate::{app_state::AppState, insights, models::ProviderKind, providers};
 
 pub(crate) fn run(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
@@ -16,14 +16,18 @@ pub(crate) fn run(args: &[String]) -> i32 {
         Some("detect") => detect(),
         Some("load") => load(),
         Some("snapshot") => snapshot(),
+        Some("insights") => local_insights(),
         _ => {
-            eprintln!("usage: burnrate debug <env|detect|load|snapshot>");
+            eprintln!("usage: burnrate debug <env|detect|load|snapshot|insights>");
             eprintln!("  env       report credential-override env vars and resolved provider CLIs");
             eprintln!("  detect    run provider auto-detection and print the result (read-only)");
             eprintln!(
                 "  load      full startup load: detect + merge + orphan GC (persists config)"
             );
             eprintln!("  snapshot  load, then fetch a usage snapshot for every enabled account");
+            eprintln!(
+                "  insights  collect claudex-backed local usage for all local-source providers"
+            );
             2
         }
     }
@@ -128,4 +132,24 @@ fn snapshot() -> i32 {
         serde_json::to_string_pretty(&snapshots).expect("serialize snapshots")
     );
     0
+}
+
+/// Collect claudex-backed local usage for every provider that has a local
+/// session source, regardless of configured accounts — the headless way to
+/// verify the insights pipeline (and trigger a first index build).
+fn local_insights() -> i32 {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("build tokio runtime");
+    let report = runtime.block_on(insights::collect_local_usage(vec![
+        ProviderKind::ClaudeCode,
+        ProviderKind::Codex,
+        ProviderKind::Copilot,
+    ]));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).expect("serialize insights report")
+    );
+    if report.available { 0 } else { 1 }
 }

@@ -2,6 +2,9 @@
 name = "burnrate"
 version = "0.1.11"
 edition = "2024"
+# Inherited from the claudex dependency; cargo turns this into a clear error
+# (instead of a confusing build failure) on older toolchains.
+rust-version = "1.95"
 description = "Desktop usage monitor for Claude Code, Codex, OpenRouter, Runpod, and AWS quotas, credits, spend, and subscription limits."
 license = "MIT"
 repository = "https://github.com/jamesbrink/burnrate"
@@ -48,6 +51,9 @@ aws-sdk-sts = { version = "=1.80.0", default-features = false, features = [
 aws-types = "=1.3.11"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+# claudex pins rusqlite 0.39 internally; the rusqlite pin below must move in
+# lockstep with claudex's, or cargo fails on the libsqlite3-sys links conflict.
+claudex = "0.11"
 dirs = "6"
 keyring = { version = "3", features = [
   "apple-native",

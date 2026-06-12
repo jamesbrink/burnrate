@@ -3,6 +3,7 @@
 mod app_state;
 mod config;
 mod debug;
+mod insights;
 mod key_store;
 mod models;
 mod providers;

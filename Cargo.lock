@@ -766,6 +766,7 @@ dependencies = [
  "aws-types",
  "base64 0.22.1",
  "chrono",
+ "claudex",
  "dirs",
  "keyring",
  "objc2",
@@ -954,6 +955,20 @@ dependencies = [
  "serde",
  "wasm-bindgen",
  "windows-link 0.2.1",
+]
+
+[[package]]
+name = "claudex"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b7793025520b0c58e29906a64c5206fac069043a326605dccf57dbcf9ea2ea9"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

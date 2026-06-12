@@ -364,6 +364,66 @@ pub(crate) struct TraySummary {
     pub updated_at: DateTime<Utc>,
 }
 
+/// claudex-backed local usage metrics, aggregated per provider. Local session
+/// history cannot be split between multiple accounts of one provider, so these
+/// are provider-level — the UI says so rather than implying per-account
+/// precision.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalUsageReport {
+    /// False when insights are disabled, claudex has no data, or collection
+    /// failed; `message` carries the human-readable reason.
+    pub available: bool,
+    pub message: Option<String>,
+    pub providers: Vec<ProviderLocalUsage>,
+    pub generated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProviderLocalUsage {
+    pub provider: ProviderKind,
+    pub today_cost_usd: f64,
+    pub today_sessions: i64,
+    pub week_cost_usd: f64,
+    pub month_cost_usd: f64,
+    /// Linear month-end extrapolation of `month_cost_usd`; `None` when there
+    /// is no spend yet.
+    pub projected_month_cost_usd: Option<f64>,
+    pub month_input_tokens: i64,
+    pub month_output_tokens: i64,
+    pub top_model: Option<String>,
+    pub model_distribution: Vec<LocalModelUsage>,
+    pub top_projects: Vec<LocalProjectCost>,
+    /// Daily cost buckets, ascending by date (sparkline source).
+    pub daily: Vec<LocalDailyUsage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalDailyUsage {
+    /// ISO date (`YYYY-MM-DD`).
+    pub date: String,
+    pub cost_usd: f64,
+    pub sessions: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalModelUsage {
+    pub model: String,
+    pub sessions: i64,
+    pub cost_usd: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalProjectCost {
+    pub project: String,
+    pub sessions: i64,
+    pub cost_usd: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
