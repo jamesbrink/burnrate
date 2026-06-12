@@ -65,8 +65,9 @@ CXX_aarch64_apple_darwin = "/usr/bin/c++"
 CXX_x86_64_apple_darwin = "/usr/bin/c++"
 ```
 
-Values in `[env]` never override variables already set in your real
-environment, so Nix dev shells that export their own `CC` keep working.
+By default, `[env]` values don't override variables already set in your
+real environment (only entries marked `force = true` do), so Nix dev
+shells that export their own `CC` keep working.
 
 Or as a one-off:
 
@@ -145,6 +146,7 @@ burnrate debug env       # credential-override env vars + resolved provider CLIs
 burnrate debug detect    # run provider auto-detection (read-only)
 burnrate debug load      # full startup load: detect + merge + orphan GC
 burnrate debug snapshot  # fetch a usage snapshot for every enabled account
+burnrate debug insights  # collect claudex-backed local usage for local providers
 ```
 
 Each subcommand prints JSON, so it's easy to see exactly what the app would
