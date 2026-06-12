@@ -324,10 +324,20 @@ pub(crate) mod test_support {
         };
         apply("CLAUDEX_DIR", state_dir);
         apply("CLAUDEX_COPILOT_DIR", copilot_dir);
-        let result = body();
-        apply("CLAUDEX_DIR", None);
-        apply("CLAUDEX_COPILOT_DIR", None);
-        result
+        // Clear on unwind too: a panicking (failing) test must not leak its
+        // fixture roots into later tests. Declared after the lock guard so it
+        // drops first — env resets while the lock is still held.
+        struct ResetOnDrop;
+        impl Drop for ResetOnDrop {
+            fn drop(&mut self) {
+                unsafe {
+                    std::env::remove_var("CLAUDEX_DIR");
+                    std::env::remove_var("CLAUDEX_COPILOT_DIR");
+                }
+            }
+        }
+        let _reset = ResetOnDrop;
+        body()
     }
 
     /// Write a minimal-but-valid Copilot CLI session into

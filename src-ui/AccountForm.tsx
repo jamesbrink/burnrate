@@ -108,7 +108,15 @@ export function AccountForm({
                 provider,
                 label: providerLabels[provider],
                 endpointOverride: providerDefaultEndpoints[provider] ?? "",
-                secret: provider === "aws" ? "" : current.secret,
+                // A typed secret never survives a provider switch — an
+                // OpenRouter key must not be saved as a Copilot PAT.
+                secret: "",
+                // AWS and Copilot hide the storage toggle; reset a carried
+                // plaintext selection so it can't apply invisibly.
+                secretStorage:
+                  provider === "aws" || provider === "copilot"
+                    ? "keyring"
+                    : current.secretStorage,
                 awsRegion:
                   provider === "aws"
                     ? current.awsRegion || AWS_DEFAULT_REGION

@@ -152,18 +152,29 @@ test("custom AWS categories start disabled until configured", async () => {
 
 test("switching to Copilot shows plan selector and optional token, hides endpoint", async () => {
   const user = userEvent.setup();
-  render(<Harness initial={{ ...emptyForm }} />);
+  // Simulate a typed-but-unsaved OpenRouter key and a plaintext selection;
+  // neither may carry over into the (storage-toggle-less) Copilot form.
+  render(
+    <Harness
+      initial={{
+        ...emptyForm,
+        secret: "sk-or-leftover",
+        secretStorage: "plaintext",
+      }}
+    />,
+  );
 
   await user.selectOptions(screen.getByLabelText("Provider"), "copilot");
 
   expect(screen.getByLabelText("Plan")).toHaveValue("");
-  expect(screen.getByLabelText("GitHub token (optional)")).toBeInTheDocument();
+  expect(screen.getByLabelText("GitHub token (optional)")).toHaveValue("");
   expect(screen.queryByLabelText("Endpoint")).not.toBeInTheDocument();
   expect(
     screen.queryByLabelText("Monthly premium requests"),
   ).not.toBeInTheDocument();
   expect(screen.getByText(/estimated from Copilot CLI session logs/i))
     .toBeInTheDocument();
+  expect(formState()).toMatchObject({ secret: "", secretStorage: "keyring" });
 });
 
 test("Copilot custom plan reveals the premium request limit field", async () => {
