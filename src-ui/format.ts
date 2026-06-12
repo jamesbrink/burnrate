@@ -87,6 +87,38 @@ export function formatReset(value: string | null): string {
   return `resets ${reset.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
+/** Relative freshness for snapshot timestamps: "just now", "3m ago",
+ *  "2h ago", then a short date once it's days old. */
+export function formatAgo(value: string | null): string {
+  if (!value) return "";
+  const then = new Date(value);
+  if (Number.isNaN(then.getTime())) return "";
+  const minutes = Math.max(0, Math.round((Date.now() - then.getTime()) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Compact token counts for the insights surfaces: `48.2M`, `820k`, `931`.
+ *  One decimal below 100 of a unit, dropped when it would be `.0`. */
+export function formatTokenCount(value: number): string {
+  const units: Array<[number, string]> = [
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "k"],
+  ];
+  for (const [scale, suffix] of units) {
+    if (value >= scale) {
+      const scaled = value / scale;
+      const digits = scaled < 100 ? 1 : 0;
+      return `${scaled.toFixed(digits).replace(/\.0$/, "")}${suffix}`;
+    }
+  }
+  return `${value}`;
+}
+
 /** Compact USD for insights surfaces: cents matter under $10, whole dollars
  *  past $100 (`$1.84`, `$42.10`, `$96`). */
 export function formatUsd(value: number): string {

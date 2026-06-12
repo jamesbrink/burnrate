@@ -5,7 +5,7 @@ import { InsightsPanel } from "./InsightsPanel";
 import { LocalUsageSummary } from "./LocalUsageSummary";
 import { BarSeries, Sparkline } from "./Sparkline";
 import { TrayPanel } from "./TrayPanel";
-import { formatUsd } from "./format";
+import { formatAgo, formatTokenCount, formatUsd } from "./format";
 import type {
   DashboardState,
   LocalUsageReport,
@@ -217,4 +217,236 @@ test("TrayPanel renders local usage once per provider with a shared-history capt
   expect(
     within(cardA as HTMLElement).getByText(/Today \$1\.84/),
   ).toBeInTheDocument();
+});
+
+test("formatAgo walks just-now, minutes, hours, and date branches", () => {
+  expect(formatAgo(null)).toBe("");
+  expect(formatAgo("not a date")).toBe("");
+  expect(formatAgo(new Date().toISOString())).toBe("just now");
+  expect(formatAgo(new Date(Date.now() - 3 * 60 * 1000).toISOString())).toBe(
+    "3m ago",
+  );
+  expect(
+    formatAgo(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()),
+  ).toBe("2h ago");
+  expect(
+    formatAgo(new Date(Date.now() - 80 * 60 * 60 * 1000).toISOString()),
+  ).toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
+});
+
+test("formatTokenCount compacts with unit suffixes", () => {
+  expect(formatTokenCount(931)).toBe("931");
+  expect(formatTokenCount(1_400)).toBe("1.4k");
+  expect(formatTokenCount(820_000)).toBe("820k");
+  expect(formatTokenCount(1_000_000)).toBe("1M");
+  expect(formatTokenCount(48_200_000)).toBe("48.2M");
+  expect(formatTokenCount(2_500_000_000)).toBe("2.5B");
+});
+
+test("Sparkline exposes per-day hover titles when given", () => {
+  const { container, rerender } = render(
+    <LocalUsageSummary usage={providerUsage()} multiAccount={false} />,
+  );
+  const titles = Array.from(container.querySelectorAll("svg title")).map(
+    (node) => node.textContent,
+  );
+  expect(titles).toContain("2026-06-01 · $0.50");
+  expect(titles).toHaveLength(14);
+
+  rerender(<Sparkline values={[1, 2, 3]} label="untitled" />);
+  expect(container.querySelectorAll("svg title")).toHaveLength(0);
+});
+
+function detailSnapshot(
+  accountId: string,
+  overrides: Partial<UsageSnapshot> = {},
+): UsageSnapshot {
+  return {
+    ...traySnapshot(accountId, accountId),
+    subscription: {
+      plan: "max",
+      planLabel: "Max 20x",
+      rateLimitTier: "default_claude_max_20x",
+      extraUsageEnabled: null,
+      source: "test",
+    },
+    usageBuckets: [
+      {
+        id: "5-hour",
+        label: "5-hour",
+        window: "5-hour",
+        used: 10,
+        limit: 100,
+        remaining: 90,
+        unit: "requests",
+        resetAt: null,
+        status: "healthy",
+      },
+      {
+        // Value-less: filtered from the compact card, shown in the details.
+        id: "extra-usage",
+        label: "Extra usage",
+        window: "monthly",
+        used: 0,
+        limit: null,
+        remaining: null,
+        unit: "USD",
+        resetAt: null,
+        status: "healthy",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function trayPanel(
+  snapshots: UsageSnapshot[],
+  options: {
+    localUsage?: LocalUsageReport | null;
+    onOpenPreferences?: () => void;
+  } = {},
+) {
+  const state: DashboardState = {
+    accounts: [],
+    snapshots,
+    traySummary: {
+      label: "Burnrate: all quotas healthy",
+      status: "healthy",
+      criticalCount: 0,
+      warningCount: 0,
+      updatedAt: new Date().toISOString(),
+    },
+    settings: {
+      hideFromDock: true,
+      updateChannel: "stable",
+      trayScale: 1,
+      localInsights: true,
+    },
+  };
+  return (
+    <TrayPanel
+      state={state}
+      snapshots={snapshots}
+      busy={false}
+      error={null}
+      localUsage={options.localUsage ?? null}
+      onRefresh={vi.fn()}
+      onOpenPreferences={options.onOpenPreferences ?? vi.fn()}
+      onReorderAccounts={vi.fn()}
+    />
+  );
+}
+
+test("expanding a tray card reveals snapshot details and collapses again", async () => {
+  const user = userEvent.setup();
+  render(trayPanel([detailSnapshot("claude-a")]));
+
+  const toggle = screen.getByTitle("Show details");
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  // Hidden value-less buckets stay out of the compact card.
+  expect(screen.queryByText("Extra usage")).not.toBeInTheDocument();
+
+  await user.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText("Updated")).toBeInTheDocument();
+  expect(screen.getByText("just now")).toBeInTheDocument();
+  expect(screen.getByText("Tier")).toBeInTheDocument();
+  expect(screen.getByText("default claude max 20x")).toBeInTheDocument();
+  expect(screen.getByText("Extra usage")).toBeInTheDocument();
+
+  await user.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByText("Updated")).not.toBeInTheDocument();
+});
+
+test("only one tray card expands at a time", async () => {
+  const user = userEvent.setup();
+  render(trayPanel([detailSnapshot("claude-a"), detailSnapshot("claude-b")]));
+
+  const [toggleA, toggleB] = screen.getAllByTitle("Show details");
+  await user.click(toggleA);
+  expect(toggleA).toHaveAttribute("aria-expanded", "true");
+
+  await user.click(toggleB);
+  expect(toggleB).toHaveAttribute("aria-expanded", "true");
+  expect(toggleA).toHaveAttribute("aria-expanded", "false");
+});
+
+test("local-usage detail renders only on the provider's first card", async () => {
+  const user = userEvent.setup();
+  render(
+    trayPanel([detailSnapshot("claude-a"), detailSnapshot("claude-b")], {
+      localUsage: report([providerUsage()]),
+    }),
+  );
+
+  const [toggleA, toggleB] = screen.getAllByTitle("Show details");
+  await user.click(toggleA);
+  expect(screen.getByText("This month · local")).toBeInTheDocument();
+  expect(screen.getByText("Past week")).toBeInTheDocument();
+  expect(screen.getByText("1M in · 50k out")).toBeInTheDocument();
+  // Project paths reduce to their leaf directory in the tray.
+  const details = document.querySelector(".tray-card-details");
+  expect(
+    within(details as HTMLElement).getByText("burnrate"),
+  ).toBeInTheDocument();
+
+  await user.click(toggleB);
+  expect(screen.queryByText("This month · local")).not.toBeInTheDocument();
+});
+
+test("tray footer counts disabled accounts and opens preferences", async () => {
+  const user = userEvent.setup();
+  const onOpenPreferences = vi.fn();
+  const snapshots = [detailSnapshot("claude-a")];
+  const state: DashboardState = {
+    accounts: [
+      {
+        id: "off-1",
+        provider: "codex",
+        label: "Codex",
+        enabled: false,
+        autoDetected: false,
+        credentialPath: null,
+        endpointOverride: null,
+        secretStorage: "keyring",
+        hasSecret: false,
+        email: null,
+        configDir: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ],
+    snapshots,
+    traySummary: {
+      label: "Burnrate: all quotas healthy",
+      status: "healthy",
+      criticalCount: 0,
+      warningCount: 0,
+      updatedAt: new Date().toISOString(),
+    },
+    settings: {
+      hideFromDock: true,
+      updateChannel: "stable",
+      trayScale: 1,
+      localInsights: true,
+    },
+  };
+
+  render(
+    <TrayPanel
+      state={state}
+      snapshots={snapshots}
+      busy={false}
+      error={null}
+      onRefresh={vi.fn()}
+      onOpenPreferences={onOpenPreferences}
+      onReorderAccounts={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("1 account off")).toBeInTheDocument();
+  expect(screen.getByText(/^Updated just now$/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Manage" }));
+  expect(onOpenPreferences).toHaveBeenCalledOnce();
 });

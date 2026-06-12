@@ -10,11 +10,14 @@ export function Sparkline({
   width = 88,
   height = 22,
   label,
+  titles,
 }: {
   values: number[];
   width?: number;
   height?: number;
   label: string;
+  /** Optional per-point hover tooltips (parallel to `values`). */
+  titles?: string[];
 }) {
   if (values.length < 2) {
     return null;
@@ -49,6 +52,23 @@ export function Sparkline({
     >
       <path className="sparkline-area" d={area} />
       <polyline className="sparkline-line" points={points.join(" ")} />
+      {titles
+        ? values.map((_, index) => (
+            // Invisible full-height hit areas so hovering any point of the
+            // line shows that day's tooltip (a polyline itself has no
+            // per-point hover target).
+            <rect
+              key={index}
+              x={Math.max(0, pad + index * step - step / 2)}
+              y={0}
+              width={step}
+              height={height}
+              fill="transparent"
+            >
+              <title>{titles[index]}</title>
+            </rect>
+          ))
+        : null}
     </svg>
   );
 }

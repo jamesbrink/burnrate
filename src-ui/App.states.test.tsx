@@ -656,7 +656,9 @@ test("renders tray summary branches and account disabled state", () => {
 
   expect(screen.getByText("No enabled accounts")).toBeInTheDocument();
   expect(screen.getByRole("alert")).toHaveTextContent("network offline");
-  expect(screen.getByText("Disabled")).toBeInTheDocument();
+  // Disabled accounts surface as a compact problems-only footer.
+  expect(screen.getByText("1 account off")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
 
   rerender(
     <TrayPanel
@@ -854,17 +856,17 @@ test("defaults legacy cached tray settings before resizing", async () => {
   }
 });
 
-test("keeps very long tray account rows at the compact width", async () => {
+test("keeps very long tray card labels at the compact width", async () => {
   window.history.replaceState({}, "", "/?view=tray");
-  const accounts = [
-    accountView({
-      id: "long-account",
+  const snapshots = [
+    snapshot("healthy", {
+      accountId: "long-account",
       label:
         "Exceptionally long account label that would otherwise wrap several times",
       email: "exceptionally-long-account-email-address-for-testing@example.com",
     }),
   ];
-  api.guardedFetch.mockResolvedValue(dashboardState({ accounts }));
+  api.guardedFetch.mockResolvedValue(dashboardState({ snapshots }));
 
   const styleSpy = vi.spyOn(window, "getComputedStyle").mockReturnValue({
     paddingTop: "12px",
@@ -901,16 +903,16 @@ test("keeps very long tray account rows at the compact width", async () => {
   }
 });
 
-test("keeps many normal-width tray rows compact", async () => {
+test("keeps many normal-width tray cards compact", async () => {
   window.history.replaceState({}, "", "/?view=tray");
-  const accounts = Array.from({ length: 10 }, (_, index) =>
-    accountView({
-      id: `account-${index}`,
+  const snapshots = Array.from({ length: 10 }, (_, index) =>
+    snapshot("healthy", {
+      accountId: `account-${index}`,
       label: `Account ${index}`,
       email: `user-${index}@example.com`,
     }),
   );
-  api.guardedFetch.mockResolvedValue(dashboardState({ accounts }));
+  api.guardedFetch.mockResolvedValue(dashboardState({ snapshots }));
 
   const styleSpy = vi.spyOn(window, "getComputedStyle").mockReturnValue({
     paddingTop: "12px",
@@ -959,10 +961,12 @@ test("orders tray accounts from reordered usage cards", () => {
   );
 });
 
-test("keeps tray usage and accounts in an internal scroll region", () => {
+test("keeps tray usage and the accounts footer in an internal scroll region", () => {
   render(
     <TrayPanel
-      state={dashboardState({ accounts: [accountView()] })}
+      state={dashboardState({
+        accounts: [accountView(), accountView({ id: "off", enabled: false })],
+      })}
       snapshots={[snapshot("healthy")]}
       busy={false}
       error={null}
@@ -975,7 +979,7 @@ test("keeps tray usage and accounts in an internal scroll region", () => {
   const scroll = document.querySelector(".tray-scroll");
   expect(scroll).toBeInTheDocument();
   expect(scroll).toContainElement(screen.getByLabelText("Usage"));
-  expect(scroll).toContainElement(screen.getByLabelText("Accounts"));
+  expect(scroll).toContainElement(screen.getByText("1 account off"));
   expect(scroll).not.toContainElement(document.querySelector(".tray-header"));
 });
 

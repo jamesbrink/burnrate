@@ -1,22 +1,25 @@
 import {
   AlertCircle,
+  ChevronRight,
   Clock3,
   Download,
   RefreshCw,
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   bucketMeterLabel,
   bucketPercent,
   displayBuckets,
+  formatAgo,
   formatLimit,
   formatReset,
 } from "./format";
 import { LocalUsageSummary } from "./LocalUsageSummary";
 import { ProviderLogo } from "./ProviderLogo";
 import { SortableList, reorderWithinSubset } from "./SortableList";
+import { TrayCardDetails } from "./TrayCardDetails";
 import type {
   AccountView,
   DashboardState,
@@ -68,11 +71,26 @@ export function TrayPanel({
 }) {
   const accounts = state?.accounts ?? [];
   const summary = summarize(snapshots);
+  // Single-expand accordion: one card's drill-down open at a time keeps the
+  // popover height bounded and makes a second tap always collapse.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const cardItems = snapshots.map((snapshot) => ({
     id: snapshot.accountId,
     snapshot,
   }));
-  const isDense = Math.max(accounts.length, snapshots.length) >= 8;
+  const disabledCount = accounts.filter((account) => !account.enabled).length;
+  const isDense = snapshots.length >= 8;
+  const updatedAgo = formatAgo(newestFetchedAt(snapshots));
+  // Re-render periodically so the relative "Updated …" label stays honest
+  // while the popover sits open.
+  const [, setFreshnessTick] = useState(0);
+  useEffect(() => {
+    if (snapshots.length === 0) {
+      return;
+    }
+    const timer = setInterval(() => setFreshnessTick((n) => n + 1), 30_000);
+    return () => clearInterval(timer);
+  }, [snapshots.length]);
   // Local usage is provider-level: render it once, under the provider's first
   // card, with a multi-account caption when several cards share the history.
   const firstCardByProvider = new Map<string, string>();
@@ -106,6 +124,9 @@ export function TrayPanel({
         <div>
           <h1>Burnrate</h1>
           <p>{summary}</p>
+          {updatedAgo ? (
+            <p className="tray-updated">Updated {updatedAgo}</p>
+          ) : null}
         </div>
         <div className="tray-header-actions">
           {updateAvailable ? (
@@ -162,6 +183,12 @@ export function TrayPanel({
                   multiAccount={
                     (providerCardCounts.get(item.snapshot.provider) ?? 0) > 1
                   }
+                  expanded={expandedId === item.id}
+                  onToggle={() =>
+                    setExpandedId((current) =>
+                      current === item.id ? null : item.id,
+                    )
+                  }
                 />
               )}
             />
@@ -170,12 +197,17 @@ export function TrayPanel({
           )}
         </section>
 
-        {accounts.length > 0 ? (
-          <section className="tray-section tray-accounts" aria-label="Accounts">
-            {accounts.map((account) => (
-              <TrayAccount key={account.id} account={account} />
-            ))}
-          </section>
+        {disabledCount > 0 ? (
+          <div className="tray-footer">
+            <span>
+              {disabledCount === 1
+                ? "1 account off"
+                : `${disabledCount} accounts off`}
+            </span>
+            <button type="button" onClick={onOpenPreferences}>
+              Manage
+            </button>
+          </div>
         ) : null}
       </div>
     </main>
@@ -192,16 +224,30 @@ export function orderTrayAccountsFromUsageSubset(
   );
 }
 
+function newestFetchedAt(snapshots: UsageSnapshot[]): string | null {
+  let newest: string | null = null;
+  for (const snapshot of snapshots) {
+    if (!newest || snapshot.fetchedAt > newest) {
+      newest = snapshot.fetchedAt;
+    }
+  }
+  return newest;
+}
+
 function TraySnapshot({
   snapshot,
   handle,
   localUsage = null,
   multiAccount = false,
+  expanded,
+  onToggle,
 }: {
   snapshot: UsageSnapshot;
   handle: ReactNode;
   localUsage?: ProviderLocalUsage | null;
   multiAccount?: boolean;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const buckets = displayBuckets(snapshot);
   const plan = snapshot.subscription?.planLabel;
@@ -209,20 +255,33 @@ function TraySnapshot({
   return (
     <article className={`tray-card ${snapshot.status}`}>
       <div className="tray-card-head">
-        <div className="tray-provider">
-          {handle}
-          <ProviderLogo provider={snapshot.provider} size="sm" />
-          <div>
-            <strong>{snapshot.label}</strong>
-            <span>{providerLabels[snapshot.provider]}</span>
-            {snapshot.email ? (
-              <span className="tray-email">{snapshot.email}</span>
-            ) : null}
+        {handle}
+        <button
+          type="button"
+          className="tray-card-toggle"
+          aria-expanded={expanded}
+          onClick={onToggle}
+          title={expanded ? "Hide details" : "Show details"}
+        >
+          <div className="tray-provider">
+            <ProviderLogo provider={snapshot.provider} size="sm" />
+            <div>
+              <strong>{snapshot.label}</strong>
+              <span>{providerLabels[snapshot.provider]}</span>
+              {snapshot.email ? (
+                <span className="tray-email">{snapshot.email}</span>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <span className={`tray-status ${snapshot.status}`}>
-          {statusLabels[snapshot.status]}
-        </span>
+          <span className={`tray-status ${snapshot.status}`}>
+            {statusLabels[snapshot.status]}
+          </span>
+          <ChevronRight
+            size={13}
+            className="tray-card-chevron"
+            aria-hidden="true"
+          />
+        </button>
       </div>
 
       {plan ? (
@@ -243,6 +302,10 @@ function TraySnapshot({
 
       {localUsage ? (
         <LocalUsageSummary usage={localUsage} multiAccount={multiAccount} />
+      ) : null}
+
+      {expanded ? (
+        <TrayCardDetails snapshot={snapshot} localUsage={localUsage} />
       ) : null}
 
       {snapshot.message ? (
@@ -270,23 +333,6 @@ function BucketRow({ bucket }: { bucket: UsageBucketSnapshot }) {
           {formatReset(bucket.resetAt)}
         </small>
       ) : null}
-    </div>
-  );
-}
-
-function TrayAccount({ account }: { account: AccountView }) {
-  return (
-    <div className="tray-account">
-      <span className="tray-account-provider">
-        <ProviderLogo provider={account.provider} size="sm" />
-        <span>
-          <span>{account.label}</span>
-          {account.email ? (
-            <small className="tray-email">{account.email}</small>
-          ) : null}
-        </span>
-      </span>
-      <small>{account.enabled ? "Enabled" : "Disabled"}</small>
     </div>
   );
 }

@@ -163,7 +163,6 @@ p {
 .account-flags,
 .usage-head,
 .usage-provider,
-.tray-account-provider,
 .bucket-meta,
 .tray-card-head,
 .tray-provider,
@@ -316,7 +315,6 @@ p {
 .account-main small,
 .usage-head small,
 .tray-provider span,
-.tray-account small,
 .bucket-line small,
 .bucket-row small {
   color: var(--fg-soft);
@@ -1195,12 +1193,54 @@ html[data-view="tray"] .tray-card.error {
 html[data-view="tray"] .tray-card-head {
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
+}
+
+/* The whole head (minus the drag handle) toggles the card's drill-down. */
+html[data-view="tray"] .tray-card-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   gap: 9px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+html[data-view="tray"] .tray-card-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+html[data-view="tray"] .tray-card-chevron {
+  flex: none;
+  color: var(--tray-fg-faint);
+  transition: transform 120ms ease;
+}
+
+html[data-view="tray"]
+  .tray-card-toggle[aria-expanded="true"]
+  .tray-card-chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-view="tray"] .tray-card-chevron {
+    transition: none;
+  }
 }
 
 html[data-view="tray"] .tray-provider {
   gap: 8px;
   min-width: 0;
+  flex: 1;
   align-items: center;
 }
 
@@ -1386,13 +1426,112 @@ html[data-view="tray"] .tray-notice {
   color: var(--tray-crit);
 }
 
-html[data-view="tray"] .tray-accounts {
-  gap: 4px;
+html[data-view="tray"] .tray-updated {
+  margin-top: 1px;
+  font-size: 10px;
+  color: var(--tray-fg-faint);
 }
 
-html[data-view="tray"] .tray-account {
-  min-height: 34px;
-  padding: 6px 10px;
+html[data-view="tray"] .tray-card-details {
+  display: grid;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--tray-hairline);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-view="tray"] .tray-card-details {
+    animation: tray-details-fade 140ms ease;
+  }
+
+  @keyframes tray-details-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+html[data-view="tray"] .tray-detail-list {
+  display: grid;
+  gap: 3px;
+}
+
+html[data-view="tray"] .tray-detail-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+}
+
+html[data-view="tray"] .tray-detail-row span {
+  color: var(--tray-fg-soft);
+}
+
+html[data-view="tray"] .tray-detail-row strong {
+  font-weight: 550;
+  color: var(--tray-fg);
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+html[data-view="tray"] .tray-detail-local,
+html[data-view="tray"] .tray-detail-breakdown {
+  display: grid;
+  gap: 5px;
+}
+
+html[data-view="tray"] .tray-detail-heading {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tray-fg-faint);
+}
+
+html[data-view="tray"] .tray-detail-local .insight-bars {
+  width: 100%;
+}
+
+html[data-view="tray"] .tray-detail-local .insight-bars rect {
+  fill: color-mix(in srgb, CanvasText 38%, transparent);
+}
+
+html[data-view="tray"] .tray-detail-breakdown ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+
+html[data-view="tray"] .tray-detail-breakdown li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+}
+
+html[data-view="tray"] .tray-detail-breakdown li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--tray-fg);
+}
+
+html[data-view="tray"] .tray-detail-breakdown li small {
+  flex: none;
+  font-size: 10px;
+  color: var(--tray-fg-soft);
+}
+
+html[data-view="tray"] .tray-footer {
+  min-height: 30px;
+  padding: 4px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1400,31 +1539,22 @@ html[data-view="tray"] .tray-account {
   border: 1px solid var(--tray-hairline);
   border-radius: 9px;
   background: var(--tray-surface);
+  font-size: 11px;
+  color: var(--tray-fg-soft);
 }
 
-html[data-view="tray"] .tray-panel-dense .tray-account {
-  min-height: 30px;
-  padding: 5px 9px;
-}
-
-html[data-view="tray"] .tray-account-provider {
-  min-width: 0;
-  gap: 8px;
-}
-
-html[data-view="tray"] .tray-account-provider > span:last-child {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 12px;
+html[data-view="tray"] .tray-footer button {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--tray-fg);
 }
 
-html[data-view="tray"] .tray-account small {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--tray-fg-faint);
+html[data-view="tray"] .tray-footer button:hover {
+  background: var(--tray-track);
 }
 
 html[data-view="tray"] .tray-empty {
@@ -1771,10 +1901,6 @@ html[data-view="tray"] .drag-handle {
 html[data-view="tray"] .drag-handle:hover {
   color: var(--tray-fg-soft);
   background: var(--tray-track);
-}
-
-.tray-account-provider > span {
-  display: grid;
 }
 
 @media (prefers-reduced-motion: reduce) {

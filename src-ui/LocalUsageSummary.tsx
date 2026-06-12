@@ -28,6 +28,9 @@ export function LocalUsageSummary({
     <div className="tray-local-usage">
       <Sparkline
         values={usage.daily.map((day) => day.costUsd)}
+        titles={usage.daily.map(
+          (day) => `${day.date} · ${formatUsd(day.costUsd)}`,
+        )}
         label={`Daily local cost, last ${usage.daily.length} days`}
       />
       <div className="tray-local-stats">
