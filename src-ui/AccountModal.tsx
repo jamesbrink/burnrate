@@ -210,6 +210,14 @@ export function AccountModal({
               {isEdit && mode.account.email ? (
                 <span className="account-email">{mode.account.email}</span>
               ) : null}
+              <button
+                type="button"
+                className="modal-back modal-close"
+                title="Close"
+                onClick={onClose}
+              >
+                <X size={15} />
+              </button>
             </header>
 
             <div className="account-modal-body">

@@ -1813,9 +1813,9 @@ html[data-view="tray"] .tray-empty {
 }
 
 .login-modal-head .account-email {
-  margin-left: auto;
   font-size: 12px;
   color: var(--fg-soft);
+  overflow-wrap: anywhere;
 }
 
 .provider-grid {

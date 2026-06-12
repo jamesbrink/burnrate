@@ -149,7 +149,11 @@ export function formFromAccount(account: AccountView): AccountInput {
     secretStorage: account.secretStorage,
     secret: "",
     awsProfile: account.awsProfile ?? null,
-    awsRegion: account.awsRegion ?? AWS_DEFAULT_REGION,
+    // Only AWS accounts get the region default — seeding it for other
+    // providers would persist AWS-only fields on every save/toggle.
+    awsRegion:
+      account.awsRegion ??
+      (account.provider === "aws" ? AWS_DEFAULT_REGION : null),
     awsMonthlyBudgetUsd: account.awsMonthlyBudgetUsd ?? null,
     awsCategories:
       account.provider === "aws"
