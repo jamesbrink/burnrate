@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12](https://github.com/jamesbrink/burnrate/compare/v0.1.11...v0.1.12) - 2026-06-12
+
+### Added
+
+- claudex-powered local usage insights and GitHub Copilot provider ([#39](https://github.com/jamesbrink/burnrate/pull/39))
+
+### Other
+
+- *(install)* cover the GCC-as-cc compile failure for cargo install on macOS ([#41](https://github.com/jamesbrink/burnrate/pull/41))
+
 ## [0.1.11](https://github.com/jamesbrink/burnrate/compare/v0.1.10...v0.1.11) - 2026-06-11
 
 ### Added
