@@ -166,7 +166,7 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
     let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version > LATEST_SCHEMA_VERSION {
         bail!(
-            "config database schema version {version} is newer than this Burnrate build supports ({LATEST_SCHEMA_VERSION})"
+            "config database schema version {version} is newer than this Burnrate build supports ({LATEST_SCHEMA_VERSION}); a newer Burnrate (or a dev build) wrote this database — update Burnrate to the latest version"
         );
     }
     if version < 1 {
@@ -623,7 +623,11 @@ mod tests {
             Err(error) => error,
         };
 
-        assert!(error.to_string().contains("newer than this Burnrate build"));
+        let message = error.to_string();
+        assert!(message.contains("newer than this Burnrate build"));
+        // The message reaches the fatal startup dialog, so it must tell the
+        // user how to get unstuck, not just what went wrong.
+        assert!(message.contains("update Burnrate"));
         let conn = Connection::open(db_path).unwrap();
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))

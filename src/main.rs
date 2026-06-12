@@ -446,6 +446,47 @@ fn build_app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     Menu::new(app)
 }
 
+/// A startup failure has to be visible. Launched from Finder there is no
+/// terminal, so a panic dies silently — an old build refusing a newer config
+/// database (written by a newer release or a dev run) just looks like the app
+/// won't open, and the auto-updater can never run to fix it. Print the error
+/// always, and raise a blocking native alert when no terminal is attached.
+fn fail_startup(error: &anyhow::Error) -> ! {
+    eprintln!("Burnrate failed to start: {error:#}");
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::IsTerminal;
+        if !std::io::stderr().is_terminal() {
+            show_fatal_alert(&format!("{error:#}"));
+        }
+    }
+    std::process::exit(1);
+}
+
+#[cfg(target_os = "macos")]
+fn show_fatal_alert(message: &str) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSAlert, NSAlertStyle, NSApplication, NSApplicationActivationPolicy};
+    use objc2_foundation::NSString;
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    // Tauri never ran, so nothing has activated this process yet; without an
+    // explicit activation the alert can open behind every other window (e.g.
+    // for launch-at-login or an updater relaunch).
+    let app = NSApplication::sharedApplication(mtm);
+    app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    #[allow(deprecated)]
+    app.activateIgnoringOtherApps(true);
+
+    let alert = NSAlert::new(mtm);
+    alert.setAlertStyle(NSAlertStyle::Critical);
+    alert.setMessageText(&NSString::from_str("Burnrate failed to start"));
+    alert.setInformativeText(&NSString::from_str(message));
+    alert.runModal();
+}
+
 fn main() {
     // Headless diagnostics: `burnrate debug <env|detect|load|snapshot>` runs the
     // real provider/config code paths and exits without starting the GUI.
@@ -454,7 +495,10 @@ fn main() {
         std::process::exit(debug::run(&args[2..]));
     }
 
-    let state = AppState::load().expect("failed to initialize Burnrate state");
+    let state = match AppState::load() {
+        Ok(state) => state,
+        Err(error) => fail_startup(&error),
+    };
 
     let builder = tauri::Builder::default().plugin(tauri_plugin_updater::Builder::new().build());
     // Notifications back the updater's "update available" alert; the dep is

@@ -92,8 +92,13 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # NSVisualEffectView material + rounded corners.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage"] }
-objc2-foundation = { version = "0.3", features = ["NSData"] }
+objc2-app-kit = { version = "0.3", features = [
+  "NSApplication",
+  "NSImage",
+  "NSAlert",
+  "NSRunningApplication",
+] }
+objc2-foundation = { version = "0.3", features = ["NSData", "NSString"] }
 # macOS-only on purpose: the updater (the lone notification source) requires a
 # bundled macOS app, and on Linux notify-rust would drag in a dbus build dep.
 tauri-plugin-notification = "2"
