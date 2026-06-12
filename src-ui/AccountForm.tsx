@@ -3,6 +3,7 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import {
   AWS_DEFAULT_REGION,
   cloneDefaultAwsCategories,
+  COPILOT_PLANS,
   providerDefaultEndpoints,
   providerLabels,
 } from "./constants";
@@ -10,6 +11,7 @@ import type {
   AccountInput,
   AwsCategoryConfig,
   AwsCostFilter,
+  CopilotPlan,
   ProviderKind,
   SecretStorageMode,
 } from "./types";
@@ -50,6 +52,7 @@ export function AccountForm({
 }) {
   const isCliProvider = CLI_PROVIDERS.includes(form.provider);
   const isAwsProvider = form.provider === "aws";
+  const isCopilotProvider = form.provider === "copilot";
   const showSignInControls = Boolean(activeId) && isCliProvider;
 
   return (
@@ -114,6 +117,10 @@ export function AccountForm({
                   provider === "aws" && !current.awsCategories?.length
                     ? cloneDefaultAwsCategories()
                     : current.awsCategories,
+                copilotPlan:
+                  provider === "copilot" ? current.copilotPlan : null,
+                copilotCustomLimit:
+                  provider === "copilot" ? current.copilotCustomLimit : null,
               }));
             }}
           >
@@ -122,6 +129,7 @@ export function AccountForm({
             <option value="aws">AWS</option>
             <option value="claude-code">Claude Code</option>
             <option value="codex">Codex</option>
+            <option value="copilot">GitHub Copilot</option>
           </select>
         </label>
 
@@ -142,6 +150,8 @@ export function AccountForm({
 
       {isAwsProvider ? (
         <AwsFields form={form} setForm={setForm} />
+      ) : isCopilotProvider ? (
+        <CopilotFields form={form} setForm={setForm} activeId={activeId} />
       ) : (
         <>
           <div className="segmented" role="group" aria-label="Secret storage">
@@ -215,6 +225,87 @@ export function AccountForm({
         {activeId ? "Save" : "Add"}
       </button>
     </form>
+  );
+}
+
+function CopilotFields({
+  form,
+  setForm,
+  activeId,
+}: {
+  form: AccountInput;
+  setForm: Dispatch<SetStateAction<AccountInput>>;
+  activeId: string | null;
+}) {
+  const plan = form.copilotPlan ?? "";
+
+  return (
+    <div className="copilot-fields">
+      <p className="form-help">
+        Without a token, usage is estimated from Copilot CLI session logs on
+        this Mac — IDE and web usage is not counted. A GitHub token (classic)
+        fetches your exact premium-request usage from GitHub billing.
+      </p>
+      <div className="form-grid">
+        <label>
+          Plan
+          <select
+            value={plan}
+            onChange={(event) => {
+              const next = (event.target.value || null) as CopilotPlan | null;
+              setForm((current) => ({
+                ...current,
+                copilotPlan: next,
+                copilotCustomLimit:
+                  next === "custom" ? current.copilotCustomLimit : null,
+              }));
+            }}
+          >
+            <option value="">No plan (usage only)</option>
+            {COPILOT_PLANS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          GitHub token (optional)
+          <input
+            type="password"
+            value={form.secret ?? ""}
+            placeholder={activeId ? "Leave blank to keep existing" : "ghp_…"}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                secret: event.target.value,
+              }))
+            }
+          />
+        </label>
+      </div>
+
+      {plan === "custom" ? (
+        <label>
+          Monthly premium requests
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={form.copilotCustomLimit ?? ""}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                copilotCustomLimit: event.target.value
+                  ? Number(event.target.value)
+                  : null,
+              }))
+            }
+          />
+        </label>
+      ) : null}
+    </div>
   );
 }
 

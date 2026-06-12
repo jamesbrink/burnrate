@@ -1,4 +1,9 @@
-import type { AccountInput, AwsCategoryConfig, ProviderKind } from "./types";
+import type {
+  AccountInput,
+  AwsCategoryConfig,
+  CopilotPlan,
+  ProviderKind,
+} from "./types";
 
 export const OPENROUTER_DEFAULT_ENDPOINT =
   "https://openrouter.ai/api/v1/credits";
@@ -18,6 +23,21 @@ export const providerDefaultEndpoints: Partial<Record<ProviderKind, string>> = {
   openrouter: OPENROUTER_DEFAULT_ENDPOINT,
   runpod: RUNPOD_DEFAULT_ENDPOINT,
 };
+
+/** GitHub Copilot plans and their monthly premium-request allowances
+ *  (mirrors `CopilotPlan::monthly_limit` in src/models.rs). */
+export const COPILOT_PLANS: {
+  value: CopilotPlan;
+  label: string;
+  limit: number | null;
+}[] = [
+  { value: "free", label: "Free (50/mo)", limit: 50 },
+  { value: "pro", label: "Pro (300/mo)", limit: 300 },
+  { value: "pro-plus", label: "Pro+ (1,500/mo)", limit: 1500 },
+  { value: "business", label: "Business (300/mo)", limit: 300 },
+  { value: "enterprise", label: "Enterprise (1,000/mo)", limit: 1000 },
+  { value: "custom", label: "Custom limit", limit: null },
+];
 
 export const defaultAwsCategories: AwsCategoryConfig[] = [
   {
@@ -77,4 +97,6 @@ export const emptyForm: AccountInput = {
   awsRegion: AWS_DEFAULT_REGION,
   awsMonthlyBudgetUsd: null,
   awsCategories: [],
+  copilotPlan: null,
+  copilotCustomLimit: null,
 };

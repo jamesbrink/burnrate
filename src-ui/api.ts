@@ -108,6 +108,23 @@ let mockAccounts: AccountView[] = [
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
+  {
+    id: "copilot-local",
+    provider: "copilot",
+    label: "GitHub Copilot",
+    enabled: true,
+    autoDetected: true,
+    credentialPath: "~/.copilot/session-state",
+    endpointOverride: null,
+    secretStorage: "keyring",
+    hasSecret: false,
+    email: null,
+    configDir: null,
+    copilotPlan: "pro",
+    copilotCustomLimit: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
 ];
 
 let mockSettings: AppSettings = {
@@ -291,6 +308,41 @@ const mockSnapshots: UsageSnapshot[] = [
     },
     message:
       "AWS account 123456789012 · Cost Explorer marks current data as estimated",
+    fetchedAt: new Date().toISOString(),
+  },
+  {
+    accountId: "copilot-local",
+    provider: "copilot",
+    label: "GitHub Copilot",
+    status: "healthy",
+    subscription: {
+      plan: "pro",
+      planLabel: "Pro",
+      rateLimitTier: null,
+      extraUsageEnabled: null,
+      source: "copilot-local-estimate",
+    },
+    usageBuckets: [
+      {
+        id: "copilot-premium-mtd",
+        label: "Premium requests",
+        window: "monthly",
+        used: 142,
+        limit: 300,
+        remaining: 158,
+        unit: "requests",
+        resetAt: new Date(Date.now() + 19 * 24 * 60 * 60 * 1000).toISOString(),
+        status: "healthy",
+      },
+    ],
+    quota: {
+      used: 142,
+      limit: 300,
+      remaining: 158,
+      unit: "requests",
+      resetAt: new Date(Date.now() + 19 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+    message: "Local estimate — counts Copilot CLI sessions on this Mac only.",
     fetchedAt: new Date().toISOString(),
   },
   {
@@ -482,6 +534,8 @@ export async function saveAccount(input: AccountInput): Promise<AccountView[]> {
     awsRegion: input.awsRegion ?? null,
     awsMonthlyBudgetUsd: input.awsMonthlyBudgetUsd ?? null,
     awsCategories: input.awsCategories ?? [],
+    copilotPlan: input.copilotPlan ?? null,
+    copilotCustomLimit: input.copilotCustomLimit ?? null,
     createdAt: now,
     updatedAt: now,
   };

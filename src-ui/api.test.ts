@@ -90,7 +90,7 @@ test("wires browser refresh events and refresh snapshot fallback", async () => {
   window.dispatchEvent(new Event("burnrate-refresh-requested"));
 
   expect(handler).toHaveBeenCalledOnce();
-  await expect(refreshSnapshots()).resolves.toHaveLength(5);
+  await expect(refreshSnapshots()).resolves.toHaveLength(6);
 });
 
 test("isStale compares against the freshness threshold", () => {
@@ -122,7 +122,7 @@ test("guardedFetch de-dupes concurrent fetches", async () => {
   const [first, second] = await Promise.all([guardedFetch(), guardedFetch()]);
 
   // One underlying fetch → one cache entry → both callers share the payload.
-  expect(readCachedDashboard()?.dashboard.snapshots).toHaveLength(5);
+  expect(readCachedDashboard()?.dashboard.snapshots).toHaveLength(6);
   expect(first).toBe(second);
 });
 

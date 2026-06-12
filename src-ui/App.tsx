@@ -463,6 +463,11 @@ export function App() {
         awsProfile: form.awsProfile?.trim() || null,
         awsRegion: form.awsRegion?.trim() || null,
         awsCategories: form.awsCategories ?? [],
+        copilotPlan: form.provider === "copilot" ? (form.copilotPlan ?? null) : null,
+        copilotCustomLimit:
+          form.provider === "copilot" && form.copilotPlan === "custom"
+            ? (form.copilotCustomLimit ?? null)
+            : null,
       });
       updateAccounts(accounts, settings, summary);
       setForm(emptyForm);
@@ -502,6 +507,8 @@ export function App() {
             ? account.awsCategories
             : cloneDefaultAwsCategories()
           : [],
+      copilotPlan: account.copilotPlan ?? null,
+      copilotCustomLimit: account.copilotCustomLimit ?? null,
     });
   }
 
@@ -573,6 +580,8 @@ export function App() {
       awsRegion: provider === "aws" ? "us-east-1" : null,
       awsMonthlyBudgetUsd: null,
       awsCategories: provider === "aws" ? cloneDefaultAwsCategories() : [],
+      copilotPlan: null,
+      copilotCustomLimit: null,
     });
   }
 

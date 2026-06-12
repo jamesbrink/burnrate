@@ -7,6 +7,7 @@ import type { ProviderKind } from "./types";
 const PROVIDERS: ProviderKind[] = [
   "claude-code",
   "codex",
+  "copilot",
   "aws",
   "openrouter",
   "runpod",

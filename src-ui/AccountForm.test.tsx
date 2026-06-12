@@ -150,6 +150,71 @@ test("custom AWS categories start disabled until configured", async () => {
   });
 });
 
+test("switching to Copilot shows plan selector and optional token, hides endpoint", async () => {
+  const user = userEvent.setup();
+  render(<Harness initial={{ ...emptyForm }} />);
+
+  await user.selectOptions(screen.getByLabelText("Provider"), "copilot");
+
+  expect(screen.getByLabelText("Plan")).toHaveValue("");
+  expect(screen.getByLabelText("GitHub token (optional)")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Endpoint")).not.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Monthly premium requests"),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText(/estimated from Copilot CLI session logs/i))
+    .toBeInTheDocument();
+});
+
+test("Copilot custom plan reveals the premium request limit field", async () => {
+  const user = userEvent.setup();
+  render(
+    <Harness initial={{ ...emptyForm, provider: "copilot", label: "Copilot" }} />,
+  );
+
+  await user.selectOptions(screen.getByLabelText("Plan"), "pro");
+  expect(formState().copilotPlan).toBe("pro");
+  expect(
+    screen.queryByLabelText("Monthly premium requests"),
+  ).not.toBeInTheDocument();
+
+  await user.selectOptions(screen.getByLabelText("Plan"), "custom");
+  await user.type(screen.getByLabelText("Monthly premium requests"), "2500");
+  expect(formState()).toMatchObject({
+    copilotPlan: "custom",
+    copilotCustomLimit: 2500,
+  });
+
+  // Leaving custom clears the stale limit so a plan's own allowance applies.
+  await user.selectOptions(screen.getByLabelText("Plan"), "enterprise");
+  expect(formState()).toMatchObject({
+    copilotPlan: "enterprise",
+    copilotCustomLimit: null,
+  });
+});
+
+test("switching away from Copilot clears its plan fields", async () => {
+  const user = userEvent.setup();
+  render(
+    <Harness
+      initial={{
+        ...emptyForm,
+        provider: "copilot",
+        label: "Copilot",
+        copilotPlan: "pro",
+      }}
+    />,
+  );
+
+  await user.selectOptions(screen.getByLabelText("Provider"), "openrouter");
+
+  expect(formState()).toMatchObject({
+    provider: "openrouter",
+    copilotPlan: null,
+    copilotCustomLimit: null,
+  });
+});
+
 test("hides Sign in again when the backend would reject a re-auth", () => {
   const props = {
     form: { ...emptyForm, provider: "claude-code" as const },
