@@ -296,7 +296,14 @@ burnrate`).
   The Nix package and devshell override the pin via `CARGO_TARGET_*_LINKER`
   env vars (env beats file). Never add dev-only entries (like the codesign
   `runner`) to that file — it ships to users; the runner lives in devshell
-  env instead.
+  env instead. The same non-Apple-`cc` machines also fail at the **compile**
+  step: cc-rs-built C/ObjC build scripts (`mac-notification-sys`) pass
+  clang-only flags (`-mmacos-version-min`) that GNU GCC rejects. That fix is
+  user-side `[env] CC_<target>` pins (documented on the website
+  troubleshooting page) and is deliberately NOT shipped in the packaged
+  config: cc-rs prefers `CC_<target>` over plain `CC`, so a packaged pin
+  would shadow the Nix sandbox's stdenv `CC` and point at a `/usr/bin/cc`
+  that doesn't exist there.
 - **claudex / rusqlite move in lockstep.** The `claudex` dependency pins
   `rusqlite 0.39` internally; `libsqlite3-sys` has a cargo `links` key, so
   burnrate's own rusqlite pin must track claudex's or the build fails on a
