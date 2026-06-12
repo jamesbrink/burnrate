@@ -57,6 +57,7 @@ export default defineConfig({
           { text: "Installation", link: "/guide/installation" },
           { text: "Getting Started", link: "/guide/getting-started" },
           { text: "Configuration", link: "/guide/configuration" },
+          { text: "Local Insights", link: "/guide/local-insights" },
           { text: "Troubleshooting", link: "/guide/troubleshooting" },
         ],
       },
@@ -65,6 +66,7 @@ export default defineConfig({
         items: [
           { text: "Claude Code", link: "/providers/claude-code" },
           { text: "Codex", link: "/providers/codex" },
+          { text: "GitHub Copilot", link: "/providers/github-copilot" },
           { text: "OpenRouter", link: "/providers/openrouter" },
           { text: "Runpod", link: "/providers/runpod" },
           { text: "AWS", link: "/providers/aws" },

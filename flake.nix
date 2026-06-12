@@ -1,5 +1,5 @@
 {
-  description = "Desktop usage monitor for Claude Code, Codex, OpenRouter, and Runpod quotas, credits, spend, and subscription limits.";
+  description = "Desktop usage monitor for Claude Code, Codex, GitHub Copilot, OpenRouter, Runpod, and AWS quotas, credits, spend, and subscription limits.";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";

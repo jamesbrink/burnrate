@@ -8,9 +8,11 @@ afterEach(() => cleanup());
 test("renders provider rows and snapshot states", async () => {
   render(<App />);
 
-  expect(await screen.findByText("Claude Code")).toBeInTheDocument();
+  expect((await screen.findAllByText("Claude Code")).length).toBeGreaterThan(0);
+  // The insights panel can hydrate before the dashboard snapshots — wait for
+  // the usage rows' status badge instead of assuming render order.
+  expect((await screen.findAllByText("Warning")).length).toBeGreaterThan(0);
   expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("Warning").length).toBeGreaterThan(0);
   expect(screen.getAllByText("5-hour").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Weekly").length).toBeGreaterThan(0);
   expect(screen.getAllByText("OpenRouter").length).toBeGreaterThan(0);

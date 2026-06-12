@@ -6,8 +6,11 @@
 ## Overview
 
 Burnrate is a macOS-first menu-bar app that monitors remaining quota/credits
-across Claude Code, Codex, OpenRouter, Runpod, and AWS Cost Explorer spend
-(with multiple accounts per provider for Claude Code and Codex). It is a
+across Claude Code, Codex, GitHub Copilot, OpenRouter, Runpod, and AWS Cost
+Explorer spend (with multiple accounts per provider for Claude Code and
+Codex), plus claudex-powered **local usage insights** (per-provider daily
+cost, projections, model/project breakdowns from local CLI session logs).
+It is a
 **Tauri 2** app: a Rust
 backend (`src/`) plus a React + TypeScript frontend (`src-ui/`), shipped both as
 native bundles (GitHub Releases) and as a binary crate (`cargo install
@@ -21,14 +24,17 @@ burnrate`).
   (`dashboard`, `list_accounts`, `save_account`, `remove_account`,
   `detect_accounts`, `reorder_accounts`, `start_account_login`,
   `submit_account_login_code`, `cancel_account_login`, `logout_account`, `save_settings`,
-  `refresh_snapshots`, `resize_preferences_to_content`,
+  `refresh_snapshots`, `local_usage`, `resize_preferences_to_content`,
   `resize_tray_to_content`, `close_preferences`, `open_preferences`,
   `updater_available`, `check_for_updates`, `install_pending_update`,
   `notify_update_available`),
   registers `tauri-plugin-updater` (and, macOS-only, `tauri-plugin-notification`
   — the dep is target-gated so Linux builds never pull in dbus),
   builds the two windows and macOS menu, installs the tray, and spawns the
-  5-minute background refresh loop. Closing the Preferences window is
+  5-minute background refresh loop. Both refresh paths follow the dashboard
+  broadcast with a detached `spawn_local_usage_broadcast` that collects
+  claudex insights and emits `burnrate-local-usage-updated` — quota cards
+  never wait on an index build. Closing the Preferences window is
   intercepted to _hide_ (tray-only), not quit.
 - `updater.rs` — auto-updater IPC over `tauri-plugin-updater`: `check_for_updates`
   (channel-aware: `stable` hits `releases/latest`, `nightly` discovers candidate
@@ -63,7 +69,11 @@ burnrate`).
   `LoginManager` is reauth-aware and single-flight). `logout_account` and
   `remove_account` share one teardown that, for managed dirs only (never the
   system default), runs the CLI sign-out, deletes the orphan-prone macOS Keychain
-  entry as a fallback, and removes the dir. All persistence flows through here.
+  entry as a fallback, and removes the dir. `local_usage()` returns the claudex
+  insights report for the enabled accounts' providers — an async mutex caches
+  the last good report and serializes collections (concurrent windows trigger
+  one index sync); a disabled `local_insights` setting yields an explanatory
+  unavailable report. All persistence flows through here.
 - `config.rs` — the **in-memory** `AppConfig` (settings + accounts) and path
   helpers; persistence lives in `storage.rs`. `views()` strips secrets and
   exposes only `hasSecret`, returning
@@ -91,6 +101,21 @@ burnrate`).
   unsigned build re-prompts every launch; a code-signed install
   (`APPLE_SIGNING_IDENTITY` → `package-dmg`, with `entitlements.macos.plist` for
   the hardened runtime) makes the grant persist.
+- `insights.rs` — claudex-backed local usage analytics. Embeds the
+  [`claudex`](https://crates.io/crates/claudex) library (same author; index at
+  `~/.claudex/index.db`, `CLAUDEX_DIR` override, WAL + busy timeout → safe
+  alongside the claudex CLI) and maps burnrate providers to claudex session
+  sources (`claude-code`→claude, `codex`→codex, `copilot`→copilot +
+  copilot-vscode; OpenRouter/Runpod/AWS have no local source).
+  `collect_local_usage` runs in `spawn_blocking` (rusqlite is `Send`, not
+  `Sync`) and **never errors** — failures degrade to `available: false`.
+  Per provider: today/week/month-to-date cost + sessions (local-midnight
+  windows, DST-safe), linear month-end projection, month token totals, model
+  distribution, top projects, and a 14-day daily series for sparklines.
+  `copilot_premium_requests_mtd` sums `premium_requests` from Copilot session
+  `extras` with a Copilot-scoped sync. `test_support` provides the hermetic
+  env helpers (`with_claudex_env`, fixture writer) that keep tests from ever
+  touching the real `~/.claudex`.
 - `models.rs` — every serde wire type shared with the UI. Structs are
   `camelCase`, enums `kebab-case`. This is the single source of truth that
   `src-ui/types.ts` mirrors by hand — keep them in sync.
@@ -109,9 +134,9 @@ burnrate`).
   `OPENAI_API_KEY`, …) stripped via `strip_credential_env` — an inherited agent
   token (e.g. from a cmux surface) otherwise makes `claude auth status` report
   env auth with no subscription/email, breaking verify, fetch, and detection.
-- `providers/{claude,codex,openrouter,runpod,aws}.rs` — each implements
+- `providers/{claude,codex,copilot,openrouter,runpod,aws}.rs` — each implements
   `fetch()`, and
-  claude/codex also implement `detect()`. claude reads `~/.claude` creds +
+  claude/codex/copilot also implement `detect()`. claude reads `~/.claude` creds +
   macOS Keychain (service name derived per account via
   `keychain_service_name_for(account.cli_config_dir(), …)`), validates with
   `claude auth status --json` (also yields the account **email** — a local
@@ -142,6 +167,18 @@ burnrate`).
   `UnblendedCost` in USD; an optional monthly budget turns spend into
   remaining/warning/exhausted status, and user-editable category buckets
   (service/tag/cost-category filters, optional group-by) become extra buckets.
+  copilot tracks GitHub Copilot **premium requests** per calendar month (reset
+  1st, 00:00 UTC) against the account's configured plan allowance
+  (`CopilotPlan::monthly_limit`, or a custom limit): detection requires a
+  non-empty `~/.copilot/session-state` (`CLAUDEX_COPILOT_DIR` override —
+  deliberately shared with claudex so detection and indexing agree); without
+  credentials the count is a **local lower-bound estimate** via
+  `insights::copilot_premium_requests_mtd`, and with an optional GitHub token
+  (classic PAT — billing endpoints reject fine-grained tokens) it sums
+  `usageItems[].grossQuantity` from the enhanced-billing premium-request
+  report (`BURNRATE_GITHUB_API_URL` override for wiremock). A billing-API
+  failure falls back to the local estimate with a note instead of an error
+  snapshot, and every message states which source produced the number.
 - `providers/login.rs` — interactive sign-in. Shells out to `claude auth login`
   / `codex login` under the account's config dir, streams an **allowlist-redacted**
   view of CLI output (surfacing the auth URL, masking token-shaped lines) via the
@@ -175,7 +212,8 @@ burnrate`).
   event sequence via window `CustomEvent`s. It wraps `invoke()` commands and
   `listen()` for the `burnrate-refresh-requested` / `burnrate-dashboard-updated` /
   `burnrate-settings-updated`, `burnrate-login-progress` / `-complete` /
-  `-failed`, and the updater's `burnrate-update-progress` /
+  `-failed`, `burnrate-local-usage-updated` (with a full mock insights
+  report for dev:web/vitest), and the updater's `burnrate-update-progress` /
   `burnrate-check-update-requested` / `burnrate-update-available` events. The
   updater calls are mocked too (a `VITE_MOCK_UPDATE` opt-in advertises a fake
   update for `dev:web`, and the mock `checkForUpdates` dispatches the
@@ -185,7 +223,13 @@ burnrate`).
   `ProviderLogo.tsx`, and `format.ts` are the focused UI pieces, plus
   `AccountForm.tsx`, `AddAccountMenu.tsx`, `LoginModal.tsx`, the `useLogin.ts`
   hook, `SortableList.tsx` (reusable `@dnd-kit` drag-to-reorder used by both
-  surfaces), and the updater trio `useUpdater.ts` (channel-aware poll/check/
+  surfaces), the insights trio `Sparkline.tsx` (dependency-free inline-SVG
+  sparkline + bar series, per-card max scaling) + `LocalUsageSummary.tsx`
+  (tray per-provider line: 14-day sparkline, today/MTD/projected, rendered
+  once under a provider's **first** card with an "all accounts on this Mac"
+  caption when several share the history) + `InsightsPanel.tsx` (Preferences
+  section with the `localInsights` toggle, stat rows, daily bar timeline,
+  model/project breakdowns), and the updater trio `useUpdater.ts` (channel-aware poll/check/
   install state machine; only the Preferences window runs it `enabled` — the
   tray view passively mirrors the `burnrate-update-available` broadcast, and
   background-poll finds trigger the deduped system notification) +
@@ -226,7 +270,7 @@ burnrate`).
   (`npm run dev`) opts out via `--no-default-features` to keep live reload.
   Removing the default would make every non-`tauri build` binary open blank.
 - **CSP allowlist.** `tauri.conf.json` restricts `connect-src` to the Anthropic,
-  ChatGPT, OpenRouter, Runpod, and localhost hosts — adding a provider endpoint
+  ChatGPT, OpenRouter, Runpod, GitHub API, and localhost hosts — adding a provider endpoint
   requires editing that CSP. HTTP that runs in Rust (the updater's `reqwest`
   calls and the AWS SDK) is exempt — only webview traffic is governed.
 - **App version derives from `Cargo.toml`.** `tauri.conf.json` deliberately omits
@@ -253,6 +297,14 @@ burnrate`).
   env vars (env beats file). Never add dev-only entries (like the codesign
   `runner`) to that file — it ships to users; the runner lives in devshell
   env instead.
+- **claudex / rusqlite move in lockstep.** The `claudex` dependency pins
+  `rusqlite 0.39` internally; `libsqlite3-sys` has a cargo `links` key, so
+  burnrate's own rusqlite pin must track claudex's or the build fails on a
+  links conflict. claudex also sets the crate's MSRV (`rust-version = 1.95`).
+- **Local insights are provider-level, never per-account.** Local session
+  history cannot be attributed to one of several accounts of the same
+  provider; every surface (tray caption, panel footnote, Copilot messages)
+  says so. Keep it honest when extending.
 - **IPC command sync.** Adding a `#[tauri::command]` requires touching three
   places in lockstep: register it in `main.rs`, wrap it in `src-ui/api.ts`, and
   add it to the `vi.hoisted` mock in `App.states.test.tsx` (an unmocked export
@@ -294,7 +346,7 @@ npx vitest run -t "summary promotes"     # single UI test by name
 npm run coverage       # UI + Rust coverage; both gated at 80%
                        # (Rust gate ignores main.rs/app_state.rs/tray.rs/updater.rs/debug.rs — glue)
 
-./target/debug/burnrate debug <env|detect|load|snapshot>
+./target/debug/burnrate debug <env|detect|load|snapshot|insights>
                        # headless diagnostics: real provider/config code paths
                        # without the GUI (see .claude/skills/burnrate-debug)
 
