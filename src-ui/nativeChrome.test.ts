@@ -15,6 +15,9 @@ describe("isEditableTarget", () => {
       <input id="field" />
       <textarea id="area"></textarea>
       <div id="rich" contenteditable="true"><span id="inner">x</span></div>
+      <div id="bare" contenteditable></div>
+      <div id="plaintext" contenteditable="plaintext-only"></div>
+      <div id="optout" contenteditable="false"></div>
       <div id="plain">text</div>
     `;
     expect(isEditableTarget(document.getElementById("field"))).toBe(true);
@@ -22,6 +25,10 @@ describe("isEditableTarget", () => {
     expect(isEditableTarget(document.getElementById("rich"))).toBe(true);
     // Nested inside a contenteditable region still counts.
     expect(isEditableTarget(document.getElementById("inner"))).toBe(true);
+    // Bare boolean and plaintext-only forms are editable; "false" is not.
+    expect(isEditableTarget(document.getElementById("bare"))).toBe(true);
+    expect(isEditableTarget(document.getElementById("plaintext"))).toBe(true);
+    expect(isEditableTarget(document.getElementById("optout"))).toBe(false);
     expect(isEditableTarget(document.getElementById("plain"))).toBe(false);
     expect(isEditableTarget(null)).toBe(false);
   });

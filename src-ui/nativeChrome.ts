@@ -7,9 +7,14 @@
  */
 
 export function isEditableTarget(target: EventTarget | null): boolean {
+  // `[contenteditable]` also matches the bare boolean form and
+  // "plaintext-only"; only an explicit "false" opts back out. The closest()
+  // walk covers editability inherited from an ancestor.
   return (
     target instanceof Element &&
-    target.closest('input, textarea, [contenteditable="true"]') !== null
+    target.closest(
+      'input, textarea, [contenteditable]:not([contenteditable="false"])',
+    ) !== null
   );
 }
 

@@ -80,6 +80,11 @@ body {
 }
 
 input,
+textarea {
+  cursor: text;
+}
+
+input,
 textarea,
 .tray-email,
 .account-email,
@@ -88,6 +93,7 @@ textarea,
 .tray-notice span,
 .notice span,
 .update-banner.error,
+.update-dialog-notes,
 .login-error,
 .login-code-error {
   user-select: text;
