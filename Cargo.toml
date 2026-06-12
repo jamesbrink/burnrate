@@ -1,6 +1,6 @@
 [package]
 name = "burnrate"
-version = "0.1.12"
+version = "0.1.13"
 edition = "2024"
 # Inherited from the claudex dependency; cargo turns this into a clear error
 # (instead of a confusing build failure) on older toolchains.
