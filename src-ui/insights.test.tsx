@@ -53,6 +53,9 @@ function report(providers: ProviderLocalUsage[]): LocalUsageReport {
 test("shortenProjectPath keeps short names and trims deep paths to two segments", () => {
   expect(shortenProjectPath("burnrate")).toBe("burnrate");
   expect(shortenProjectPath("utensils/aethon")).toBe("utensils/aethon");
+  // Short paths are normalized — no stray leading/trailing slashes.
+  expect(shortenProjectPath("/foo/bar/")).toBe("foo/bar");
+  expect(shortenProjectPath("/")).toBe("/");
   expect(
     shortenProjectPath("/Users/jamesbrink/Projects/utensils/aethon"),
   ).toBe("…/utensils/aethon");

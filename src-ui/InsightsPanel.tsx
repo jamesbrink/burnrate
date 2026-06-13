@@ -129,7 +129,9 @@ function InsightsCard({ usage }: { usage: ProviderLocalUsage }) {
 export function shortenProjectPath(path: string): string {
   const segments = path.split("/").filter(Boolean);
   if (segments.length <= 2) {
-    return path;
+    // Normalized (no stray slashes) for consistency with the shortened
+    // form; degenerate inputs like "/" fall back to the original.
+    return segments.join("/") || path;
   }
   return `…/${segments.slice(-2).join("/")}`;
 }
