@@ -97,7 +97,7 @@ function InsightsCard({ usage }: { usage: ProviderLocalUsage }) {
         <ul className="insights-list" aria-label="Models this month">
           {usage.modelDistribution.map((model) => (
             <li key={model.model}>
-              <span>{model.model}</span>
+              <span title={model.model}>{model.model}</span>
               <small>
                 {model.sessions} sess · {formatUsd(model.costUsd)}
               </small>
@@ -110,7 +110,9 @@ function InsightsCard({ usage }: { usage: ProviderLocalUsage }) {
         <ul className="insights-list" aria-label="Top projects this month">
           {usage.topProjects.map((project) => (
             <li key={project.project}>
-              <span>{project.project}</span>
+              <span title={project.project}>
+                {shortenProjectPath(project.project)}
+              </span>
               <small>
                 {project.sessions} sess · {formatUsd(project.costUsd)}
               </small>
@@ -120,6 +122,16 @@ function InsightsCard({ usage }: { usage: ProviderLocalUsage }) {
       ) : null}
     </article>
   );
+}
+
+/** Last two path segments — the part that identifies a project. The full
+ *  path stays available in the row's tooltip. */
+export function shortenProjectPath(path: string): string {
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length <= 2) {
+    return path;
+  }
+  return `…/${segments.slice(-2).join("/")}`;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

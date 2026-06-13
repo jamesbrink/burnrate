@@ -77,6 +77,8 @@ body {
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+  /* Native feel: no WebKit rubber-band bounce at the document edge. */
+  overscroll-behavior: none;
 }
 
 input,
@@ -239,16 +241,21 @@ p {
 .prefs-list {
   align-self: start;
   max-height: 100%;
+  min-width: 0;
   overflow: auto;
+  overscroll-behavior: none;
   padding: 12px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
 .prefs-main {
   max-height: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: none;
   padding: 12px;
   display: grid;
   gap: 12px;
@@ -306,10 +313,21 @@ p {
   gap: 9px;
 }
 
+/* The text block, not the provider logo (which is also a span). */
+.account-main > span:last-child {
+  min-width: 0;
+  flex: 1;
+}
+
+/* One line per fact, truncated with ellipsis — native list behavior instead
+   of mid-word wraps ("OpenRou / ter") when the row gets tight. Full values
+   live in the row's title tooltip. */
 .account-main strong,
 .account-main small {
   display: block;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .account-main small,
@@ -708,7 +726,11 @@ p {
 }
 
 .primary {
-  min-height: 38px;
+  min-height: 34px;
+  /* Horizontal padding + a minimum width keep short labels ("OK") from
+     rendering as a near-square blob. */
+  min-width: 64px;
+  padding: 6px 14px;
   border: 0;
   border-radius: 8px;
   color: var(--accent-fg);
@@ -812,7 +834,7 @@ p {
 
 .insights-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 10px;
 }
 
@@ -823,6 +845,10 @@ p {
   border-radius: 12px;
   padding: 12px;
   background: var(--surface-soft);
+  /* Grid items default to min-width auto: without this a long path or wide
+     stat row forces the card past its track and bleeds outside the panel. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .insights-card-head {
@@ -842,7 +868,8 @@ p {
 
 .insights-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* Wraps to two columns instead of overflowing when the card is narrow. */
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
   gap: 6px;
   margin: 0;
 }
@@ -850,6 +877,7 @@ p {
 .insights-stat {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .insights-stat dt {
@@ -895,6 +923,10 @@ p {
 }
 
 .insights-list li span {
+  /* Flex items don't shrink below min-content without this, which defeats
+     the ellipsis and pushes the amounts off the card. */
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1145,7 +1177,7 @@ html[data-view="tray"] .tray-scroll {
   gap: 9px;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   scrollbar-gutter: stable;
   padding-right: 2px;
 }
@@ -1661,11 +1693,16 @@ html[data-view="tray"] .tray-empty {
 
 .account-list {
   display: grid;
+  /* minmax(0, …) lets rows shrink below their nowrap labels' intrinsic
+     width — without it the fixed-width sidebar clips the row controls. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  min-width: 0;
 }
 
 .sortable-item {
   list-style: none;
+  min-width: 0;
 }
 
 .sortable-item.dragging {
@@ -1788,6 +1825,7 @@ html[data-view="tray"] .tray-empty {
      outgrowing the window. */
   max-height: min(54vh, 520px);
   overflow-y: auto;
+  overscroll-behavior: none;
   padding-right: 2px;
 }
 

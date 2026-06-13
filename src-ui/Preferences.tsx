@@ -413,7 +413,13 @@ function AccountButton({
   return (
     <div className={`account-row ${active ? "active" : ""}`}>
       {handle}
-      <button className="account-main" onClick={() => onEdit(account)}>
+      <button
+        className="account-main"
+        title={
+          account.email ? `${account.label} — ${account.email}` : account.label
+        }
+        onClick={() => onEdit(account)}
+      >
         <ProviderLogo provider={account.provider} size="sm" />
         <span>
           <strong>{account.label}</strong>
