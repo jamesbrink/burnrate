@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13](https://github.com/jamesbrink/burnrate/compare/v0.1.12...v0.1.13) - 2026-06-12
+
+### Added
+
+- *(prefs)* modal account wizard replacing the always-visible dual-purpose form ([#46](https://github.com/jamesbrink/burnrate/pull/46))
+- *(tray)* click-to-expand card drill-down replacing the accounts list ([#45](https://github.com/jamesbrink/burnrate/pull/45))
+
+### Fixed
+
+- *(ui)* suppress WebKit context menu, selection polish, Esc dismisses tray ([#44](https://github.com/jamesbrink/burnrate/pull/44))
+- *(startup)* surface fatal init errors in a native alert instead of dying silently ([#42](https://github.com/jamesbrink/burnrate/pull/42))
+
 ## [0.1.12](https://github.com/jamesbrink/burnrate/compare/v0.1.11...v0.1.12) - 2026-06-12
 
 ### Added
