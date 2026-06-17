@@ -5,4 +5,9 @@ if [ "$(uname -s)" = "Darwin" ]; then
   ./scripts/dev-codesign-setup.sh --quiet
 fi
 
+if [ ! -x node_modules/.bin/tauri ] || [ ! -x node_modules/.bin/vite ]; then
+  echo "Installing npm dependencies..."
+  npm install
+fi
+
 npm run dev
