@@ -218,9 +218,11 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
 
     let _ = app.remove_tray_by_id(TRAY_ID);
 
-    TrayIconBuilder::with_id(TRAY_ID)
-        .icon(tray_icon()?)
-        .icon_as_template(true)
+    let tray_builder = TrayIconBuilder::with_id(TRAY_ID).icon(tray_icon()?);
+    #[cfg(target_os = "macos")]
+    let tray_builder = tray_builder.icon_as_template(true);
+
+    tray_builder
         .tooltip("Burnrate")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -489,7 +491,17 @@ pub(crate) fn popup_position(
 }
 
 fn tray_icon() -> tauri::Result<Image<'static>> {
-    Image::from_bytes(include_bytes!("../icons/tray.png"))
+    Image::from_bytes(tray_icon_bytes())
+}
+
+#[cfg(target_os = "linux")]
+fn tray_icon_bytes() -> &'static [u8] {
+    include_bytes!("../icons/tray-linux.png")
+}
+
+#[cfg(not(target_os = "linux"))]
+fn tray_icon_bytes() -> &'static [u8] {
+    include_bytes!("../icons/tray.png")
 }
 
 fn app_icon() -> tauri::Result<Image<'static>> {
