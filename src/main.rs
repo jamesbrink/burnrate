@@ -36,6 +36,12 @@ const TRAY_MIN_HEIGHT: f64 = 200.0;
 const TRAY_MAX_HEIGHT_WORK_RATIO: f64 = 2.0 / 3.0;
 const TRAY_SCREEN_MARGIN: f64 = 8.0;
 const TRAY_OFFSET_Y: f64 = 12.0;
+#[cfg(target_os = "linux")]
+const DEFAULT_LINUX_WEBVIEW_ZOOM: f64 = 1.35;
+#[cfg(target_os = "linux")]
+const MIN_LINUX_WEBVIEW_ZOOM: f64 = 1.0;
+#[cfg(target_os = "linux")]
+const MAX_LINUX_WEBVIEW_ZOOM: f64 = 2.0;
 
 #[tauri::command]
 async fn dashboard(app: AppHandle, state: State<'_, AppState>) -> Result<DashboardState, String> {
@@ -421,6 +427,35 @@ fn spawn_local_usage_broadcast(app: AppHandle) {
     });
 }
 
+#[cfg(target_os = "linux")]
+fn configured_linux_webview_zoom() -> f64 {
+    parse_linux_webview_zoom(std::env::var("BURNRATE_LINUX_WEBVIEW_ZOOM").ok().as_deref())
+}
+
+#[cfg(target_os = "linux")]
+fn parse_linux_webview_zoom(value: Option<&str>) -> f64 {
+    value
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite())
+        .map(|value| value.clamp(MIN_LINUX_WEBVIEW_ZOOM, MAX_LINUX_WEBVIEW_ZOOM))
+        .unwrap_or(DEFAULT_LINUX_WEBVIEW_ZOOM)
+}
+
+#[cfg(target_os = "linux")]
+fn apply_linux_webview_zoom(app: &AppHandle<Wry>) {
+    let zoom = configured_linux_webview_zoom();
+    for label in [tray::MAIN_WINDOW, tray::TRAY_WINDOW] {
+        if let Some(window) = app.get_webview_window(label)
+            && let Err(error) = window.set_zoom(zoom)
+        {
+            eprintln!("Failed to set Linux webview zoom for {label}: {error}");
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn apply_linux_webview_zoom(_app: &AppHandle<Wry>) {}
+
 #[cfg(target_os = "macos")]
 fn build_app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     let undo = PredefinedMenuItem::undo(app, None)?;
@@ -451,6 +486,26 @@ fn build_app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
 #[cfg(not(target_os = "macos"))]
 fn build_app_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     Menu::new(app)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linux_webview_zoom_defaults_and_clamps() {
+        assert_eq!(parse_linux_webview_zoom(None), DEFAULT_LINUX_WEBVIEW_ZOOM);
+        assert_eq!(
+            parse_linux_webview_zoom(Some("not-a-number")),
+            DEFAULT_LINUX_WEBVIEW_ZOOM
+        );
+        assert_eq!(
+            parse_linux_webview_zoom(Some("0.5")),
+            MIN_LINUX_WEBVIEW_ZOOM
+        );
+        assert_eq!(parse_linux_webview_zoom(Some("3")), MAX_LINUX_WEBVIEW_ZOOM);
+        assert_eq!(parse_linux_webview_zoom(Some("1.5")), 1.5);
+    }
 }
 
 /// A startup failure has to be visible. Launched from Finder there is no
@@ -520,6 +575,7 @@ fn main() {
         .setup(move |app| {
             tray::apply_activation_policy(app.handle(), true);
             tray::set_dock_icon_if_unbundled();
+            apply_linux_webview_zoom(app.handle());
             if let Some(window) = app.get_webview_window(tray::MAIN_WINDOW) {
                 let app_handle = app.handle().clone();
                 window.on_window_event(move |event| {
