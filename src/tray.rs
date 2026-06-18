@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use tauri::{
-    App, AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Wry,
+    App, AppHandle, Emitter, Manager, PhysicalPosition, PhysicalRect, PhysicalSize, Wry,
     image::Image,
     menu::{IsMenuItem, Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -192,6 +192,7 @@ pub(crate) fn install(app: &mut App<Wry>) -> tauri::Result<()> {
 }
 
 pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
+    let panel = MenuItem::with_id(app, "panel", "Open Panel", true, None::<&str>)?;
     let preferences =
         MenuItem::with_id(app, "preferences", "Open Preferences", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
@@ -209,7 +210,7 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
     } else {
         None
     };
-    let mut items: Vec<&dyn IsMenuItem<Wry>> = vec![&preferences, &refresh];
+    let mut items: Vec<&dyn IsMenuItem<Wry>> = vec![&panel, &preferences, &refresh];
     if let Some(ref check_updates) = check_updates {
         items.push(check_updates);
     }
@@ -227,6 +228,7 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
+            "panel" => show_tray_window_near_cursor(app),
             "preferences" => show_main_window(app),
             "refresh" => {
                 let _ = app.emit("burnrate-refresh-requested", ());
@@ -254,6 +256,13 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
         .build(app)?;
 
     Ok(())
+}
+
+fn show_tray_window_near_cursor(app: &AppHandle<Wry>) {
+    let position = app
+        .cursor_position()
+        .unwrap_or_else(|_| fallback_tray_anchor(app));
+    show_tray_window(app, position);
 }
 
 #[cfg(target_os = "macos")]
@@ -423,6 +432,21 @@ pub(crate) fn cursor_monitor_geometry(
             PhysicalSize::new(1920.0, 1080.0),
         ),
     }
+}
+
+fn fallback_tray_anchor(app: &AppHandle<Wry>) -> PhysicalPosition<f64> {
+    app.primary_monitor()
+        .ok()
+        .flatten()
+        .map(|monitor| fallback_anchor_for_work_area(monitor.work_area()))
+        .unwrap_or_else(|| PhysicalPosition::new(1920.0 - TRAY_MARGIN, TRAY_MARGIN))
+}
+
+fn fallback_anchor_for_work_area(work_area: &PhysicalRect<i32, u32>) -> PhysicalPosition<f64> {
+    PhysicalPosition::new(
+        work_area.position.x as f64 + work_area.size.width as f64 - TRAY_MARGIN,
+        work_area.position.y as f64 + TRAY_MARGIN,
+    )
 }
 
 pub(crate) fn hide_tray_window(app: &AppHandle<Wry>) {
@@ -634,6 +658,19 @@ mod tests {
         assert_eq!(position.x, 1520.0);
         assert_eq!(position.y, 112.0);
         assert!(position.x >= 1448.0, "stays on the secondary monitor");
+    }
+
+    #[test]
+    fn fallback_anchor_uses_work_area_top_right() {
+        let work_area = PhysicalRect {
+            position: PhysicalPosition::new(100, 20),
+            size: PhysicalSize::new(1200, 700),
+        };
+
+        let anchor = fallback_anchor_for_work_area(&work_area);
+
+        assert_eq!(anchor.x, 1292.0);
+        assert_eq!(anchor.y, 28.0);
     }
 
     #[test]

@@ -260,7 +260,7 @@ p {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
+  grid-template-columns: 250px 1fr;
   gap: 14px;
   align-items: start;
   overflow: hidden;
@@ -283,7 +283,7 @@ p {
   overscroll-behavior: none;
   padding: 12px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 1fr;
   gap: 8px;
 }
 
@@ -871,7 +871,7 @@ p {
 
 .insights-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
 }
 
@@ -1831,9 +1831,7 @@ html[data-view="tray"] .tray-empty {
 
 .account-list {
   display: grid;
-  /* minmax(0, …) lets rows shrink below their nowrap labels' intrinsic
-     width — without it the fixed-width sidebar clips the row controls. */
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 1fr;
   gap: 8px;
   min-width: 0;
 }
@@ -1996,7 +1994,7 @@ html[data-view="tray"] .tray-empty {
 
 .provider-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 7px;
 }
 
