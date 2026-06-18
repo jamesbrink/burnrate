@@ -1,25 +1,9 @@
 import react from "@vitejs/plugin-react";
-import { browserslistToTargets } from "lightningcss";
 import { configDefaults, defineConfig } from "vitest/config";
-
-const cssTargets = browserslistToTargets([
-  "chrome 108",
-  "firefox 102",
-  "safari 15",
-]);
 
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
-  css: {
-    transformer: "lightningcss",
-    lightningcss: {
-      targets: cssTargets,
-    },
-  },
-  build: {
-    cssMinify: "lightningcss",
-  },
   server: {
     host: "127.0.0.1",
     port: 5173,

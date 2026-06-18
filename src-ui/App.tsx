@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   closePreferences,
   detectAccounts,
@@ -39,6 +33,7 @@ import {
   providerLabels,
 } from "./constants";
 import { TrayPanel } from "./TrayPanel";
+import { readUiScale } from "./viewport";
 import type {
   AccountInput,
   AccountView,
@@ -348,15 +343,18 @@ export function App() {
           noticeMargin +
           layoutHeight,
       );
+      const uiScale = readUiScale();
+      const scaledWidth = Math.ceil(width * uiScale);
+      const scaledHeight = Math.ceil(height * uiScale);
       const last = lastPreferenceSize.current;
       if (
-        Math.abs(width - last.width) <= 1 &&
-        Math.abs(height - last.height) <= 1
+        Math.abs(scaledWidth - last.width) <= 1 &&
+        Math.abs(scaledHeight - last.height) <= 1
       ) {
         return;
       }
-      lastPreferenceSize.current = { width, height };
-      void resizePreferencesToContent(width, height);
+      lastPreferenceSize.current = { width: scaledWidth, height: scaledHeight };
+      void resizePreferencesToContent(scaledWidth, scaledHeight);
     };
     const scheduleMeasure = () => {
       cancelAnimationFrame(frame);
@@ -420,10 +418,11 @@ export function App() {
         Math.min(TRAY_MAX_SCALE, settings.trayScale),
       );
       panel.style.setProperty("--tray-scale", scale.toFixed(3));
-      const scaledHeight = Math.ceil(height * scale);
+      const uiScale = readUiScale();
+      const scaledHeight = Math.ceil(height * scale * uiScale);
       // Keep the tray at the native menu-sized width. Height is adaptive and the
       // internal list scrolls when scaled content exceeds the comfort cap.
-      const width = TRAY_BASE_WIDTH;
+      const width = Math.ceil(TRAY_BASE_WIDTH * uiScale);
       if (scaledHeight <= 0 || width <= 0) {
         return;
       }
