@@ -529,7 +529,11 @@ fn main() {
                     }
                 });
             }
-            // Dismiss the tray popover when it loses focus (click-away / app switch).
+            // Dismiss the macOS tray popover when it loses focus (click-away /
+            // app switch). Linux AppIndicator/XWayland focus can be lost while
+            // moving from the tray icon into the popover, so Linux keeps the
+            // panel open until the user toggles it or presses Esc.
+            #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window(tray::TRAY_WINDOW) {
                 let app_handle = app.handle().clone();
                 window.on_window_event(move |event| {
