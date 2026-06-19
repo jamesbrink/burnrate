@@ -1018,6 +1018,74 @@ test("keeps tray usage and the accounts footer in an internal scroll region", ()
   expect(scroll).not.toContainElement(document.querySelector(".tray-header"));
 });
 
+test("drags the tray window from the header", async () => {
+  api.windowDragSnapshot.mockResolvedValue({
+    cursor: { x: 100, y: 200 },
+    window: { x: 500, y: 600 },
+  });
+  api.currentCursorPosition.mockResolvedValue({ x: 135, y: 260 });
+  const requestAnimationFrameSpy = vi
+    .spyOn(window, "requestAnimationFrame")
+    .mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+  const cancelAnimationFrameSpy = vi
+    .spyOn(window, "cancelAnimationFrame")
+    .mockImplementation(() => {});
+
+  try {
+    render(
+      <TrayPanel
+        state={dashboardState()}
+        snapshots={[snapshot("healthy")]}
+        busy={false}
+        error={null}
+        onRefresh={() => {}}
+        onOpenPreferences={() => {}}
+        onReorderAccounts={() => {}}
+      />,
+    );
+
+    const header = document.querySelector(".tray-header");
+    expect(header).toBeInTheDocument();
+    fireEvent.pointerDown(header!, { button: 0, pointerId: 7 });
+    await waitFor(() => expect(api.windowDragSnapshot).toHaveBeenCalledOnce());
+    expect(api.startWindowDrag).toHaveBeenCalledOnce();
+
+    fireEvent.pointerMove(header!, { pointerId: 7 });
+
+    await waitFor(() =>
+      expect(api.moveCurrentWindow).toHaveBeenCalledWith({ x: 535, y: 660 }),
+    );
+  } finally {
+    requestAnimationFrameSpy.mockRestore();
+    cancelAnimationFrameSpy.mockRestore();
+  }
+});
+
+test("does not start a tray window drag from header buttons", () => {
+  render(
+    <TrayPanel
+      state={dashboardState()}
+      snapshots={[snapshot("healthy")]}
+      busy={false}
+      error={null}
+      onRefresh={() => {}}
+      onOpenPreferences={() => {}}
+      onReorderAccounts={() => {}}
+    />,
+  );
+
+  fireEvent.pointerDown(screen.getByTitle("Refresh"), {
+    button: 0,
+    pointerId: 8,
+  });
+
+  expect(api.startWindowDrag).not.toHaveBeenCalled();
+  expect(api.windowDragSnapshot).not.toHaveBeenCalled();
+});
+
 test("re-fetches and re-caches the dashboard after detecting accounts", async () => {
   api.guardedFetch.mockResolvedValue(dashboardState());
   api.detectAccounts.mockResolvedValue([]);

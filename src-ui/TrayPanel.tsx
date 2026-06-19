@@ -267,7 +267,7 @@ function startTrayHeaderDrag(
     return;
   }
 
-  event.currentTarget.setPointerCapture(event.pointerId);
+  event.currentTarget.setPointerCapture?.(event.pointerId);
   void startWindowDrag();
   void windowDragSnapshot().then((start) => {
     if (!start) {
@@ -320,7 +320,7 @@ function stopTrayHeaderDrag(
     window.cancelAnimationFrame(drag.frame);
   }
   manualDrag.current = null;
-  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+  if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
     event.currentTarget.releasePointerCapture(event.pointerId);
   }
 }
