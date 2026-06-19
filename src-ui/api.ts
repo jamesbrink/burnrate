@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cloneDefaultAwsCategories } from "./constants";
 import type {
   AccountInput,
@@ -809,6 +810,17 @@ export async function openPreferences(): Promise<void> {
   /* v8 ignore next 3: native Tauri invoke path */
   if (isTauri) {
     await invoke("open_preferences");
+  }
+}
+
+export async function startWindowDrag(): Promise<void> {
+  /* v8 ignore next 8: native Tauri window path */
+  if (isTauri) {
+    try {
+      await getCurrentWindow().startDragging();
+    } catch (error) {
+      console.debug("Window drag was not started", error);
+    }
   }
 }
 

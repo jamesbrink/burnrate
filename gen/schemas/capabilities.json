@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default Burnrate desktop window permissions.","local":true,"windows":["main","tray"],"permissions":["core:default","core:event:default"]}}
+{"default":{"identifier":"default","description":"Default Burnrate desktop window permissions.","local":true,"windows":["main","tray"],"permissions":["core:default","core:event:default","core:window:allow-start-dragging"]}}

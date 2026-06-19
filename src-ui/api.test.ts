@@ -25,6 +25,7 @@ import {
   reorderAccounts,
   resizeTrayToContent,
   startAccountLogin,
+  startWindowDrag,
   summarizeMockSnapshots,
   writeCachedDashboard,
 } from "./api";
@@ -258,6 +259,7 @@ test("updater mock is dormant unless VITE_MOCK_UPDATE is set", async () => {
   expect(await getAppVersion()).toBe("dev");
   // No-op outside Tauri — just shouldn't throw.
   await openPreferences();
+  await startWindowDrag();
 });
 
 test("updater mock advertises an update when opted in", async () => {

@@ -7,7 +7,8 @@ import {
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { startWindowDrag } from "./api";
 import {
   bucketMeterLabel,
   bucketPercent,
@@ -123,7 +124,11 @@ export function TrayPanel({
       className={`tray-panel${isDense ? " tray-panel-dense" : ""}`}
       data-tauri-drag-region
     >
-      <header className="tray-header" data-tauri-drag-region>
+      <header
+        className="tray-header"
+        data-tauri-drag-region
+        onMouseDown={startTrayHeaderDrag}
+      >
         <div data-tauri-drag-region>
           <h1>Burnrate</h1>
           <p>{summary}</p>
@@ -219,6 +224,25 @@ export function TrayPanel({
         ) : null}
       </div>
     </main>
+  );
+}
+
+function startTrayHeaderDrag(event: MouseEvent<HTMLElement>) {
+  if (event.button !== 0 || isInteractiveDragTarget(event.target)) {
+    return;
+  }
+
+  void startWindowDrag();
+}
+
+function isInteractiveDragTarget(target: EventTarget): boolean {
+  return (
+    target instanceof Element &&
+    Boolean(
+      target.closest(
+        "button, a, input, textarea, select, [role='button'], [data-no-window-drag]",
+      ),
+    )
   );
 }
 

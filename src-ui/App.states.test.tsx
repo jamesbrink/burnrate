@@ -55,6 +55,7 @@ const api = vi.hoisted(() => ({
   saveAccount: vi.fn(),
   saveSettings: vi.fn(),
   startAccountLogin: vi.fn(),
+  startWindowDrag: vi.fn(),
   submitLoginCode: vi.fn(),
   updaterAvailable: vi.fn(),
 }));
@@ -81,6 +82,7 @@ beforeEach(() => {
   api.reorderAccounts.mockResolvedValue([]);
   api.logoutAccount.mockResolvedValue([]);
   api.startAccountLogin.mockResolvedValue({ id: "pending-1" });
+  api.startWindowDrag.mockResolvedValue(undefined);
   api.submitLoginCode.mockResolvedValue(undefined);
   api.cancelAccountLogin.mockResolvedValue([]);
   api.guardedFetch.mockResolvedValue(dashboardState());

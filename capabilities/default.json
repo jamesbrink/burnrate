@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Default Burnrate desktop window permissions.",
   "windows": ["main", "tray"],
-  "permissions": ["core:default", "core:event:default"]
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:allow-start-dragging"
+  ]
 }
