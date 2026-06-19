@@ -5,6 +5,8 @@ mod config;
 mod debug;
 mod insights;
 mod key_store;
+#[cfg(target_os = "linux")]
+mod linux_desktop;
 mod models;
 mod providers;
 mod storage;
@@ -495,6 +497,9 @@ fn show_fatal_alert(message: &str) {
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    linux_desktop::apply_runtime_environment();
+
     // Headless diagnostics: `burnrate debug <env|detect|load|snapshot>` runs the
     // real provider/config code paths and exits without starting the GUI.
     let args: Vec<String> = std::env::args().collect();

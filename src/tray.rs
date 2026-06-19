@@ -226,6 +226,11 @@ pub(crate) fn rebuild(app: &AppHandle<Wry>) -> tauri::Result<()> {
     tray_builder
         .tooltip("Burnrate")
         .menu(&menu)
+        // Linux uses tray-icon's AppIndicator backend, where this flag is
+        // unsupported; Waybar may still open the menu on primary click instead
+        // of emitting a Click event. Keep the handler below for hosts that do
+        // emit activation, and keep "Open Panel" first in the menu as the
+        // Linux fallback.
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "panel" => show_tray_window_near_cursor(app),

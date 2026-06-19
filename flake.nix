@@ -319,18 +319,6 @@
                 value = lib.makeLibraryPath linuxTauriInputs;
               }
               {
-                name = "WEBKIT_DISABLE_DMABUF_RENDERER";
-                value = "1";
-              }
-              {
-                # WebKitGTK's native Wayland backend can report negative
-                # viewport/DPR values on Hyprland, collapsing Tauri layouts.
-                # Prefer XWayland, with Wayland as the fallback for hosts
-                # without XWayland.
-                name = "GDK_BACKEND";
-                value = "x11,wayland";
-              }
-              {
                 name = "GIO_EXTRA_MODULES";
                 prefix = "${pkgs.glib-networking}/lib/gio/modules";
               }
