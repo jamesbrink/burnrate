@@ -273,17 +273,19 @@ function startTrayHeaderDrag(
   manualDragToken.current = token;
   event.currentTarget.setPointerCapture?.(event.pointerId);
   void startWindowDrag();
-  void windowDragSnapshot().then((start) => {
-    if (!start || manualDragToken.current !== token) {
-      return;
-    }
-    manualDrag.current = {
-      pointerId: event.pointerId,
-      start,
-      frame: null,
-      moving: false,
-    };
-  });
+  void windowDragSnapshot()
+    .then((start) => {
+      if (!start || manualDragToken.current !== token) {
+        return;
+      }
+      manualDrag.current = {
+        pointerId: event.pointerId,
+        start,
+        frame: null,
+        moving: false,
+      };
+    })
+    .catch(() => {});
 }
 
 async function moveTrayHeaderDrag(
@@ -297,9 +299,11 @@ async function moveTrayHeaderDrag(
   drag.frame = window.requestAnimationFrame(() => {
     drag.frame = null;
     drag.moving = true;
-    void moveDragFrame(drag).finally(() => {
-      drag.moving = false;
-    });
+    void moveDragFrame(drag)
+      .catch(() => {})
+      .finally(() => {
+        drag.moving = false;
+      });
   });
 }
 

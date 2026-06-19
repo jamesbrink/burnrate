@@ -51,7 +51,7 @@ fn env_report() -> i32 {
         .iter()
         .map(|key| json!({ "var": key, "value": std::env::var(key).ok() }))
         .collect();
-    let mut report = json!({
+    let report = json!({
         "credentialOverrides": overrides,
         "homeOverrides": homes,
         "claudeBinary": providers::resolve_cli(&providers::claude_binary_name())
@@ -62,12 +62,16 @@ fn env_report() -> i32 {
             .to_string(),
     });
     #[cfg(target_os = "linux")]
-    if let Some(report) = report.as_object_mut() {
-        report.insert(
-            "linuxDesktop".to_string(),
-            crate::linux_desktop::LinuxDesktopInfo::current().summary(),
-        );
-    }
+    let report = {
+        let mut report = report;
+        if let Some(report) = report.as_object_mut() {
+            report.insert(
+                "linuxDesktop".to_string(),
+                crate::linux_desktop::LinuxDesktopInfo::current().summary(),
+            );
+        }
+        report
+    };
     println!(
         "{}",
         serde_json::to_string_pretty(&report).expect("serialize env report")
