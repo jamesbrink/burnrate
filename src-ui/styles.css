@@ -43,10 +43,6 @@
   --meter-warn: #f5b53d;
   --meter-crit: #ff6b66;
 
-  --burnrate-ui-scale: 1;
-  --burnrate-viewport-width: 100vw;
-  --burnrate-viewport-height: 100vh;
-
   --notice-border: color-mix(in srgb, var(--crit) 45%, var(--hairline));
   --notice-bg: color-mix(in srgb, var(--crit) 10%, var(--surface));
   --notice-fg: var(--crit);
@@ -113,7 +109,7 @@
 body {
   margin: 0;
   min-width: 320px;
-  min-height: var(--burnrate-viewport-height);
+  min-height: 100vh;
   background: var(--root-bg);
   user-select: none;
   -webkit-user-select: none;
@@ -144,15 +140,9 @@ textarea,
 }
 
 html,
-body {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-}
-
+body,
 #root {
-  height: var(--burnrate-viewport-height);
-  width: var(--burnrate-viewport-width);
+  height: 100%;
 }
 
 button,
@@ -177,7 +167,7 @@ p {
 }
 
 .prefs-shell {
-  height: var(--burnrate-viewport-height);
+  height: 100vh;
   min-height: 360px;
   padding: 18px;
   background: var(--window-bg);
@@ -1180,8 +1170,16 @@ html[data-view="tray"] {
   --tray-warn: var(--warn);
   --tray-crit: var(--crit);
   --tray-ok-bg: color-mix(in srgb, var(--tray-ok) 16%, var(--tray-fallback));
-  --tray-warn-bg: color-mix(in srgb, var(--tray-warn) 18%, var(--tray-fallback));
-  --tray-crit-bg: color-mix(in srgb, var(--tray-crit) 15%, var(--tray-fallback));
+  --tray-warn-bg: color-mix(
+    in srgb,
+    var(--tray-warn) 18%,
+    var(--tray-fallback)
+  );
+  --tray-crit-bg: color-mix(
+    in srgb,
+    var(--tray-crit) 15%,
+    var(--tray-fallback)
+  );
 
   background: var(--tray-fallback);
   overscroll-behavior: none;
@@ -1203,8 +1201,7 @@ html[data-view="tray"] {
 
 html[data-view="tray"] body,
 html[data-view="tray"] #root {
-  height: var(--burnrate-viewport-height);
-  width: var(--burnrate-viewport-width);
+  height: 100vh;
   background: var(--tray-fallback);
   overflow: hidden;
   overscroll-behavior: none;
@@ -1232,8 +1229,8 @@ html[data-view="tray"][data-vibrancy="1"] #root {
 
 html[data-view="tray"] .tray-panel {
   --tray-scale: 1;
-  width: calc(var(--burnrate-viewport-width) / var(--tray-scale));
-  height: calc(var(--burnrate-viewport-height) / var(--tray-scale));
+  width: calc(100% / var(--tray-scale));
+  height: calc(100vh / var(--tray-scale));
   transform: scale(var(--tray-scale));
   transform-origin: top left;
   padding: 11px 12px 12px;
@@ -1815,8 +1812,11 @@ html[data-view="tray"] .tray-empty {
 }
 
 @media (max-width: 760px) {
-  .prefs-layout,
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prefs-layout {
     grid-template-columns: 1fr;
   }
 
