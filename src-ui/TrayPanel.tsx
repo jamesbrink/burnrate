@@ -99,6 +99,7 @@ export function TrayPanel({
   // while the popover sits open.
   const [, setFreshnessTick] = useState(0);
   const manualDrag = useRef<ManualWindowDrag | null>(null);
+  const manualDragToken = useRef(0);
   useEffect(() => {
     if (snapshots.length === 0) {
       return;
@@ -142,16 +143,16 @@ export function TrayPanel({
         className="tray-header"
         data-tauri-drag-region
         onPointerDown={(event) => {
-          startTrayHeaderDrag(event, manualDrag);
+          startTrayHeaderDrag(event, manualDrag, manualDragToken);
         }}
         onPointerMove={() => {
           void moveTrayHeaderDrag(manualDrag);
         }}
         onPointerUp={(event) => {
-          stopTrayHeaderDrag(event, manualDrag);
+          stopTrayHeaderDrag(event, manualDrag, manualDragToken);
         }}
         onPointerCancel={(event) => {
-          stopTrayHeaderDrag(event, manualDrag);
+          stopTrayHeaderDrag(event, manualDrag, manualDragToken);
         }}
       >
         <div data-tauri-drag-region>
@@ -262,15 +263,18 @@ type ManualWindowDrag = {
 function startTrayHeaderDrag(
   event: PointerEvent<HTMLElement>,
   manualDrag: MutableRefObject<ManualWindowDrag | null>,
+  manualDragToken: MutableRefObject<number>,
 ) {
   if (event.button !== 0 || isInteractiveDragTarget(event.target)) {
     return;
   }
 
+  const token = manualDragToken.current + 1;
+  manualDragToken.current = token;
   event.currentTarget.setPointerCapture?.(event.pointerId);
   void startWindowDrag();
   void windowDragSnapshot().then((start) => {
-    if (!start) {
+    if (!start || manualDragToken.current !== token) {
       return;
     }
     manualDrag.current = {
@@ -314,7 +318,9 @@ async function moveDragFrame(drag: ManualWindowDrag) {
 function stopTrayHeaderDrag(
   event: PointerEvent<HTMLElement>,
   manualDrag: MutableRefObject<ManualWindowDrag | null>,
+  manualDragToken: MutableRefObject<number>,
 ) {
+  manualDragToken.current += 1;
   const drag = manualDrag.current;
   if (drag && drag.frame !== null) {
     window.cancelAnimationFrame(drag.frame);

@@ -1086,6 +1086,45 @@ test("does not start a tray window drag from header buttons", () => {
   expect(api.windowDragSnapshot).not.toHaveBeenCalled();
 });
 
+test("ignores tray drag snapshots that resolve after pointer release", async () => {
+  let resolveSnapshot: (value: {
+    cursor: { x: number; y: number };
+    window: { x: number; y: number };
+  }) => void = () => {};
+  api.windowDragSnapshot.mockReturnValue(
+    new Promise((resolve) => {
+      resolveSnapshot = resolve;
+    }),
+  );
+  api.currentCursorPosition.mockResolvedValue({ x: 135, y: 260 });
+
+  render(
+    <TrayPanel
+      state={dashboardState()}
+      snapshots={[snapshot("healthy")]}
+      busy={false}
+      error={null}
+      onRefresh={() => {}}
+      onOpenPreferences={() => {}}
+      onReorderAccounts={() => {}}
+    />,
+  );
+
+  const header = document.querySelector(".tray-header");
+  expect(header).toBeInTheDocument();
+
+  fireEvent.pointerDown(header!, { button: 0, pointerId: 9 });
+  fireEvent.pointerUp(header!, { button: 0, pointerId: 9 });
+  resolveSnapshot({
+    cursor: { x: 100, y: 200 },
+    window: { x: 500, y: 600 },
+  });
+  await Promise.resolve();
+  fireEvent.pointerMove(header!, { pointerId: 9 });
+
+  expect(api.moveCurrentWindow).not.toHaveBeenCalled();
+});
+
 test("re-fetches and re-caches the dashboard after detecting accounts", async () => {
   api.guardedFetch.mockResolvedValue(dashboardState());
   api.detectAccounts.mockResolvedValue([]);
