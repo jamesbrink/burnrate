@@ -7,8 +7,21 @@ import {
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
-import { startWindowDrag } from "./api";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
+import {
+  currentCursorPosition,
+  moveCurrentWindow,
+  startWindowDrag,
+  windowDragSnapshot,
+  type WindowDragSnapshot,
+} from "./api";
 import {
   bucketMeterLabel,
   bucketPercent,
@@ -85,6 +98,7 @@ export function TrayPanel({
   // Re-render periodically so the relative "Updated …" label stays honest
   // while the popover sits open.
   const [, setFreshnessTick] = useState(0);
+  const manualDrag = useRef<ManualWindowDrag | null>(null);
   useEffect(() => {
     if (snapshots.length === 0) {
       return;
@@ -127,7 +141,18 @@ export function TrayPanel({
       <header
         className="tray-header"
         data-tauri-drag-region
-        onMouseDown={startTrayHeaderDrag}
+        onPointerDown={(event) => {
+          startTrayHeaderDrag(event, manualDrag);
+        }}
+        onPointerMove={() => {
+          void moveTrayHeaderDrag(manualDrag);
+        }}
+        onPointerUp={(event) => {
+          stopTrayHeaderDrag(event, manualDrag);
+        }}
+        onPointerCancel={(event) => {
+          stopTrayHeaderDrag(event, manualDrag);
+        }}
       >
         <div data-tauri-drag-region>
           <h1>Burnrate</h1>
@@ -227,12 +252,77 @@ export function TrayPanel({
   );
 }
 
-function startTrayHeaderDrag(event: MouseEvent<HTMLElement>) {
+type ManualWindowDrag = {
+  pointerId: number;
+  start: WindowDragSnapshot;
+  frame: number | null;
+  moving: boolean;
+};
+
+function startTrayHeaderDrag(
+  event: PointerEvent<HTMLElement>,
+  manualDrag: MutableRefObject<ManualWindowDrag | null>,
+) {
   if (event.button !== 0 || isInteractiveDragTarget(event.target)) {
     return;
   }
 
+  event.currentTarget.setPointerCapture(event.pointerId);
   void startWindowDrag();
+  void windowDragSnapshot().then((start) => {
+    if (!start) {
+      return;
+    }
+    manualDrag.current = {
+      pointerId: event.pointerId,
+      start,
+      frame: null,
+      moving: false,
+    };
+  });
+}
+
+async function moveTrayHeaderDrag(
+  manualDrag: MutableRefObject<ManualWindowDrag | null>,
+) {
+  const drag = manualDrag.current;
+  if (!drag || drag.frame !== null || drag.moving) {
+    return;
+  }
+
+  drag.frame = window.requestAnimationFrame(() => {
+    drag.frame = null;
+    drag.moving = true;
+    void moveDragFrame(drag).finally(() => {
+      drag.moving = false;
+    });
+  });
+}
+
+async function moveDragFrame(drag: ManualWindowDrag) {
+  const cursor = await currentCursorPosition();
+  if (!cursor) {
+    return;
+  }
+
+  await moveCurrentWindow({
+    x: drag.start.window.x + cursor.x - drag.start.cursor.x,
+    y: drag.start.window.y + cursor.y - drag.start.cursor.y,
+  });
+}
+
+function stopTrayHeaderDrag(
+  event: PointerEvent<HTMLElement>,
+  manualDrag: MutableRefObject<ManualWindowDrag | null>,
+) {
+  const drag = manualDrag.current;
+  if (drag && drag.frame !== null) {
+    window.cancelAnimationFrame(drag.frame);
+  }
+  manualDrag.current = null;
+  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
 }
 
 function isInteractiveDragTarget(target: EventTarget): boolean {

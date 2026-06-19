@@ -26,6 +26,7 @@ const api = vi.hoisted(() => ({
   cancelAccountLogin: vi.fn(),
   checkForUpdates: vi.fn(),
   closePreferences: vi.fn(),
+  currentCursorPosition: vi.fn(),
   detectAccounts: vi.fn(),
   getAppVersion: vi.fn(),
   guardedFetch: vi.fn(),
@@ -35,6 +36,7 @@ const api = vi.hoisted(() => ({
   localUsage: vi.fn(),
   logoutAccount: vi.fn(),
   markFetched: vi.fn(),
+  moveCurrentWindow: vi.fn(),
   notifyUpdateAvailable: vi.fn(),
   onCheckUpdateRequested: vi.fn(),
   onDashboardUpdated: vi.fn(),
@@ -58,6 +60,7 @@ const api = vi.hoisted(() => ({
   startWindowDrag: vi.fn(),
   submitLoginCode: vi.fn(),
   updaterAvailable: vi.fn(),
+  windowDragSnapshot: vi.fn(),
 }));
 
 vi.mock("./api", () => api);
@@ -81,9 +84,12 @@ beforeEach(() => {
   api.openPreferences.mockResolvedValue(undefined);
   api.reorderAccounts.mockResolvedValue([]);
   api.logoutAccount.mockResolvedValue([]);
+  api.currentCursorPosition.mockResolvedValue(null);
+  api.moveCurrentWindow.mockResolvedValue(undefined);
   api.startAccountLogin.mockResolvedValue({ id: "pending-1" });
   api.startWindowDrag.mockResolvedValue(undefined);
   api.submitLoginCode.mockResolvedValue(undefined);
+  api.windowDragSnapshot.mockResolvedValue(null);
   api.cancelAccountLogin.mockResolvedValue([]);
   api.guardedFetch.mockResolvedValue(dashboardState());
   // Default: cold start (no cached dashboard) so existing tests exercise the

@@ -1,6 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  PhysicalPosition,
+  cursorPosition,
+  getCurrentWindow,
+} from "@tauri-apps/api/window";
 import { cloneDefaultAwsCategories } from "./constants";
 import type {
   AccountInput,
@@ -822,6 +826,51 @@ export async function startWindowDrag(): Promise<void> {
       console.debug("Window drag was not started", error);
     }
   }
+}
+
+export type WindowDragSnapshot = {
+  cursor: { x: number; y: number };
+  window: { x: number; y: number };
+};
+
+export async function windowDragSnapshot(): Promise<WindowDragSnapshot | null> {
+  /* v8 ignore next 9: native Tauri window path */
+  if (!isTauri) {
+    return null;
+  }
+
+  const [cursor, window] = await Promise.all([
+    cursorPosition(),
+    getCurrentWindow().outerPosition(),
+  ]);
+  return {
+    cursor: { x: cursor.x, y: cursor.y },
+    window: { x: window.x, y: window.y },
+  };
+}
+
+export async function moveCurrentWindow(position: {
+  x: number;
+  y: number;
+}): Promise<void> {
+  /* v8 ignore next 4: native Tauri window path */
+  if (isTauri) {
+    await getCurrentWindow().setPosition(
+      new PhysicalPosition(Math.round(position.x), Math.round(position.y)),
+    );
+  }
+}
+
+export async function currentCursorPosition(): Promise<{
+  x: number;
+  y: number;
+} | null> {
+  /* v8 ignore next 6: native Tauri window path */
+  if (!isTauri) {
+    return null;
+  }
+  const cursor = await cursorPosition();
+  return { x: cursor.x, y: cursor.y };
 }
 
 /** Dismiss the tray popover (Esc). */
