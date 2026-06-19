@@ -262,4 +262,120 @@ mod tests {
         assert_eq!(info.desktops, vec!["gnome", "hyprland"]);
         assert!(info.is_wlroots_like());
     }
+
+    #[test]
+    fn merges_desktop_session_when_current_desktop_is_missing_or_distinct() {
+        let info = LinuxDesktopInfo::from_parts(
+            Some("GNOME"),
+            Some("niri"),
+            Some("Wayland"),
+            true,
+            false,
+            ["burnrate"],
+        );
+
+        assert_eq!(info.desktops, vec!["gnome", "niri"]);
+        assert_eq!(info.desktop_session.as_deref(), Some("niri"));
+        assert_eq!(info.session_type.as_deref(), Some("wayland"));
+        assert!(info.is_wayland());
+        assert!(info.is_wlroots_like());
+    }
+
+    #[test]
+    fn ignores_blank_and_delimited_desktop_tokens() {
+        let info = LinuxDesktopInfo::from_parts(
+            Some(" GNOME; ;Hyprland Sway "),
+            Some("hyprland"),
+            None,
+            false,
+            true,
+            [" burnrate ", "", "WAYBAR"],
+        );
+
+        assert_eq!(info.desktops, vec!["gnome", "hyprland", "sway"]);
+        assert!(info.processes.contains("burnrate"));
+        assert!(info.processes.contains("waybar"));
+        assert!(!info.processes.contains(""));
+        assert!(info.is_waybar());
+    }
+
+    #[test]
+    fn summary_reports_detected_desktop_and_recommended_env() {
+        let info = LinuxDesktopInfo::from_parts(
+            Some("river"),
+            Some("river"),
+            Some("wayland"),
+            true,
+            false,
+            ["waybar"],
+        );
+
+        let summary = info.summary();
+
+        assert_eq!(summary["desktops"], serde_json::json!(["river"]));
+        assert_eq!(summary["desktopSession"], "river");
+        assert_eq!(summary["sessionType"], "wayland");
+        assert_eq!(summary["waylandDisplay"], true);
+        assert_eq!(summary["x11Display"], false);
+        assert_eq!(summary["waybar"], true);
+        assert_eq!(summary["wlrootsLike"], true);
+        assert_eq!(summary["recommendedEnv"]["GDK_BACKEND"], "x11,wayland");
+        assert_eq!(
+            summary["recommendedEnv"]["WEBKIT_DISABLE_DMABUF_RENDERER"],
+            "1"
+        );
+        assert!(summary["effectiveEnv"].is_object());
+    }
+
+    #[test]
+    fn process_name_ignores_non_pid_directories() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let path = temp.path().join("self");
+        fs::create_dir(&path).expect("create non-pid dir");
+        fs::write(path.join("comm"), "waybar\n").expect("write comm");
+
+        assert_eq!(process_name(&path), None);
+    }
+
+    #[test]
+    fn process_name_reads_trimmed_comm_for_pid_directory() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let path = temp.path().join("1234");
+        fs::create_dir(&path).expect("create pid dir");
+        fs::write(path.join("comm"), " waybar \n").expect("write comm");
+        fs::write(path.join("cmdline"), b"/usr/bin/ignored\0").expect("write cmdline");
+
+        assert_eq!(process_name(&path).as_deref(), Some("waybar"));
+    }
+
+    #[test]
+    fn process_name_falls_back_to_cmdline_binary_name() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let path = temp.path().join("5678");
+        fs::create_dir(&path).expect("create pid dir");
+        fs::write(path.join("comm"), "\n").expect("write blank comm");
+        fs::write(
+            path.join("cmdline"),
+            b"/nix/store/hash-waybar/bin/waybar\0--log\0",
+        )
+        .expect("write cmdline");
+
+        assert_eq!(process_name(&path).as_deref(), Some("waybar"));
+    }
+
+    #[test]
+    fn process_name_ignores_empty_cmdline() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let path = temp.path().join("9012");
+        fs::create_dir(&path).expect("create pid dir");
+        fs::write(path.join("cmdline"), b"\0\0").expect("write empty cmdline");
+
+        assert_eq!(process_name(&path), None);
+    }
+
+    #[test]
+    fn pid_directory_detection_requires_digits() {
+        assert!(is_pid_dir(OsStr::new("12345")));
+        assert!(!is_pid_dir(OsStr::new("12a45")));
+    }
 }
