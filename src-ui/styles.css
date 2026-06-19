@@ -1241,6 +1241,7 @@ html[data-view="tray"] .tray-panel {
   gap: 9px;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -webkit-app-region: drag;
 }
 
 html[data-view="tray"][data-vibrancy="1"] .tray-panel {
@@ -1258,6 +1259,7 @@ html[data-view="tray"] .tray-scroll {
   overscroll-behavior: none;
   scrollbar-gutter: stable;
   padding-right: 2px;
+  -webkit-app-region: no-drag;
 }
 
 html[data-view="tray"] .tray-panel-dense {
@@ -1276,6 +1278,12 @@ html[data-view="tray"] .tray-header {
   gap: 10px;
   padding-bottom: 9px;
   border-bottom: 1px solid var(--tray-hairline);
+  cursor: grab;
+  -webkit-app-region: drag;
+}
+
+html[data-view="tray"] .tray-header:active {
+  cursor: grabbing;
 }
 
 html[data-view="tray"] .tray-header h1 {
@@ -1295,6 +1303,7 @@ html[data-view="tray"] .tray-header-actions {
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+  -webkit-app-region: no-drag;
 }
 
 html[data-view="tray"] .tray-update-pill {
@@ -1312,6 +1321,7 @@ html[data-view="tray"] .tray-update-pill {
   font-weight: 640;
   flex: 0 0 auto;
   transition: filter 0.12s ease;
+  -webkit-app-region: no-drag;
 }
 
 html[data-view="tray"] .tray-update-pill:hover {
@@ -1330,6 +1340,7 @@ html[data-view="tray"] .icon-button.tray-settings {
   transition:
     background 0.12s ease,
     color 0.12s ease;
+  -webkit-app-region: no-drag;
 }
 
 html[data-view="tray"] .icon-button.tray-refresh:hover,
@@ -1350,6 +1361,7 @@ html[data-view="tray"] .tray-card {
   border: 1px solid var(--tray-hairline);
   border-radius: 10px;
   background: var(--tray-surface);
+  -webkit-app-region: no-drag;
 }
 
 html[data-view="tray"] .tray-panel-dense .tray-card {

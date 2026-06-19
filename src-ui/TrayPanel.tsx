@@ -119,9 +119,12 @@ export function TrayPanel({
   };
 
   return (
-    <main className={`tray-panel${isDense ? " tray-panel-dense" : ""}`}>
-      <header className="tray-header">
-        <div>
+    <main
+      className={`tray-panel${isDense ? " tray-panel-dense" : ""}`}
+      data-tauri-drag-region
+    >
+      <header className="tray-header" data-tauri-drag-region>
+        <div data-tauri-drag-region>
           <h1>Burnrate</h1>
           <p>{summary}</p>
           {updatedAgo ? (
