@@ -41,11 +41,41 @@ struct CostGroup {
     unit: String,
 }
 
-pub(crate) async fn fetch(account: &AccountConfig) -> Result<UsageSnapshot> {
+#[derive(Debug)]
+pub(crate) struct AwsFetchError {
+    error: anyhow::Error,
+    cost_explorer_attempted: bool,
+}
+
+impl AwsFetchError {
+    fn before_cost_explorer(error: anyhow::Error) -> Self {
+        Self {
+            error,
+            cost_explorer_attempted: false,
+        }
+    }
+
+    fn after_cost_explorer(error: anyhow::Error) -> Self {
+        Self {
+            error,
+            cost_explorer_attempted: true,
+        }
+    }
+
+    pub(crate) fn into_parts(self) -> (anyhow::Error, bool) {
+        (self.error, self.cost_explorer_attempted)
+    }
+}
+
+pub(crate) async fn fetch(
+    account: &AccountConfig,
+) -> std::result::Result<UsageSnapshot, AwsFetchError> {
     let shared_config = sdk_config(account).await;
-    let identity = caller_identity(&shared_config).await?;
+    let identity = caller_identity(&shared_config)
+        .await
+        .map_err(AwsFetchError::before_cost_explorer)?;
     let client = CostExplorerClient::new(&shared_config);
-    let period = current_month_period()?;
+    let period = current_month_period().map_err(AwsFetchError::before_cost_explorer)?;
 
     // Group the account-wide request by service. Cost Explorer omits `total`
     // for grouped results, so `parse_cost_page` sums the groups back into the
@@ -61,7 +91,8 @@ pub(crate) async fn fetch(account: &AccountConfig) -> Result<UsageSnapshot> {
         })),
     )
     .await
-    .context("AWS Cost Explorer GetCostAndUsage failed for all AWS spend")?;
+    .context("AWS Cost Explorer GetCostAndUsage failed for all AWS spend")
+    .map_err(AwsFetchError::after_cost_explorer)?;
 
     let categories = enabled_categories(account);
     let mut category_results = Vec::new();
@@ -70,13 +101,13 @@ pub(crate) async fn fetch(account: &AccountConfig) -> Result<UsageSnapshot> {
             category_results.push((category, result));
             continue;
         }
-        let filter = category_filter_expression(category)?;
+        let filter =
+            category_filter_expression(category).map_err(AwsFetchError::after_cost_explorer)?;
         let group_by = group_definition(category.group_by.as_ref());
         let result = query_cost(&client, period.clone(), filter, group_by)
             .await
-            .with_context(|| {
-                format!("AWS Cost Explorer failed for category '{}'", category.label)
-            })?;
+            .with_context(|| format!("AWS Cost Explorer failed for category '{}'", category.label))
+            .map_err(AwsFetchError::after_cost_explorer)?;
         category_results.push((category, result));
     }
 

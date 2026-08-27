@@ -414,10 +414,26 @@ test("shows AWS Cost Explorer snapshot age without expanding the tray card", () 
   const snapshot = detailSnapshot("aws-main");
   snapshot.provider = "aws";
   snapshot.label = "AWS";
+  snapshot.usageBuckets[0].id = "aws-mtd";
 
   render(trayPanel([snapshot]));
 
   expect(screen.getByText(/^AWS cost data · just now$/)).toBeInTheDocument();
+});
+
+test("does not label an AWS error attempt as cached cost data", () => {
+  const snapshot = detailSnapshot("aws-main");
+  snapshot.provider = "aws";
+  snapshot.label = "AWS";
+  snapshot.status = "error";
+  snapshot.usageBuckets = [];
+  snapshot.quota = null;
+  snapshot.message = "AWS SSO token expired";
+
+  render(trayPanel([snapshot]));
+
+  expect(screen.queryByText(/^AWS cost data/)).not.toBeInTheDocument();
+  expect(screen.getByText("AWS SSO token expired")).toBeInTheDocument();
 });
 
 test("only one tray card expands at a time", async () => {

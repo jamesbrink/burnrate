@@ -13,6 +13,13 @@ export function displayBuckets(snapshot: UsageSnapshot): UsageBucketSnapshot[] {
   return fallback && hasBucketValue(fallback) ? [fallback] : [];
 }
 
+export function hasAwsCostData(snapshot: UsageSnapshot): boolean {
+  return (
+    snapshot.provider === "aws" &&
+    snapshot.usageBuckets.some((bucket) => bucket.id === "aws-mtd")
+  );
+}
+
 export function hasBucketValue(bucket: UsageBucketSnapshot): boolean {
   return (
     bucket.limit !== null || bucket.remaining !== null || bucket.used !== 0

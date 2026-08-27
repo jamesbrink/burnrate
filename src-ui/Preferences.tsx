@@ -17,6 +17,7 @@ import {
   formatAgo,
   formatLimit,
   formatReset,
+  hasAwsCostData,
 } from "./format";
 import { ProviderLogo } from "./ProviderLogo";
 import { SortableList } from "./SortableList";
@@ -491,7 +492,7 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
             {snapshot.email ? (
               <small className="account-email">{snapshot.email}</small>
             ) : null}
-            {snapshot.provider === "aws" ? (
+            {hasAwsCostData(snapshot) ? (
               <small className="snapshot-freshness">
                 AWS cost data · {formatAgo(snapshot.fetchedAt)}
               </small>
