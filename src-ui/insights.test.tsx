@@ -56,9 +56,9 @@ test("shortenProjectPath keeps short names and trims deep paths to two segments"
   // Short paths are normalized — no stray leading/trailing slashes.
   expect(shortenProjectPath("/foo/bar/")).toBe("foo/bar");
   expect(shortenProjectPath("/")).toBe("/");
-  expect(
-    shortenProjectPath("/Users/jamesbrink/Projects/utensils/aethon"),
-  ).toBe("…/utensils/aethon");
+  expect(shortenProjectPath("/Users/jamesbrink/Projects/utensils/aethon")).toBe(
+    "…/utensils/aethon",
+  );
 });
 
 test("InsightsPanel shows shortened project paths with the full path as tooltip", () => {
@@ -129,7 +129,9 @@ test("LocalUsageSummary shows today, projection, and attribution captions", () =
     <LocalUsageSummary usage={providerUsage()} multiAccount={false} />,
   );
   expect(screen.getByText(/Today \$1\.84 · 6 sessions/)).toBeInTheDocument();
-  expect(screen.getByText(/MTD \$42\.10 → ~\$96\.20 proj\./)).toBeInTheDocument();
+  expect(
+    screen.getByText(/MTD \$42\.10 → ~\$96\.20 proj\./),
+  ).toBeInTheDocument();
   expect(screen.getByText("local estimate")).toBeInTheDocument();
 
   rerender(<LocalUsageSummary usage={providerUsage()} multiAccount={true} />);
@@ -189,8 +191,9 @@ test("InsightsPanel walks disabled, collecting, unavailable, and data states", a
   // Appears as the card's top-model badge and in the model distribution list.
   expect(within(card).getAllByText("claude-fable-5")).toHaveLength(2);
   expect(within(card).getByText("burnrate")).toBeInTheDocument();
-  expect(screen.getByText(/Computed locally from CLI session logs/))
-    .toBeInTheDocument();
+  expect(
+    screen.getByText(/Computed locally from CLI session logs/),
+  ).toBeInTheDocument();
 });
 
 function traySnapshot(accountId: string, label: string): UsageSnapshot {
@@ -405,6 +408,16 @@ test("expanding a tray card reveals snapshot details and collapses again", async
   await user.click(toggle);
   expect(toggle).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByText("Updated")).not.toBeInTheDocument();
+});
+
+test("shows AWS Cost Explorer snapshot age without expanding the tray card", () => {
+  const snapshot = detailSnapshot("aws-main");
+  snapshot.provider = "aws";
+  snapshot.label = "AWS";
+
+  render(trayPanel([snapshot]));
+
+  expect(screen.getByText(/^AWS cost data · just now$/)).toBeInTheDocument();
 });
 
 test("only one tray card expands at a time", async () => {

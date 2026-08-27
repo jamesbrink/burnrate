@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test } from "vitest";
 import { App } from "./App";
@@ -18,6 +24,7 @@ test("renders provider rows and snapshot states", async () => {
   expect(screen.getAllByText("OpenRouter").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Runpod").length).toBeGreaterThan(0);
   expect(screen.getAllByText("AWS").length).toBeGreaterThan(0);
+  expect(screen.getByText(/^AWS cost data · just now$/)).toBeInTheDocument();
   expect(screen.getByText("Bedrock")).toBeInTheDocument();
   expect(screen.getByText("EC2 compute")).toBeInTheDocument();
   expect(screen.getByText("Current burn")).toBeInTheDocument();
@@ -59,6 +66,11 @@ test("adds an AWS account with profile and category presets", async () => {
   expect(screen.getByDisplayValue("Amazon Bedrock")).toBeInTheDocument();
   expect(
     screen.getByDisplayValue("Amazon Elastic Compute Cloud - Compute"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      /Estimated minimum: 1 billable Cost Explorer request per daily refresh/,
+    ),
   ).toBeInTheDocument();
 
   await user.clear(screen.getAllByLabelText("Label")[0]);

@@ -28,9 +28,10 @@ every launch. See
 
 ## Refresh cadence
 
-Burnrate refreshes all accounts every five minutes in the background and
-caches successful snapshots for five minutes, so manual refreshes don't
-hammer provider APIs.
+Burnrate refreshes accounts every five minutes in the background and caches
+successful snapshots for five minutes. AWS Cost Explorer snapshots are cached
+for 24 hours instead—even when you click manual refresh—because its data is
+delayed and every paginated API request is billable.
 
 ## Environment variables
 

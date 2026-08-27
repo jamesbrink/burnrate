@@ -214,6 +214,16 @@ function AwsFields({
   const categories = form.awsCategories?.length
     ? form.awsCategories
     : cloneDefaultAwsCategories();
+  const additionalCategoryQueries = categories.filter(
+    (category) =>
+      category.enabled &&
+      category.id !== "all-aws" &&
+      !(
+        category.filter.kind === "dimension" &&
+        category.filter.key.trim().toUpperCase() === "SERVICE"
+      ),
+  ).length;
+  const minimumRequests = 1 + additionalCategoryQueries;
 
   function updateCategory(
     index: number,
@@ -313,6 +323,12 @@ function AwsFields({
             Add custom service
           </button>
         </div>
+        <p className="form-help">
+          Estimated minimum: {minimumRequests} billable Cost Explorer request
+          {minimumRequests === 1 ? "" : "s"} per daily refresh. SERVICE
+          categories reuse the first response; each other enabled filter adds a
+          request, and pagination can add more.
+        </p>
         {categories.map((category, index) => (
           <AwsCategoryRow
             key={category.id}

@@ -1897,6 +1897,12 @@ html[data-view="tray"] .tray-empty {
   overflow-wrap: anywhere;
 }
 
+.snapshot-freshness {
+  display: block;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
 /* Add-account chooser */
 .add-account-option {
   display: flex;

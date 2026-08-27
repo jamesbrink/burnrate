@@ -14,6 +14,7 @@ import {
   bucketMeterLabel,
   bucketPercent,
   displayBuckets,
+  formatAgo,
   formatLimit,
   formatReset,
 } from "./format";
@@ -243,9 +244,7 @@ export function Preferences({
       {modalMode ? (
         <AccountModal
           key={
-            modalMode.kind === "edit"
-              ? `edit-${modalMode.account.id}`
-              : "add"
+            modalMode.kind === "edit" ? `edit-${modalMode.account.id}` : "add"
           }
           mode={modalMode}
           busy={busy}
@@ -492,6 +491,11 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
             {snapshot.email ? (
               <small className="account-email">{snapshot.email}</small>
             ) : null}
+            {snapshot.provider === "aws" ? (
+              <small className="snapshot-freshness">
+                AWS cost data · {formatAgo(snapshot.fetchedAt)}
+              </small>
+            ) : null}
           </span>
         </div>
         <StatusBadge status={snapshot.status} />
@@ -540,4 +544,3 @@ function StatusBadge({ status }: { status: SnapshotStatus }) {
     </span>
   );
 }
-

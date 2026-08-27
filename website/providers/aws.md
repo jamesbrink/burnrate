@@ -30,6 +30,12 @@ include:
 
 plus custom dimension / tag / cost-category filters with optional group-by.
 
+Burnrate groups its account-wide query by service and derives `SERVICE`
+categories from that response. Each enabled tag or cost-category filter needs
+an additional `GetCostAndUsage` query. Pagination adds another billable API
+request per page, and Burnrate reports the actual request count in the AWS
+snapshot message.
+
 ## Required permissions
 
 ```json
@@ -53,6 +59,11 @@ enabled: service discovery/autocomplete (`ce:GetDimensionValues`), Budgets
 
 ## Caveats
 
+- AWS charges **$0.01 per paginated Cost Explorer API request** for a primary
+  billing view. Burnrate caches an AWS snapshot for 24 hours, including manual
+  refreshes during that window, because Cost Explorer data itself refreshes
+  about daily. Other providers retain the normal five-minute cadence. See
+  [AWS Cost Explorer pricing](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/pricing/).
 - Cost Explorer data is **not real time** — current-month data can be
   delayed, and AWS may mark fresh results as estimated. Burnrate surfaces
   estimated results and pagination in the account message.

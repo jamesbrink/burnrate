@@ -403,6 +403,9 @@ function TraySnapshot({
               {snapshot.email ? (
                 <span className="tray-email">{snapshot.email}</span>
               ) : null}
+              {snapshot.provider === "aws" ? (
+                <span>AWS cost data · {formatAgo(snapshot.fetchedAt)}</span>
+              ) : null}
             </div>
           </div>
           <span className={`tray-status ${snapshot.status}`}>
