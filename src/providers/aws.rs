@@ -862,6 +862,48 @@ mod tests {
     }
 
     #[test]
+    fn fetch_errors_record_whether_a_billable_request_was_attempted() {
+        let (error, attempted) =
+            AwsFetchError::before_cost_explorer(anyhow!("STS failed")).into_parts();
+        assert!(!attempted);
+        assert_eq!(error.to_string(), "STS failed");
+
+        let (error, attempted) =
+            AwsFetchError::after_cost_explorer(anyhow!("Cost Explorer failed")).into_parts();
+        assert!(attempted);
+        assert_eq!(error.to_string(), "Cost Explorer failed");
+    }
+
+    #[test]
+    fn derives_all_aws_but_rejects_blank_or_non_service_dimensions() {
+        let overall = CostQueryResult {
+            amount: 12.0,
+            unit: USD.to_string(),
+            estimated: false,
+            pages: 2,
+            groups: Vec::new(),
+        };
+        let mut category = account().aws_categories.remove(0);
+        category.id = "all-aws".to_string();
+        let derived = derive_service_category(&category, &overall).unwrap();
+        assert_eq!(derived.amount, 12.0);
+        assert_eq!(derived.pages, 0);
+
+        category.id = "custom".to_string();
+        category.filter = AwsCostFilter::Dimension {
+            key: "REGION".to_string(),
+            values: vec!["us-east-1".to_string()],
+        };
+        assert!(derive_service_category(&category, &overall).is_none());
+
+        category.filter = AwsCostFilter::Dimension {
+            key: "SERVICE".to_string(),
+            values: vec![" ".to_string()],
+        };
+        assert!(derive_service_category(&category, &overall).is_none());
+    }
+
+    #[test]
     fn non_service_categories_need_an_extra_query_but_service_groupings_do_not() {
         let mut category = account().aws_categories.remove(0);
         category.filter = AwsCostFilter::Tag {
