@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.16](https://github.com/jamesbrink/burnrate/compare/v0.1.15...v0.1.16) - 2026-08-27
+
+### Fixed
+
+- *(aws)* prevent billable five-minute Cost Explorer polling ([#53](https://github.com/jamesbrink/burnrate/pull/53))
+
 ## [0.1.15](https://github.com/jamesbrink/burnrate/compare/v0.1.14...v0.1.15) - 2026-06-19
 
 ### Added
