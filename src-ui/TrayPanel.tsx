@@ -52,7 +52,7 @@ const providerLabels = {
   openrouter: "OpenRouter",
   runpod: "Runpod",
   copilot: "Copilot",
-  nous: "Nous",
+  nous: "Nous Portal",
 } as const;
 
 const statusLabels: Record<SnapshotStatus, string> = {

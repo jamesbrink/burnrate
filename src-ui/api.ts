@@ -607,8 +607,25 @@ export async function saveAccount(input: AccountInput): Promise<AccountView[]> {
     return invoke<AccountView[]>("save_account", { input });
   }
 
+  if (input.provider === "nous") {
+    if (input.secret?.trim()) {
+      throw new Error(
+        "Nous credentials are managed by Hermes; manual secrets are not supported.",
+      );
+    }
+    if (
+      !input.id &&
+      mockAccounts.some((account) => account.provider === "nous")
+    ) {
+      return mockAccounts;
+    }
+  }
   const now = new Date().toISOString();
-  const id = input.id ?? `${input.provider}-${crypto.randomUUID()}`;
+  const id =
+    input.id ??
+    (input.provider === "nous"
+      ? "nous-local"
+      : `${input.provider}-${crypto.randomUUID()}`);
   const account: AccountView = {
     id,
     provider: input.provider,
@@ -618,7 +635,7 @@ export async function saveAccount(input: AccountInput): Promise<AccountView[]> {
     credentialPath: null,
     endpointOverride: input.endpointOverride ?? null,
     secretStorage: input.secretStorage,
-    hasSecret: Boolean(input.secret),
+    hasSecret: input.provider !== "nous" && Boolean(input.secret),
     email: null,
     configDir: null,
     awsProfile: input.awsProfile ?? null,

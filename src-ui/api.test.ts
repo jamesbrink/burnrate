@@ -3,6 +3,8 @@ import {
   __resetFetchGuard,
   __resetMockLogins,
   cancelAccountLogin,
+  saveAccount,
+  removeAccount,
   checkForUpdates,
   currentCursorPosition,
   detectAccounts,
@@ -369,3 +371,51 @@ function snapshot(status: SnapshotStatus): UsageSnapshot {
     fetchedAt: new Date().toISOString(),
   };
 }
+
+test("Nous mock additions reuse the account and preserve preferences", async () => {
+  await saveAccount({
+    provider: "nous",
+    label: "Original",
+    enabled: true,
+    secretStorage: "keyring",
+    secret: "",
+  });
+  const initial = (await detectAccounts()).find((a) => a.provider === "nous")!;
+  const input = {
+    provider: "nous" as const,
+    label: "Replacement",
+    enabled: false,
+    secretStorage: "keyring" as const,
+    secret: "",
+  };
+  for (let i = 0; i < 2; i++) {
+    const accounts = await saveAccount(input);
+    expect(accounts.filter((a) => a.provider === "nous")).toEqual([initial]);
+  }
+  await removeAccount(initial.id);
+  const created = (await saveAccount(input)).find(
+    (a) => a.provider === "nous",
+  )!;
+  expect(created.id).toBe("nous-local");
+  expect(
+    (await saveAccount(input)).filter((a) => a.provider === "nous"),
+  ).toHaveLength(1);
+  await saveAccount({
+    ...input,
+    id: created.id,
+    label: initial.label,
+    enabled: initial.enabled,
+  });
+});
+
+test("Nous mock rejects manual credentials", async () => {
+  await expect(
+    saveAccount({
+      provider: "nous",
+      label: "Nous",
+      enabled: true,
+      secretStorage: "plaintext",
+      secret: "must-not-be-stored",
+    }),
+  ).rejects.toThrow(/Hermes/);
+});

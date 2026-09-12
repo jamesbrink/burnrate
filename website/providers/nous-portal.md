@@ -67,7 +67,7 @@ total marks it healthy. When the total is missing, a positive reported
 component keeps the account healthy. This status describes credit balances,
 not a guarantee that inference is permitted.
 
-No billing fallback endpoints, organization spend caps, rollover detail,
+No billing fallback endpoints, organization spend caps,
 or local usage analytics are included. Missing or invalid balance data
 produces an error rather than a healthy empty card.
 

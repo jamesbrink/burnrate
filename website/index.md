@@ -5,7 +5,7 @@ hero:
   name: Burnrate
   text: Know your burn before it knows you.
   tagline: >-
-    A menu-bar monitor for Claude Code, Codex, OpenRouter, Runpod, and AWS —
+    A menu-bar monitor for Claude Code, Codex, GitHub Copilot, Nous Portal, OpenRouter, Runpod, and AWS —
     quotas, credits, spend, and subscription limits, all in one glance.
   image:
     src: /screenshots/tray.png
@@ -20,9 +20,9 @@ hero:
 
 features:
   - icon: 🔥
-    title: Five providers, one glance
+    title: Seven providers, one glance
     details:
-      Claude Code, Codex, OpenRouter, Runpod, and AWS Cost Explorer side by
+      Claude Code, Codex, GitHub Copilot, Nous Portal, OpenRouter, Runpod, and AWS Cost Explorer side by
       side — remaining quota, credits, spend, and reset timers.
   - icon: 👥
     title: True multi-account

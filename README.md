@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](https://github.com/jamesbrink/burnrate/releases/latest)
 
-Desktop usage monitor for Claude Code, Codex, GitHub Copilot, OpenRouter, Runpod, and AWS quotas, credits, spend, and subscription limits — plus claudex-powered local usage insights (daily burn, projections, model and project breakdowns). Built with Tauri 2 (Rust + React/TypeScript) and lives in the system tray (the menu bar on macOS).
+Desktop usage monitor for Claude Code, Codex, GitHub Copilot, Nous Portal, OpenRouter, Runpod, and AWS quotas, credits, spend, and subscription limits — plus claudex-powered local usage insights (daily burn, projections, model and project breakdowns). Built with Tauri 2 (Rust + React/TypeScript) and lives in the system tray (the menu bar on macOS).
 
 **Documentation: [jamesbrink.online/burnrate](https://jamesbrink.online/burnrate/)**
 
