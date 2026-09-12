@@ -52,6 +52,7 @@ const providerLabels = {
   openrouter: "OpenRouter",
   runpod: "Runpod",
   copilot: "Copilot",
+  nous: "Nous",
 } as const;
 
 const statusLabels: Record<SnapshotStatus, string> = {
@@ -432,7 +433,11 @@ function TraySnapshot({
 
       <div className="bucket-list">
         {buckets.map((bucket) => (
-          <BucketRow key={bucket.id} bucket={bucket} />
+          <BucketRow
+            key={bucket.id}
+            bucket={bucket}
+            showMeter={snapshot.provider !== "nous" || (bucket.limit ?? 0) > 0}
+          />
         ))}
       </div>
 
@@ -451,7 +456,13 @@ function TraySnapshot({
   );
 }
 
-function BucketRow({ bucket }: { bucket: UsageBucketSnapshot }) {
+function BucketRow({
+  bucket,
+  showMeter,
+}: {
+  bucket: UsageBucketSnapshot;
+  showMeter: boolean;
+}) {
   return (
     <div className={`bucket-row ${bucket.status}`}>
       <div className="bucket-meta">
@@ -460,9 +471,11 @@ function BucketRow({ bucket }: { bucket: UsageBucketSnapshot }) {
           {formatLimit(bucket)} {bucket.unit}
         </strong>
       </div>
-      <div className="mini-meter" aria-label={bucketMeterLabel(bucket)}>
-        <span style={{ width: `${bucketPercent(bucket)}%` }} />
-      </div>
+      {showMeter ? (
+        <div className="mini-meter" aria-label={bucketMeterLabel(bucket)}>
+          <span style={{ width: `${bucketPercent(bucket)}%` }} />
+        </div>
+      ) : null}
       {bucket.resetAt ? (
         <small>
           <Clock3 size={12} />

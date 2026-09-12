@@ -67,6 +67,7 @@ export default defineConfig({
           { text: "Claude Code", link: "/providers/claude-code" },
           { text: "Codex", link: "/providers/codex" },
           { text: "GitHub Copilot", link: "/providers/github-copilot" },
+          { text: "Nous Portal", link: "/providers/nous-portal" },
           { text: "OpenRouter", link: "/providers/openrouter" },
           { text: "Runpod", link: "/providers/runpod" },
           { text: "AWS", link: "/providers/aws" },

@@ -28,12 +28,13 @@ Desktop usage monitor for Claude Code, Codex, GitHub Copilot, OpenRouter, Runpod
 - Menu-bar tray summary with a left-click usage popover and right-click actions (Preferences, Refresh, Quit).
 - Native translucent (vibrancy) popover on macOS that follows the system light/dark appearance, sizes itself to its content, and dismisses when it loses focus.
 - Native Preferences window for account management and manual OpenRouter/Runpod/AWS setup.
-- Auto-detects Claude Code, Codex, and GitHub Copilot accounts from local config; OpenRouter and Runpod are added via API key, and AWS uses your existing AWS profile/default credential chain.
+- Auto-detects Claude Code, Codex, GitHub Copilot, and Nous Portal (via Hermes) accounts from local config; OpenRouter and Runpod are added via API key, and AWS uses your existing AWS profile/default credential chain.
 - **Multiple Claude Code and Codex accounts**, each signed in from the app via browser OAuth and shown with its email address and usage.
 - **Drag to reorder** accounts — reorder the tray usage cards or the Preferences list; the order persists across both windows.
 - Claude Code subscription buckets (5-hour, weekly, model-specific) with stale-auth checks via `claude auth status`.
 - Codex Pro/Max plan and rate-limit buckets read from the Codex app server.
 - **GitHub Copilot premium requests** per month against your plan's allowance — counted locally from Copilot CLI sessions, or exactly via an optional GitHub token and the billing API.
+- **Nous Portal total usable, subscription, and top-up credits** — read-only from your Hermes login via the Portal account API; Burnrate never refreshes Hermes OAuth.
 - **Local usage insights** powered by [claudex](https://github.com/utensils/claudex): per-provider daily cost sparklines, today/week/month-to-date spend, a month-end projection, model distribution, and top projects — computed entirely from local CLI session logs.
 - Runpod prepaid balance, current spend, burn-rate runway, active resources, and recent Pods/Serverless/storage costs.
 - AWS Cost Explorer month-to-date USD spend with optional monthly budgets and configurable service/tag/cost-category buckets such as Bedrock, EC2 compute, and S3.
@@ -57,7 +58,7 @@ Setup, provider specifics (including AWS permissions), configuration, and troubl
 
 - [Getting started](https://jamesbrink.online/burnrate/guide/getting-started) — accounts, browser sign-in, multi-account isolation
 - [Configuration](https://jamesbrink.online/burnrate/guide/configuration) — storage paths, secrets, environment variables
-- [Providers](https://jamesbrink.online/burnrate/providers/claude-code) — Claude Code, Codex, GitHub Copilot, OpenRouter, Runpod, AWS
+- [Providers](https://jamesbrink.online/burnrate/providers/claude-code) — Claude Code, Codex, GitHub Copilot, Nous Portal, OpenRouter, Runpod, AWS
 - [Local insights](https://jamesbrink.online/burnrate/guide/local-insights) — claudex-backed local usage analytics
 - [Troubleshooting](https://jamesbrink.online/burnrate/guide/troubleshooting) — keychain prompts, CLI discovery, stale auth
 

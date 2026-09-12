@@ -4,7 +4,8 @@ export type ProviderKind =
   | "openrouter"
   | "runpod"
   | "aws"
-  | "copilot";
+  | "copilot"
+  | "nous";
 export type CopilotPlan =
   | "free"
   | "pro"

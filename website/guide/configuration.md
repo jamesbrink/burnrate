@@ -38,6 +38,8 @@ delayed and every paginated API request is billable.
 | Variable                             | Purpose                                                      |
 | ------------------------------------ | ------------------------------------------------------------ |
 | `BURNRATE_CONFIG_DIR`                | Override the config directory.                               |
+| `HERMES_HOME`                        | Selected Hermes home/profile for Nous credential fallback.   |
+| `HERMES_SHARED_AUTH_DIR`             | Directory containing Hermes’s shared `nous_auth.json`.       |
 | `BURNRATE_CLAUDE_BIN` / `CLAUDE_BIN` | Path to the `claude` CLI if it isn't in a standard location. |
 | `BURNRATE_CODEX_BIN` / `CODEX_BIN`   | Path to the `codex` CLI if it isn't in a standard location.  |
 | `BURNRATE_RUNPOD_REST_URL`           | Override the Runpod REST endpoint (development/proxies).     |

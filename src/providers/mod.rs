@@ -3,6 +3,7 @@ mod claude;
 mod codex;
 mod copilot;
 pub(crate) mod login;
+mod nous;
 mod openrouter;
 mod runpod;
 
@@ -88,6 +89,7 @@ impl ProviderClient {
                 }
             },
             ProviderKind::Copilot => copilot::fetch(&self.http, account).await,
+            ProviderKind::Nous => nous::fetch(&self.http, account).await,
         };
 
         match result {
@@ -196,6 +198,9 @@ pub(crate) fn detect_accounts() -> Vec<AccountConfig> {
         accounts.push(account);
     }
     if let Some(account) = copilot::detect() {
+        accounts.push(account);
+    }
+    if let Some(account) = nous::detect() {
         accounts.push(account);
     }
     accounts
@@ -686,7 +691,8 @@ fn token_pointers(provider: ProviderKind) -> &'static [&'static str] {
         ProviderKind::OpenRouter | ProviderKind::Runpod => &["/api_key", "/apiKey", "/key"],
         // AWS uses the SDK credential chain; Copilot's optional GitHub token
         // lives in the key store, which `token_from_config` checks first.
-        ProviderKind::Aws | ProviderKind::Copilot => &[],
+        // Nous reads its Hermes access token through its own read-only loader.
+        ProviderKind::Aws | ProviderKind::Copilot | ProviderKind::Nous => &[],
     }
 }
 

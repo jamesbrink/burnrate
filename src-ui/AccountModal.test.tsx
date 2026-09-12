@@ -183,6 +183,23 @@ test("Copilot tile shows the plan selector; custom plan reveals the limit", asyn
   });
 });
 
+test("Nous uses the Hermes login without token or endpoint fields", async () => {
+  const user = userEvent.setup();
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  renderModal({ onSave });
+  await user.click(screen.getByRole("menuitem", { name: "Nous Portal" }));
+  expect(
+    screen.getByText(/read from your Hermes login automatically/),
+  ).toBeInTheDocument();
+  expect(screen.queryByLabelText(/Access token/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Endpoint")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Add" }));
+  expect(onSave.mock.calls[0][0]).toMatchObject({
+    provider: "nous",
+    secret: "",
+  });
+});
+
 test("edit mode opens on prefilled fields with the provider fixed", async () => {
   const user = userEvent.setup();
   const props = renderModal({

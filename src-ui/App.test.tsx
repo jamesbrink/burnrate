@@ -24,6 +24,10 @@ test("renders provider rows and snapshot states", async () => {
   expect(screen.getAllByText("OpenRouter").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Runpod").length).toBeGreaterThan(0);
   expect(screen.getAllByText("AWS").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Nous Portal").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Total available").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Subscription credits").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Purchased credits").length).toBeGreaterThan(0);
   expect(screen.getByText(/^AWS cost data · just now$/)).toBeInTheDocument();
   expect(screen.getByText("Bedrock")).toBeInTheDocument();
   expect(screen.getByText("EC2 compute")).toBeInTheDocument();
@@ -175,3 +179,43 @@ test("runs detect and refresh actions", async () => {
 
   expect(await screen.findByText("Burnrate: 2 warning")).toBeInTheDocument();
 });
+
+for (const view of ["preferences", "tray"]) {
+  test(`Nous shows only the subscription meter in ${view}`, async () => {
+    window.history.replaceState({}, "", view === "tray" ? "/?view=tray" : "/");
+    try {
+      render(<App />);
+      await screen.findAllByText("Purchased credits");
+      if (view === "tray") {
+        expect(screen.queryByText("Total available")).not.toBeInTheDocument();
+        const card = screen.getByText("Purchased credits").closest("article")!;
+        await userEvent.click(within(card).getByTitle("Show details"));
+        expect(within(card).getByText("Total available")).toBeVisible();
+        expect(
+          within(card).getByText("Subscription rollover (reported)"),
+        ).toBeVisible();
+      } else {
+        const details = screen.getByText("Credit details").closest("details")!;
+        expect(details).not.toHaveAttribute("open");
+        await userEvent.click(screen.getByText("Credit details"));
+        expect(details).toHaveAttribute("open");
+        expect(
+          within(details).getByText("Subscription rollover (reported)"),
+        ).toBeVisible();
+      }
+      expect(
+        screen.queryByLabelText("Total available remaining"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText("Purchased credits remaining"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByLabelText("Subscription credits remaining"),
+      ).toBeInTheDocument();
+      expect(screen.getByText("$0 / $110 USD")).toBeInTheDocument();
+    } finally {
+      cleanup();
+      window.history.replaceState({}, "", "/");
+    }
+  });
+}

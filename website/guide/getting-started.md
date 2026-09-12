@@ -22,6 +22,8 @@ and use **Add account**:
 - **Manual token** (Claude Code, Codex) — paste an existing OAuth token
   instead of signing in.
 - **API key** (OpenRouter, Runpod) — paste the provider API key.
+- **Hermes-backed** (Nous Portal) — auto-detected from your Hermes login; no
+  sign-in inside Burnrate. See the [Nous Portal page](/providers/nous-portal).
 - **AWS** — pick a credential profile (or leave blank for the default
   chain). See the [AWS provider page](/providers/aws).
 
