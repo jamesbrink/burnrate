@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    config::default_auto_account,
+    config::{NOUS_ACCOUNT_ID, default_auto_account},
     models::{
         AccountConfig, ProviderKind, SnapshotStatus, SubscriptionPlan, SubscriptionSnapshot,
         UsageBucketSnapshot, UsageSnapshot,
@@ -20,7 +20,7 @@ use crate::{
 use super::{datetime, error_snapshot, number, primary_quota, text, validate_endpoint};
 
 const PORTAL_URL: &str = "https://portal.nousresearch.com";
-const ACCOUNT_ID: &str = "nous-local";
+const ACCOUNT_ID: &str = NOUS_ACCOUNT_ID;
 
 /// Shared credentials are outside named profiles. Only the selected profile
 /// is a legacy fallback; scanning other profiles could choose another account.
@@ -70,14 +70,23 @@ impl AuthPaths {
             .and_then(|bytes| serde_json::from_slice::<Credential>(&bytes).ok())
             .filter(Credential::has_token);
         if let Some(credential) = shared {
+            if credential.expired()
+                && let Some(profile) = self.load_profile()
+                && profile.expiry().is_some_and(|expiry| expiry > Utc::now())
+                && credential.same_identity(&profile)
+            {
+                return Some((profile, &self.profile));
+            }
             return Some((credential, &self.shared));
         }
+        self.load_profile()
+            .map(|credential| (credential, self.profile.as_path()))
+    }
+
+    fn load_profile(&self) -> Option<Credential> {
         let bytes = std::fs::read(&self.profile).ok()?;
         let profile: ProfileAuth = serde_json::from_slice(&bytes).ok()?;
-        let credential = profile.providers.nous?;
-        credential
-            .has_token()
-            .then_some((credential, self.profile.as_path()))
+        profile.providers.nous.filter(Credential::has_token)
     }
 }
 
@@ -108,8 +117,8 @@ impl Credential {
             .is_some_and(|token| !token.trim().is_empty())
     }
 
-    fn expired(&self) -> bool {
-        let expiry = self.expires_at.as_ref().and_then(|value| {
+    fn expiry(&self) -> Option<DateTime<Utc>> {
+        self.expires_at.as_ref().and_then(|value| {
             value
                 .as_i64()
                 .and_then(|epoch| DateTime::from_timestamp(epoch, 0))
@@ -119,8 +128,47 @@ impl Credential {
                         .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
                         .map(|time| time.with_timezone(&Utc))
                 })
-        });
-        expiry.is_some_and(|expiry| expiry <= Utc::now())
+        })
+    }
+
+    fn expired(&self) -> bool {
+        self.expiry().is_some_and(|expiry| expiry <= Utc::now())
+    }
+
+    fn same_identity(&self, other: &Self) -> bool {
+        // These are local credential claims, not signature validation. The
+        // Portal still validates the bearer token. Require user, organization,
+        // issuer and routing to match; never switch accounts based on email.
+        fn identity(credential: &Credential) -> Option<(String, String, String)> {
+            use base64::Engine;
+            let token = credential.access_token.as_deref()?;
+            let parts: Vec<_> = token.split('.').collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(parts[1])
+                .ok()?;
+            let claims: Value = serde_json::from_slice(&bytes).ok()?;
+            let field = |name: &str| -> Option<String> {
+                claims
+                    .get(name)?
+                    .as_str()
+                    .filter(|s| !s.trim().is_empty())
+                    .map(str::to_owned)
+            };
+            Some((field("iss")?, field("sub")?, field("org_id")?))
+        }
+        let base = |credential: &Self| {
+            credential
+                .portal_base_url
+                .as_deref()
+                .filter(|url| !url.trim().is_empty())
+                .unwrap_or(PORTAL_URL)
+                .trim_end_matches('/')
+                .to_owned()
+        };
+        base(self) == base(other) && identity(self).is_some_and(|id| Some(id) == identity(other))
     }
 }
 
@@ -158,10 +206,15 @@ async fn fetch_at(
     account: &AccountConfig,
     paths: &AuthPaths,
 ) -> Result<UsageSnapshot> {
-    let (credential, _) = paths.load().ok_or_else(|| {
+    let (credential, source) = paths.load().ok_or_else(|| {
         anyhow!("No Nous login found. Sign in to Nous in Hermes, then refresh Burnrate.")
     })?;
     if credential.expired() {
+        if source == paths.shared {
+            return Err(anyhow!(
+                "Nous shared access token expired. No valid same-account profile credential could be verified. Sign in to Nous in Hermes and ensure it can update its shared nous_auth.json store, then refresh Burnrate."
+            ));
+        }
         return Err(anyhow!(
             "Nous access token expired. Refresh your Nous login in Hermes, then refresh Burnrate."
         ));
@@ -388,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_profile_fallback_records_real_path_and_shared_always_wins() {
+    fn selected_profile_fallback_records_real_path_and_unverified_shared_wins() {
         let dir = tempfile::tempdir().unwrap();
         let profile = dir.path().join("profiles/work");
         let paths = AuthPaths::new(dir.path(), Some(&profile), None);
@@ -411,6 +464,116 @@ mod tests {
         let credential = paths.load().unwrap().0;
         assert_eq!(credential.access_token.as_deref(), Some("shared"));
         assert!(credential.expired());
+    }
+
+    fn jwt(subject: &str, org: &str) -> String {
+        use base64::Engine;
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            json!({"iss": "https://portal.nousresearch.com", "sub": subject, "org_id": org})
+                .to_string(),
+        );
+        format!("header.{payload}.signature")
+    }
+
+    #[test]
+    fn identity_requires_all_stable_claims_and_matching_issuer() {
+        use base64::Engine;
+        let reference: Credential = serde_json::from_value(json!({
+            "access_token": jwt("user-a", "org-a")
+        }))
+        .unwrap();
+        for claims in [
+            json!({"sub": "user-a", "org_id": "org-a"}),
+            json!({"iss": PORTAL_URL, "org_id": "org-a"}),
+            json!({"iss": PORTAL_URL, "sub": "user-a"}),
+            json!({"iss": PORTAL_URL, "sub": "", "org_id": "org-a"}),
+            json!({"iss": "other-issuer", "sub": "user-a", "org_id": "org-a"}),
+        ] {
+            let payload =
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string());
+            let candidate: Credential = serde_json::from_value(json!({
+                "access_token": format!("header.{payload}.signature")
+            }))
+            .unwrap();
+            assert!(!reference.same_identity(&candidate));
+            assert!(!candidate.same_identity(&reference));
+        }
+    }
+
+    #[test]
+    fn expired_shared_falls_back_only_to_known_valid_matching_profile() {
+        let (_dir, paths) = fixture();
+        write(
+            &paths.shared,
+            json!({
+                "access_token": jwt("user-a", "org-a"), "expires_at": "2000-01-01T00:00:00Z"
+            }),
+        );
+        for (token, expiry, portal, use_profile) in [
+            (
+                jwt("user-a", "org-a"),
+                json!("2999-01-01T00:00:00Z"),
+                PORTAL_URL,
+                true,
+            ),
+            (
+                jwt("user-b", "org-a"),
+                json!("2999-01-01T00:00:00Z"),
+                PORTAL_URL,
+                false,
+            ),
+            (
+                jwt("user-a", "org-b"),
+                json!("2999-01-01T00:00:00Z"),
+                PORTAL_URL,
+                false,
+            ),
+            (
+                "opaque".into(),
+                json!("2999-01-01T00:00:00Z"),
+                PORTAL_URL,
+                false,
+            ),
+            (jwt("user-a", "org-a"), Value::Null, PORTAL_URL, false),
+            (
+                jwt("user-a", "org-a"),
+                json!("2000-01-01T00:00:00Z"),
+                PORTAL_URL,
+                false,
+            ),
+            (
+                jwt("user-a", "org-a"),
+                json!("2999-01-01T00:00:00Z"),
+                "https://other.example",
+                false,
+            ),
+        ] {
+            write(
+                &paths.profile,
+                json!({"providers": {"nous": {
+                    "access_token": token, "expires_at": expiry, "portal_base_url": portal
+                }}}),
+            );
+            let before = (
+                std::fs::read(&paths.shared).unwrap(),
+                std::fs::read(&paths.profile).unwrap(),
+            );
+            assert_eq!(
+                paths.load().unwrap().1,
+                if use_profile {
+                    &paths.profile
+                } else {
+                    &paths.shared
+                }
+            );
+            assert_eq!(
+                before,
+                (
+                    std::fs::read(&paths.shared).unwrap(),
+                    std::fs::read(&paths.profile).unwrap()
+                )
+            );
+        }
     }
 
     #[test]
@@ -581,6 +744,58 @@ mod tests {
         }
         assert_eq!(server.received_requests().await.unwrap().len(), 2);
         assert!(!paths.profile.exists());
+    }
+
+    #[tokio::test]
+    async fn matching_profile_fallback_fetches_without_writing_either_store() {
+        let (_dir, paths) = fixture();
+        let server = MockServer::start().await;
+        let token = jwt("user-a", "org-a");
+        write(
+            &paths.shared,
+            json!({
+                "access_token": token, "expires_at": "2000-01-01T00:00:00Z"
+            }),
+        );
+        write(
+            &paths.profile,
+            json!({"providers": {"nous": {
+                "access_token": token, "expires_at": "2999-01-01T00:00:00Z"
+            }}}),
+        );
+        let before = (
+            std::fs::read(&paths.shared).unwrap(),
+            std::fs::read(&paths.profile).unwrap(),
+        );
+        Mock::given(method("GET"))
+            .and(path("/api/oauth/account"))
+            .and(header("authorization", format!("Bearer {token}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"paid_service_access": {"total_usable_credits": 3}})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut account = account();
+        account.endpoint_override = Some(server.uri());
+        assert!(fetch_at(&Client::new(), &account, &paths).await.is_ok());
+        assert_eq!(
+            before,
+            (
+                std::fs::read(&paths.shared).unwrap(),
+                std::fs::read(&paths.profile).unwrap()
+            )
+        );
+
+        // A live shared login remains preferred even with a different profile.
+        write(
+            &paths.shared,
+            json!({
+                "access_token": jwt("user-b", "org-b"), "expires_at": "2999-01-01T00:00:00Z"
+            }),
+        );
+        assert_eq!(paths.load().unwrap().1, &paths.shared);
     }
 
     #[tokio::test]

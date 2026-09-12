@@ -7,7 +7,8 @@ subscription, and top-up credits, plus the plan name and email when provided.
 ## Setup and profiles
 
 Sign in to Nous in Hermes, then launch Burnrate or use **Detect accounts**.
-Burnrate discovers one Nous Portal account. No token entry is needed.
+Burnrate discovers one Nous Portal account. Adding Nous again reuses that
+account without changing its label, enabled state, or ordering. No token entry is needed.
 
 Credentials are read in this order:
 
@@ -15,7 +16,11 @@ Credentials are read in this order:
    Hermes writes this store when signing in or refreshing from a named
    profile too, so the default profile does not need to use Nous.
 2. `providers.nous` in the selected Hermes home's `auth.json`, as a fallback
-   when the shared store has no readable access token.
+   when the shared store has no readable access token. If the shared token is
+   expired, a profile token with a known future expiry may also be used, but
+   only when its JWT user, organization, and issuer claims and Portal URL
+   match the shared credential. Missing or different identities never trigger
+   an automatic account switch.
 
 Burnrate honors `HERMES_SHARED_AUTH_DIR` for the shared store directory and
 `HERMES_HOME` for the selected profile. For a custom home of the form
@@ -72,3 +77,10 @@ If the token expires or is rejected, refresh your Nous login in Hermes,
 then refresh Burnrate. Permission-denied responses are reported separately;
 check your Nous account access in Hermes. Burnrate cannot renew the login
 while Hermes is inactive.
+
+If Burnrate reports an expired **shared** token while Hermes still works,
+Hermes may have been unable to update its shared store. Sign in to Nous in
+Hermes and check that Hermes can write the shared `nous_auth.json` location
+described above. Burnrate will use a valid selected-profile credential only
+when the identity checks above succeed; otherwise it leaves both files
+untouched and reports the shared-store problem.
