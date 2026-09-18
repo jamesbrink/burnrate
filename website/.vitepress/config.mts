@@ -5,7 +5,7 @@ const SITE_URL = "https://jamesbrink.online/burnrate/";
 export default defineConfig({
   title: "Burnrate",
   description:
-    "Menu-bar usage monitor for Claude Code, Codex, OpenRouter, Runpod, and AWS — quotas, credits, spend, and subscription limits at a glance.",
+    "Menu-bar usage monitor for Claude Code, Codex, GitHub Copilot, Nous Portal, OpenRouter, Runpod, and AWS — quotas, credits, spend, and subscription limits at a glance.",
   base: "/burnrate/",
   lang: "en-US",
   cleanUrls: true,
@@ -67,6 +67,7 @@ export default defineConfig({
           { text: "Claude Code", link: "/providers/claude-code" },
           { text: "Codex", link: "/providers/codex" },
           { text: "GitHub Copilot", link: "/providers/github-copilot" },
+          { text: "Nous Portal", link: "/providers/nous-portal" },
           { text: "OpenRouter", link: "/providers/openrouter" },
           { text: "Runpod", link: "/providers/runpod" },
           { text: "AWS", link: "/providers/aws" },

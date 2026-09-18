@@ -11,6 +11,7 @@ pub(crate) enum ProviderKind {
     Runpod,
     Aws,
     Copilot,
+    Nous,
 }
 
 impl ProviderKind {
@@ -22,6 +23,7 @@ impl ProviderKind {
             ProviderKind::Runpod => "runpod",
             ProviderKind::Aws => "aws",
             ProviderKind::Copilot => "copilot",
+            ProviderKind::Nous => "nous",
         }
     }
 
@@ -35,6 +37,7 @@ impl ProviderKind {
             ProviderKind::Runpod => "Runpod",
             ProviderKind::Aws => "AWS",
             ProviderKind::Copilot => "GitHub Copilot",
+            ProviderKind::Nous => "Nous Portal",
         }
     }
 }

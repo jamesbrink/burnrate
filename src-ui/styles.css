@@ -1109,6 +1109,12 @@ p {
   border-color: color-mix(in srgb, #8250df 32%, var(--surface));
 }
 
+.provider-logo-nous {
+  color: #7ee2c8;
+  background: color-mix(in srgb, #1fb598 20%, var(--surface));
+  border-color: color-mix(in srgb, #1fb598 32%, var(--surface));
+}
+
 @media (prefers-color-scheme: light) {
   .provider-logo-claude-code {
     color: #c15f3c;
@@ -1144,6 +1150,12 @@ p {
     color: #8250df;
     background: #f4eeff;
     border-color: #e0d3f9;
+  }
+
+  .provider-logo-nous {
+    color: #0f8a6f;
+    background: #e7faf4;
+    border-color: #b9ecdc;
   }
 }
 
@@ -1497,6 +1509,12 @@ html[data-view="tray"] .provider-logo-copilot {
   border-color: color-mix(in srgb, #8250df 30%, var(--tray-surface));
 }
 
+html[data-view="tray"] .provider-logo-nous {
+  color: #7ee2c8;
+  background: color-mix(in srgb, #1fb598 20%, var(--tray-surface));
+  border-color: color-mix(in srgb, #1fb598 30%, var(--tray-surface));
+}
+
 @media (prefers-color-scheme: light) {
   html[data-view="tray"] .provider-logo-claude-code {
     color: #c15f3c;
@@ -1533,6 +1551,12 @@ html[data-view="tray"] .provider-logo-copilot {
     background: #f4eeff;
     border-color: #e0d3f9;
   }
+
+  html[data-view="tray"] .provider-logo-nous {
+    color: #0f8a6f;
+    background: #e7faf4;
+    border-color: #b9ecdc;
+  }
 }
 
 html[data-view="tray"][data-vibrancy="1"] .provider-logo-claude-code {
@@ -1563,6 +1587,11 @@ html[data-view="tray"][data-vibrancy="1"] .provider-logo-runpod {
 html[data-view="tray"][data-vibrancy="1"] .provider-logo-copilot {
   background: color-mix(in srgb, #8250df 20%, transparent);
   border-color: color-mix(in srgb, #8250df 30%, transparent);
+}
+
+html[data-view="tray"][data-vibrancy="1"] .provider-logo-nous {
+  background: color-mix(in srgb, #1fb598 20%, transparent);
+  border-color: color-mix(in srgb, #1fb598 30%, transparent);
 }
 
 html[data-view="tray"] .tray-status {

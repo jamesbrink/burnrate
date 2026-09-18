@@ -281,7 +281,7 @@ function FirstRunPanel({
         <p className="muted">
           Burnrate watches quotas, credits, and spend across your AI providers
           from the menu bar. CLIs already signed in on this Mac (Claude Code,
-          Codex, Copilot) can be detected automatically.
+          Codex, Copilot, Hermes for Nous Portal) can be detected automatically.
         </p>
         <div className="first-run-actions">
           <button className="primary" onClick={onAdd}>
@@ -476,6 +476,10 @@ function AccountButton({
 
 function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
   const buckets = displayBuckets(snapshot);
+  const details =
+    snapshot.provider === "nous"
+      ? snapshot.usageBuckets.filter((bucket) => !buckets.includes(bucket))
+      : [];
   const plan = snapshot.subscription?.planLabel;
 
   return (
@@ -504,7 +508,13 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
       {buckets.length > 0 ? (
         <div className="usage-buckets">
           {buckets.map((bucket) => (
-            <BucketLine key={bucket.id} bucket={bucket} />
+            <BucketLine
+              key={bucket.id}
+              bucket={bucket}
+              showMeter={
+                snapshot.provider !== "nous" || (bucket.limit ?? 0) > 0
+              }
+            />
           ))}
         </div>
       ) : (
@@ -512,6 +522,14 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
           {snapshot.message ?? "Usage unavailable."}
         </p>
       )}
+      {details.length > 0 ? (
+        <details>
+          <summary>Credit details</summary>
+          {details.map((bucket) => (
+            <BucketLine key={bucket.id} bucket={bucket} showMeter={false} />
+          ))}
+        </details>
+      ) : null}
       {snapshot.message ? (
         <p className="snapshot-message">{snapshot.message}</p>
       ) : null}
@@ -519,7 +537,13 @@ function UsageRow({ snapshot }: { snapshot: UsageSnapshot }) {
   );
 }
 
-function BucketLine({ bucket }: { bucket: UsageBucketSnapshot }) {
+function BucketLine({
+  bucket,
+  showMeter,
+}: {
+  bucket: UsageBucketSnapshot;
+  showMeter: boolean;
+}) {
   return (
     <div className={`bucket-line ${bucket.status}`}>
       <div>
@@ -528,9 +552,11 @@ function BucketLine({ bucket }: { bucket: UsageBucketSnapshot }) {
           {formatLimit(bucket)} {bucket.unit}
         </strong>
       </div>
-      <div className="meter" aria-label={bucketMeterLabel(bucket)}>
-        <span style={{ width: `${bucketPercent(bucket)}%` }} />
-      </div>
+      {showMeter ? (
+        <div className="meter" aria-label={bucketMeterLabel(bucket)}>
+          <span style={{ width: `${bucketPercent(bucket)}%` }} />
+        </div>
+      ) : null}
       <small>{formatReset(bucket.resetAt)}</small>
     </div>
   );

@@ -3,6 +3,8 @@ import {
   __resetFetchGuard,
   __resetMockLogins,
   cancelAccountLogin,
+  saveAccount,
+  removeAccount,
   checkForUpdates,
   currentCursorPosition,
   detectAccounts,
@@ -94,7 +96,7 @@ test("wires browser refresh events and refresh snapshot fallback", async () => {
   window.dispatchEvent(new Event("burnrate-refresh-requested"));
 
   expect(handler).toHaveBeenCalledOnce();
-  await expect(refreshSnapshots()).resolves.toHaveLength(6);
+  await expect(refreshSnapshots()).resolves.toHaveLength(7);
 });
 
 test("isStale compares against the freshness threshold", () => {
@@ -126,7 +128,7 @@ test("guardedFetch de-dupes concurrent fetches", async () => {
   const [first, second] = await Promise.all([guardedFetch(), guardedFetch()]);
 
   // One underlying fetch → one cache entry → both callers share the payload.
-  expect(readCachedDashboard()?.dashboard.snapshots).toHaveLength(6);
+  expect(readCachedDashboard()?.dashboard.snapshots).toHaveLength(7);
   expect(first).toBe(second);
 });
 
@@ -369,3 +371,51 @@ function snapshot(status: SnapshotStatus): UsageSnapshot {
     fetchedAt: new Date().toISOString(),
   };
 }
+
+test("Nous mock additions reuse the account and preserve preferences", async () => {
+  await saveAccount({
+    provider: "nous",
+    label: "Original",
+    enabled: true,
+    secretStorage: "keyring",
+    secret: "",
+  });
+  const initial = (await detectAccounts()).find((a) => a.provider === "nous")!;
+  const input = {
+    provider: "nous" as const,
+    label: "Replacement",
+    enabled: false,
+    secretStorage: "keyring" as const,
+    secret: "",
+  };
+  for (let i = 0; i < 2; i++) {
+    const accounts = await saveAccount(input);
+    expect(accounts.filter((a) => a.provider === "nous")).toEqual([initial]);
+  }
+  await removeAccount(initial.id);
+  const created = (await saveAccount(input)).find(
+    (a) => a.provider === "nous",
+  )!;
+  expect(created.id).toBe("nous-local");
+  expect(
+    (await saveAccount(input)).filter((a) => a.provider === "nous"),
+  ).toHaveLength(1);
+  await saveAccount({
+    ...input,
+    id: created.id,
+    label: initial.label,
+    enabled: initial.enabled,
+  });
+});
+
+test("Nous mock rejects manual credentials", async () => {
+  await expect(
+    saveAccount({
+      provider: "nous",
+      label: "Nous",
+      enabled: true,
+      secretStorage: "plaintext",
+      secret: "must-not-be-stored",
+    }),
+  ).rejects.toThrow(/Hermes/);
+});

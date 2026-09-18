@@ -8,6 +8,15 @@ export function primaryBucket(
 
 export function displayBuckets(snapshot: UsageSnapshot): UsageBucketSnapshot[] {
   const buckets = snapshot.usageBuckets.filter(hasBucketValue);
+  if (snapshot.provider === "nous") {
+    const compact = buckets.filter(
+      (bucket) =>
+        bucket.id === "subscription-credits" ||
+        bucket.id === "purchased-credits",
+    );
+    if (compact.length > 0) return compact;
+    return buckets.filter((bucket) => bucket.id === "total-credits");
+  }
   if (buckets.length > 0) return buckets;
   const fallback = bucketFromQuota(snapshot);
   return fallback && hasBucketValue(fallback) ? [fallback] : [];

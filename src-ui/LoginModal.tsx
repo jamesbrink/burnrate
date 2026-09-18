@@ -11,6 +11,7 @@ const providerNames: Record<ProviderKind, string> = {
   openrouter: "OpenRouter",
   runpod: "Runpod",
   copilot: "GitHub Copilot",
+  nous: "Nous Portal",
 };
 
 /**

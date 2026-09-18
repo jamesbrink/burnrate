@@ -15,6 +15,7 @@ use crate::models::{
 
 pub(crate) const CONFIG_FILE: &str = "accounts.json";
 pub(crate) const DATABASE_FILE: &str = "burnrate.sqlite";
+pub(crate) const NOUS_ACCOUNT_ID: &str = "nous-local";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -105,10 +106,25 @@ impl AppConfig {
     }
 
     pub(crate) fn upsert_manual(&mut self, input: AccountInput) -> AccountConfig {
+        // Nous has one shared Hermes login. An Add request must not overwrite
+        // an existing account's preferences or create a second poller.
+        if input.provider == ProviderKind::Nous
+            && input.id.is_none()
+            && let Some(existing) = self
+                .accounts
+                .iter()
+                .find(|a| a.provider == ProviderKind::Nous)
+        {
+            return existing.clone();
+        }
         let now = Utc::now();
-        let id = input
-            .id
-            .unwrap_or_else(|| format!("{}-{}", input.provider.as_str(), Uuid::new_v4().simple()));
+        let id = input.id.unwrap_or_else(|| {
+            if input.provider == ProviderKind::Nous {
+                NOUS_ACCOUNT_ID.to_string()
+            } else {
+                format!("{}-{}", input.provider.as_str(), Uuid::new_v4().simple())
+            }
+        });
 
         let existing = self.accounts.iter_mut().find(|account| account.id == id);
         if let Some(account) = existing {
@@ -166,7 +182,11 @@ impl AppConfig {
     pub(crate) fn merge_detected(&mut self, detected: Vec<AccountConfig>) -> bool {
         let mut changed = false;
         for account in detected {
-            if let Some(existing) = self.accounts.iter_mut().find(|item| item.id == account.id) {
+            if let Some(existing) = self.accounts.iter_mut().find(|item| {
+                item.id == account.id
+                    || (account.provider == ProviderKind::Nous
+                        && item.provider == ProviderKind::Nous)
+            }) {
                 let account_changed =
                     !existing.auto_detected || existing.credential_path != account.credential_path;
                 if account_changed {
@@ -454,6 +474,72 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    fn nous_input() -> AccountInput {
+        serde_json::from_value(serde_json::json!({
+            "provider": "nous", "label": "Nous Portal", "enabled": true,
+            "secretStorage": "keyring"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn nous_add_detect_restart_preserves_single_account_and_metadata() {
+        let mut config = AppConfig::default();
+        let added = config.upsert_manual(nous_input());
+        assert_eq!(added.id, "nous-local");
+        config.accounts[0].label = "My credits".into();
+        config.accounts[0].enabled = false;
+        config.accounts[0].order_index = Some(7);
+        let before = config.accounts[0].clone();
+        config.upsert_manual(nous_input());
+        assert_eq!(config.accounts[0].label, before.label);
+        assert_eq!(config.accounts[0].updated_at, before.updated_at);
+        let detected = default_auto_account(
+            "nous-local",
+            ProviderKind::Nous,
+            "Nous Portal",
+            PathBuf::from("/fixture/shared/nous_auth.json"),
+        );
+        config.merge_detected(vec![detected.clone()]);
+        let mut restarted: AppConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert!(!restarted.merge_detected(vec![detected]));
+        assert_eq!(restarted.accounts.len(), 1);
+        assert_eq!(restarted.accounts[0].label, "My credits");
+        assert!(!restarted.accounts[0].enabled);
+        assert_eq!(restarted.accounts[0].order_index, Some(7));
+        let mut edit = nous_input();
+        edit.id = Some(added.id);
+        edit.label = "Edited".into();
+        restarted.upsert_manual(edit);
+        assert_eq!(restarted.accounts[0].label, "Edited");
+    }
+
+    #[test]
+    fn nous_detection_reuses_legacy_manual_account() {
+        let mut config = AppConfig::default();
+        let mut existing = default_auto_account(
+            "nous-legacy",
+            ProviderKind::Nous,
+            "Custom",
+            PathBuf::from("/old"),
+        );
+        existing.enabled = false;
+        config.accounts.push(existing);
+        config.merge_detected(vec![default_auto_account(
+            "nous-local",
+            ProviderKind::Nous,
+            "Nous Portal",
+            PathBuf::from("/new"),
+        )]);
+        config.upsert_manual(nous_input());
+        assert_eq!(config.accounts.len(), 1);
+        assert_eq!(config.accounts[0].id, "nous-legacy");
+        assert_eq!(config.accounts[0].label, "Custom");
+        assert!(!config.accounts[0].enabled);
+        assert_eq!(config.accounts[0].credential_path.as_deref(), Some("/new"));
+    }
 
     #[test]
     fn saves_and_loads_config() {

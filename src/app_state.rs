@@ -135,6 +135,16 @@ impl AppState {
     }
 
     pub(crate) fn save_account(&self, input: AccountInput) -> Result<Vec<AccountView>> {
+        if input.provider == ProviderKind::Nous
+            && input
+                .secret
+                .as_deref()
+                .is_some_and(|secret| !secret.trim().is_empty())
+        {
+            return Err(anyhow!(
+                "Nous credentials are managed by Hermes; manual secrets are not supported."
+            ));
+        }
         self.update_config(|config| {
             let previous = input.id.as_ref().and_then(|id| {
                 config
@@ -151,7 +161,7 @@ impl AppState {
                 .find(|item| item.id == account.id)
                 .expect("upserted account exists");
 
-            if account.provider == ProviderKind::Aws {
+            if matches!(account.provider, ProviderKind::Aws | ProviderKind::Nous) {
                 key_store::clear_secret(account)?;
             } else if let Some(secret) = input.secret {
                 key_store::set_secret(account, Some(secret))?;
@@ -745,6 +755,51 @@ fn cleanup_managed_dir(dir: Option<&str>) {
         let path = Path::new(dir);
         if config::is_managed_cli_dir(path) {
             let _ = fs::remove_dir_all(path);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nous_save_rejects_manual_secrets_before_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ConfigStore::open_at(
+            dir.path().join("test.sqlite"),
+            dir.path().join("legacy.json"),
+        )
+        .unwrap();
+        let state = AppState {
+            config_store: store,
+            config: Mutex::new(AppConfig::default()),
+            provider_client: ProviderClient::new(),
+            login_manager: LoginManager::new(),
+            local_usage: tokio::sync::Mutex::new(None),
+        };
+        for storage in ["keyring", "plaintext"] {
+            let input: AccountInput = serde_json::from_value(serde_json::json!({
+                "provider": "nous", "label": "Nous", "enabled": true,
+                "secretStorage": storage, "secret": "must-not-be-stored"
+            }))
+            .unwrap();
+            assert!(
+                state
+                    .save_account(input)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("Hermes")
+            );
+            assert!(
+                state
+                    .config_store
+                    .load_config()
+                    .unwrap()
+                    .accounts
+                    .is_empty()
+            );
+            assert!(state.list_accounts().unwrap().is_empty());
         }
     }
 }

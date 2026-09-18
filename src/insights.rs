@@ -39,7 +39,10 @@ pub(crate) fn claudex_kinds(provider: ProviderKind) -> Option<Vec<Provider>> {
         // The Copilot CLI carries token/premium-request metrics; VS Code
         // Copilot Chat sessions are indexed too and contribute session counts.
         ProviderKind::Copilot => Some(vec![Provider::Copilot, Provider::CopilotVscode]),
-        ProviderKind::OpenRouter | ProviderKind::Runpod | ProviderKind::Aws => None,
+        ProviderKind::OpenRouter
+        | ProviderKind::Runpod
+        | ProviderKind::Aws
+        | ProviderKind::Nous => None,
     }
 }
 

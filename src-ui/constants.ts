@@ -18,6 +18,7 @@ export const providerLabels: Record<ProviderKind, string> = {
   runpod: "Runpod",
   aws: "AWS",
   copilot: "GitHub Copilot",
+  nous: "Nous Portal",
 };
 
 export const providerDefaultEndpoints: Partial<Record<ProviderKind, string>> = {
@@ -107,6 +108,7 @@ export const PROVIDERS: ProviderKind[] = [
   "claude-code",
   "codex",
   "copilot",
+  "nous",
   "aws",
   "openrouter",
   "runpod",

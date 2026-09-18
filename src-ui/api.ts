@@ -130,6 +130,21 @@ let mockAccounts: AccountView[] = [
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
+  {
+    id: "nous-local",
+    provider: "nous",
+    label: "Nous Portal",
+    enabled: true,
+    autoDetected: true,
+    credentialPath: "~/.hermes/shared/nous_auth.json",
+    endpointOverride: null,
+    secretStorage: "keyring",
+    hasSecret: false,
+    email: null,
+    configDir: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
 ];
 
 let mockSettings: AppSettings = {
@@ -351,6 +366,74 @@ const mockSnapshots: UsageSnapshot[] = [
     fetchedAt: new Date().toISOString(),
   },
   {
+    accountId: "nous-local",
+    provider: "nous",
+    label: "Nous Portal",
+    status: "healthy",
+    subscription: {
+      plan: "unknown",
+      planLabel: "Super",
+      rateLimitTier: null,
+      extraUsageEnabled: null,
+      source: "nous-portal",
+    },
+    usageBuckets: [
+      {
+        id: "total-credits",
+        label: "Total available",
+        window: null,
+        used: 0,
+        limit: null,
+        remaining: 8.82,
+        unit: "USD",
+        resetAt: null,
+        status: "healthy",
+      },
+      {
+        id: "subscription-credits",
+        label: "Subscription credits",
+        window: null,
+        used: 0,
+        limit: 110,
+        remaining: 0,
+        unit: "USD",
+        resetAt: new Date(Date.now() + 19 * 24 * 60 * 60 * 1000).toISOString(),
+        status: "exhausted",
+      },
+      {
+        id: "purchased-credits",
+        label: "Purchased credits",
+        window: null,
+        used: 0,
+        limit: null,
+        remaining: 8.82,
+        unit: "USD",
+        resetAt: null,
+        status: "healthy",
+      },
+      {
+        id: "subscription-rollover",
+        label: "Subscription rollover (reported)",
+        window: null,
+        used: 0,
+        limit: null,
+        remaining: 10,
+        unit: "USD",
+        resetAt: null,
+        status: "healthy",
+      },
+    ],
+    quota: {
+      used: 0,
+      limit: null,
+      remaining: 8.82,
+      unit: "USD",
+      resetAt: null,
+    },
+    message: null,
+    fetchedAt: new Date().toISOString(),
+  },
+  {
     accountId: "runpod-main",
     provider: "runpod",
     label: "Runpod",
@@ -524,8 +607,25 @@ export async function saveAccount(input: AccountInput): Promise<AccountView[]> {
     return invoke<AccountView[]>("save_account", { input });
   }
 
+  if (input.provider === "nous") {
+    if (input.secret?.trim()) {
+      throw new Error(
+        "Nous credentials are managed by Hermes; manual secrets are not supported.",
+      );
+    }
+    if (
+      !input.id &&
+      mockAccounts.some((account) => account.provider === "nous")
+    ) {
+      return mockAccounts;
+    }
+  }
   const now = new Date().toISOString();
-  const id = input.id ?? `${input.provider}-${crypto.randomUUID()}`;
+  const id =
+    input.id ??
+    (input.provider === "nous"
+      ? "nous-local"
+      : `${input.provider}-${crypto.randomUUID()}`);
   const account: AccountView = {
     id,
     provider: input.provider,
@@ -535,7 +635,7 @@ export async function saveAccount(input: AccountInput): Promise<AccountView[]> {
     credentialPath: null,
     endpointOverride: input.endpointOverride ?? null,
     secretStorage: input.secretStorage,
-    hasSecret: Boolean(input.secret),
+    hasSecret: input.provider !== "nous" && Boolean(input.secret),
     email: null,
     configDir: null,
     awsProfile: input.awsProfile ?? null,

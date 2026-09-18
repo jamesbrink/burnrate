@@ -31,6 +31,7 @@ export function AccountFields({
   const isCliProvider = CLI_PROVIDERS.includes(form.provider);
   const isAwsProvider = form.provider === "aws";
   const isCopilotProvider = form.provider === "copilot";
+  const isNousProvider = form.provider === "nous";
 
   return (
     <>
@@ -52,6 +53,12 @@ export function AccountFields({
         <AwsFields form={form} setForm={setForm} />
       ) : isCopilotProvider ? (
         <CopilotFields form={form} setForm={setForm} isEdit={isEdit} />
+      ) : isNousProvider ? (
+        <p className="form-help">
+          Nous Portal balances are read from your Hermes login automatically.
+          Sign in to Nous in Hermes, then refresh Burnrate. Burnrate never
+          refreshes your Hermes token.
+        </p>
       ) : (
         <>
           <div className="segmented" role="group" aria-label="Secret storage">
