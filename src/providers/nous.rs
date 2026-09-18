@@ -226,9 +226,16 @@ async fn fetch_at(
         .filter(|url| !url.trim().is_empty())
         .unwrap_or(PORTAL_URL);
     validate_endpoint(base)?;
+    let token = credential
+        .access_token
+        .as_deref()
+        .filter(|token| !token.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow!("Nous credential has no usable access token. Sign in to Nous in Hermes, then refresh Burnrate.")
+        })?;
     let response = http
         .get(format!("{}/api/oauth/account", base.trim_end_matches('/')))
-        .bearer_auth(credential.access_token.as_deref().expect("validated token"))
+        .bearer_auth(token)
         .header("Accept", "application/json")
         .send()
         .await
