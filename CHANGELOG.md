@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.17](https://github.com/jamesbrink/burnrate/compare/v0.1.16...v0.1.17) - 2026-09-18
+
+### Added
+
+- *(nous)* monitor Portal credit balances from Hermes login ([#55](https://github.com/jamesbrink/burnrate/pull/55))
+
+### Fixed
+
+- *(nous)* allow-list Portal host in CSP and replace credential expect ([#57](https://github.com/jamesbrink/burnrate/pull/57))
+
 ## [0.1.16](https://github.com/jamesbrink/burnrate/compare/v0.1.15...v0.1.16) - 2026-08-27
 
 ### Fixed
