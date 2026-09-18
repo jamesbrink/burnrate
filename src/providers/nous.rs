@@ -67,11 +67,11 @@ impl AuthPaths {
     fn load(&self) -> Option<(Credential, &Path)> {
         let shared = std::fs::read(&self.shared)
             .ok()
-            .and_then(|bytes| serde_json::from_slice::<Credential>(&bytes).ok())
-            .filter(Credential::has_token);
-        if let Some(credential) = shared {
+            .and_then(|bytes| serde_json::from_slice::<Credential>(&bytes).ok());
+        if let Some(credential) = shared.filter(Credential::has_token) {
             if credential.expired()
                 && let Some(profile) = self.load_profile()
+                && profile.has_token()
                 && profile.expiry().is_some_and(|expiry| expiry > Utc::now())
                 && credential.same_identity(&profile)
             {
@@ -86,7 +86,7 @@ impl AuthPaths {
     fn load_profile(&self) -> Option<Credential> {
         let bytes = std::fs::read(&self.profile).ok()?;
         let profile: ProfileAuth = serde_json::from_slice(&bytes).ok()?;
-        profile.providers.nous.filter(Credential::has_token)
+        profile.providers.nous
     }
 }
 
@@ -186,7 +186,10 @@ pub(crate) fn detect() -> Option<AccountConfig> {
 }
 
 fn detect_at(paths: &AuthPaths) -> Option<AccountConfig> {
-    let (_, path) = paths.load()?;
+    let (credential, path) = paths.load()?;
+    if !credential.has_token() {
+        return None;
+    }
     Some(default_auto_account(
         ACCOUNT_ID,
         ProviderKind::Nous,
@@ -823,6 +826,35 @@ mod tests {
                 .contains("expired")
         );
         assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn tokenless_credentials_error_without_http_and_are_not_detected() {
+        let (_dir, paths) = fixture();
+        write(&paths.shared, json!({"access_token": "  "}));
+        write(
+            &paths.profile,
+            json!({"providers": {"nous": {"access_token": "  "}}}),
+        );
+        let server = MockServer::start().await;
+        let mut account = account();
+        account.endpoint_override = Some(server.uri());
+        let error = fetch_at(&Client::new(), &account, &paths)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no usable access token"));
+        assert!(server.received_requests().await.unwrap().is_empty());
+        assert!(detect_at(&paths).is_none());
+
+        // A missing access token reports the same guidance.
+        write(&paths.profile, json!({"providers": {"nous": {}}}));
+        let error = fetch_at(&Client::new(), &account, &paths)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no usable access token"));
+        assert!(detect_at(&paths).is_none());
     }
 
     #[tokio::test]
