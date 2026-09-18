@@ -212,6 +212,13 @@ async fn fetch_at(
     let (credential, source) = paths.load().ok_or_else(|| {
         anyhow!("No Nous login found. Sign in to Nous in Hermes, then refresh Burnrate.")
     })?;
+    let token = credential
+        .access_token
+        .as_deref()
+        .filter(|token| !token.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow!("Nous credential has no usable access token. Sign in to Nous in Hermes, then refresh Burnrate.")
+        })?;
     if credential.expired() {
         if source == paths.shared {
             return Err(anyhow!(
@@ -229,13 +236,6 @@ async fn fetch_at(
         .filter(|url| !url.trim().is_empty())
         .unwrap_or(PORTAL_URL);
     validate_endpoint(base)?;
-    let token = credential
-        .access_token
-        .as_deref()
-        .filter(|token| !token.trim().is_empty())
-        .ok_or_else(|| {
-            anyhow!("Nous credential has no usable access token. Sign in to Nous in Hermes, then refresh Burnrate.")
-        })?;
     let response = http
         .get(format!("{}/api/oauth/account", base.trim_end_matches('/')))
         .bearer_auth(token)
@@ -854,6 +854,23 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("no usable access token"));
+        assert!(server.received_requests().await.unwrap().is_empty());
+
+        // A tokenless credential reports the missing token before any
+        // stale expiry or endpoint metadata.
+        write(
+            &paths.profile,
+            json!({"providers": {"nous": {
+                "expires_at": "2000-01-01T00:00:00Z",
+                "portal_base_url": "http://example.com"
+            }}}),
+        );
+        let error = fetch_at(&Client::new(), &account, &paths)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no usable access token"));
+        assert!(server.received_requests().await.unwrap().is_empty());
         assert!(detect_at(&paths).is_none());
     }
 
